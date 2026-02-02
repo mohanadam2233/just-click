@@ -1,0 +1,92 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: justclick-db
+    environment:
+      POSTGRES_DB: cmcp
+      POSTGRES_USER: cmcp
+      POSTGRES_PASSWORD: cmcp
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cmcp -d cmcp"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: justclick-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: justclick-backend
+    environment:
+      ENV: development
+      LOG_LEVEL: INFO
+      # Flask / app
+      SECRET_KEY: "dev-change-me-please-123456"
+      SECURITY_PASSWORD_SALT: "dev-salt-123456"
+      ENCRYPTION_KEY: "PUT_A_VALID_FERNET_KEY_HERE_44_CHARS=="  # see note below
+
+      # DB (your Settings expects host/port/user/pass/name)
+      DATABASE_HOST: db
+      DATABASE_PORT: "5432"
+      DATABASE_USER: cmcp
+      DATABASE_PASSWORD: cmcp
+      DATABASE_NAME: cmcp
+
+      # Redis
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+      REDIS_DB: "0"
+
+      # CORS
+      CORS_ALLOWED_ORIGINS: '["http://localhost:5173"]'
+
+      # Media (optional)
+      MEDIA_BACKEND: local
+      LOCAL_MEDIA_ROOT: /app/media
+      LOCAL_PUBLIC_BASE: /media
+    ports:
+      - "9000:9000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./backend:/app
+      - backend_media:/app/media
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: justclick-frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - backend
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+
+volumes:
+  pgdata:
+  redisdata:
+  backend_media:

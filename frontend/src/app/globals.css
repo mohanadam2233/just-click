@@ -1,0 +1,474 @@
+/*********************************************************************************
+
+	  Template Name: Edurock - Education LMS Template
+    Author: Kamrul Hasan
+    Support: kamrulishasan34@gmail.com
+    Description: Edurock -  Education, online course, tailwind v3.0 and Next.js v14,.
+    Version: 1.0.0
+    
+****************
+*****************************************************************/
+
+/**************************************************************
+
+	Start Style sheet Indexing
+	|
+	|___ Default Styles
+	|	|___ Variables
+	|	|___ Extend
+  |
+	|___Header Styles
+	|	|___ sticky header
+  |
+	|___tab
+	|
+  |___preloader
+  |
+	|___filter
+	|
+	|___swiper
+  | |___ hero 
+  | |___ featured courses 
+  | |___ testimonial
+  | |___ swiper pagination 
+  |
+	|___tooltip
+	|
+	|___accordion
+  | |___ fees 
+  | |___ faq 
+  | |___ shop 
+	|
+	|___ responsive
+	|
+	|___ tailwind directives
+
+***************************************************************/
+
+/* Variables */
+:root {
+  --blackColor: #000000;
+  --whiteColor: #ffffff;
+  --darkdeep1: #170f2f;
+  --primaryColor: #5f2ded;
+  --secondaryColor: #f2277e;
+  --blue: #0c63e4;
+  --blue2: rgba(13, 110, 253, 0.25);
+  --blueLight: #bdd4fa;
+  --blueLight1: #e7f1ff;
+  --borderColor: #eeeeee;
+  --lightGrey4: #a2a9b6;
+  --borderColor2: #dddddd;
+}
+.dark {
+  --blueLight1: #0c0e2b;
+  --borderColor: #312a57;
+  --borderColor2: #fff;
+}
+/* Extend */
+a {
+  display: inline-block;
+}
+a,
+button,
+span {
+  transition: 0.3s;
+}
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-hind);
+}
+
+/* sticky header */
+.sticky-header.active {
+  background: var(--whiteColor);
+  box-shadow: 0 0 50px 10px rgba(95, 45, 237, 0.15);
+}
+
+/* tab */
+.tab-link {
+  font-family: var(--font-hind);
+}
+.dark .tab-links .inActive {
+  background: var(--darkdeep1);
+}
+.tab-links .active::before {
+  width: 100%;
+}
+.courses-header .tab-links .active {
+  color: var(--primaryColor);
+}
+.course-details-tab .tab-links .active {
+  background: var(--primaryColor);
+  color: var(--whiteColor);
+}
+.product-details-course button.active {
+  color: var(--primaryColor);
+}
+/* perloder */
+.preloader.hide {
+  animation: preloaderHide 0.3s linear;
+}
+/* filter active style */
+.button-group .is-checked {
+  color: var(--primaryColor) !important;
+}
+
+.button-group .is-checked::before {
+  width: 100%;
+}
+/* swiper slider */
+.swiper {
+  width: 100%;
+}
+
+/* hero */
+.hero .swiper-button-prev,
+.hero .swiper-button-next,
+.featured-courses .swiper-button-prev,
+.featured-courses .swiper-button-next {
+  width: 50px;
+  height: 50px;
+  text-align: center;
+  z-index: 9999 !important;
+}
+.hero .swiper-button-prev::after,
+.hero .swiper-button-next::after,
+.featured-courses .swiper-button-prev::after,
+.featured-courses .swiper-button-next::after {
+  font-size: 20px;
+  color: var(--lightGrey4);
+  width: 50px;
+  height: 50px;
+  border: 1px solid var(--lightGrey4);
+  line-height: 50px;
+  border-radius: 100%;
+  transition: 0.3s;
+  opacity: 0;
+  visibility: hidden;
+  z-index: 9999 !important;
+}
+.hero .swiper-button-prev::after {
+  transform: translateX(30px);
+}
+.hero .swiper-button-next::after {
+  transform: translateX(-30px);
+}
+.hero .swiper-button-prev:hover::after,
+.hero .swiper-button-next:hover::after,
+.featured-courses .swiper-button-prev:hover::after,
+.featured-courses .swiper-button-next:hover::after {
+  color: var(--whiteColor);
+  background: var(--primaryColor);
+  border-color: var(--primaryColor);
+}
+
+.hero:hover .swiper-button-prev::after,
+.hero:hover .swiper-button-next::after {
+  opacity: 100;
+  visibility: visible;
+  transform: translateX(0);
+}
+/* featured courses */
+.featured-courses .swiper-button-prev::after,
+.featured-courses .swiper-button-next::after {
+  opacity: 100;
+  visibility: visible;
+  border-radius: 4px;
+}
+.featured-courses .swiper-button-prev::after {
+  transform: translateX(-4px);
+}
+.featured-courses .swiper-button-next::after {
+  transform: translateX(4px);
+}
+/* testimonial */
+.testimonial .swiper-button-prev {
+  transform: translateX(-8px);
+}
+
+.testimonial .swiper-button-next {
+  transform: translateX(8px);
+}
+.testimonial .swiper-button-prev::after,
+.testimonial .swiper-button-next::after {
+  display: none;
+}
+
+.testimonial .swiper {
+  position: static;
+}
+.testimonial .swiper-button-prev::before,
+.testimonial .swiper-button-next::before {
+  font-family: "IcoFont";
+  color: var(--blackColor);
+  font-size: 30px;
+  transition: 0.3s;
+}
+
+.testimonial .swiper-button-prev::before {
+  content: "\ea93";
+}
+.testimonial .swiper-button-next::before {
+  content: "\ea94";
+}
+.testimonial .swiper-button-next:hover:before,
+.testimonial .swiper-button-prev:hover::before {
+  color: var(--secondaryColor);
+}
+
+.testimonial2.swiper {
+  position: relative;
+}
+.testimonial2 .swiper-button-prev,
+.testimonial2 .swiper-button-next {
+  left: auto;
+  height: 60px;
+  width: 60px;
+  line-height: 60px;
+  text-align: center;
+  background: var(--whiteColor);
+  bottom: 0;
+  top: auto;
+  transition: all 0.3s;
+}
+.testimonial2 .swiper-button-prev:hover,
+.testimonial2 .swiper-button-next:hover {
+  background: var(--primaryColor);
+}
+.testimonial2 .swiper-button-prev {
+  right: 54px;
+}
+.testimonial2 .swiper-button-next {
+  right: 8px;
+}
+.testimonial .swiper-button-prev:hover::before,
+.testimonial .swiper-button-next:hover::before {
+  color: var(--whiteColor);
+}
+.dark .testimonial .swiper-button-prev::before,
+.dark .testimonial .swiper-button-next::before {
+  color: var(--whiteColor);
+}
+/* swiper pagination */
+.hero .swiper-pagination {
+  bottom: 80px;
+}
+
+.kindergarden .swiper-pagination {
+  bottom: 30px;
+}
+.machine-learning .swiper-pagination {
+  bottom: 20px;
+}
+
+.hero .card-slider .swiper-pagination {
+  bottom: -26px;
+}
+.hero .swiper-pagination .swiper-pagination-bullet {
+  width: 8px;
+  height: 8px;
+  background: transparent;
+  outline: 2px solid var(--blackColor);
+  outline-offset: 2px;
+  margin: 0 8px;
+}
+.machine-learning .swiper-pagination .swiper-pagination-bullet,
+.dark .machine-learning .swiper-pagination .swiper-pagination-bullet {
+  outline: 2px solid var(--whiteColor);
+}
+.dark .hero .swiper-pagination .swiper-pagination-bullet {
+  outline: 2px solid var(--whiteColor);
+}
+
+.hero .swiper-pagination .swiper-pagination-bullet-active,
+.dark .hero .swiper-pagination .swiper-pagination-bullet-active {
+  background: var(--primaryColor);
+  outline-color: var(--primaryColor);
+}
+.machine-learning .swiper-pagination .swiper-pagination-bullet-active,
+.dark .machine-learning .swiper-pagination .swiper-pagination-bullet-active {
+  background: var(--whiteColor);
+  outline: 2px solid var(--whiteColor);
+}
+.hero .card-slider .swiper-slide-shadow {
+  display: none;
+}
+
+/* animation */
+.play-state {
+  animation-play-state: running;
+}
+.play-state:hover {
+  animation-play-state: paused;
+}
+/* tooltip */
+.tooltip {
+  position: relative;
+}
+
+.tooltip::after,
+.tooltip::before {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  color: var(--whiteColor);
+  transform: translateX(-50%);
+  visibility: hidden;
+  opacity: 0;
+  font-size: 12px;
+  white-space: nowrap;
+  transition: 0.3s;
+}
+.tooltip::after {
+  content: attr(data-tip);
+  background-color: var(--blackColor);
+  padding: 5px 10px;
+  border-radius: 5px;
+  top: -40px;
+}
+
+.tooltip::before {
+  content: "";
+  width: 0;
+  height: 0;
+  border: 10px solid transparent;
+  border-top-color: var(--blackColor);
+  top: -13px;
+}
+.tooltip:hover::after,
+.tooltip:hover::before {
+  visibility: visible;
+  opacity: 100;
+}
+/* accordion */
+/* fees  */
+.fees .accordion-controller,
+.curriculum .accordion-controller {
+  font-family: var(--font-hind);
+}
+.fees .active .accordion-controller,
+.curriculum .active .accordion-controller {
+  /* background-color: #e7f1ff; */
+  background-color: var(--blueLight1);
+}
+.fees .active .accordion-controller svg,
+.curriculum .active .accordion-controller svg {
+  transform: rotate(-179.999deg);
+  fill: var(--blue);
+}
+/* create course */
+.create-course .active .accordion-controller {
+  background-color: transparent;
+  border-bottom: 1px solid var(--borderColor2);
+}
+
+.create-course .active .accordion-controller:focus {
+  box-shadow: 0 0 0 0.25rem var(--blue2);
+  border-bottom: 1px solid transparent;
+}
+.create-course .accordion-controller:focus {
+  box-shadow: 0 0 0 0.25rem var(--blue2);
+}
+/* faq */
+.faq .accordion-controller:focus {
+  outline-style: solid;
+  outline-color: var(--blueLight);
+}
+
+.faq .active .accordion-controller {
+  background-color: transparent;
+}
+/* shop */
+.shop .accordion.active p:first-child {
+  margin-top: 8px;
+  transform: translateX(0) rotate(90deg);
+}
+
+/* responsive */
+@media screen and (min-width: 768px) {
+  /* testimonila swiper */
+  .testimonial .swiper-button-prev {
+    transform: translateX(-32px);
+  }
+
+  .testimonial .swiper-button-next {
+    transform: translateX(32px);
+  }
+  .testimonial2 .swiper-button-prev {
+    right: 30px;
+  }
+  .testimonial2 .swiper-button-next {
+    right: 32px;
+  }
+  /* swiper pagination */
+  .hero .swiper-pagination {
+    bottom: 100px;
+  }
+
+  .kindergarden .swiper-pagination {
+    bottom: 30px;
+  }
+  .machine-learning .swiper-pagination {
+    bottom: 20px;
+  }
+  .hero .card-slider .swiper-pagination {
+    bottom: -26px;
+  }
+  .prev-btn,
+  .next-btn {
+    border-width: 15px;
+  }
+}
+@media screen and (min-width: 992px) {
+  .hero .swiper-pagination {
+    bottom: 80px;
+  }
+
+  .kindergarden .swiper-pagination {
+    bottom: 30px;
+  }
+  .machine-learning .swiper-pagination {
+    bottom: 20px;
+  }
+  .hero .card-slider .swiper-pagination {
+    bottom: -26px;
+  }
+}
+@media screen and (min-width: 1366px) {
+  /* swiper slider */
+  .hero .swiper-button-prev,
+  .hero .swiper-button-next {
+    width: 70px;
+    height: 70px;
+  }
+  .hero .swiper-button-prev::after,
+  .hero .swiper-button-next::after {
+    width: 70px;
+    height: 70px;
+    line-height: 70px;
+  }
+  /* testimonila swiper */
+  .testimonial .swiper-button-prev {
+    transform: translateX(-48px);
+  }
+
+  .testimonial .swiper-button-next {
+    transform: translateX(48px);
+  }
+  .testimonial2 .swiper-button-prev {
+    right: 13px;
+  }
+  .testimonial2 .swiper-button-next {
+    right: 48px;
+  }
+}
+
+/* // tailwind directives */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;

@@ -1,0 +1,38 @@
+[
+  {
+    "id": 1,
+    "name": "Mirnsdo Nmdied",
+    "subject": "Arithmatic",
+    "desig": "Manager"
+  },
+  {
+    "id": 2,
+    "name": "John Alexender",
+    "subject": "Economics",
+    "desig": "Manager"
+  },
+  {
+    "id": 3,
+    "name": "Nidns Janicds",
+    "subject": "English",
+    "desig": "Manager"
+  },
+  {
+    "id": 4,
+    "name": "Mbndie ndne mond",
+    "subject": "Finance",
+    "desig": "Manager"
+  },
+  {
+    "id": 5,
+    "name": "Mahmud Sujons",
+    "subject": "Marketing",
+    "desig": "Manager"
+  },
+  {
+    "id": 6,
+    "name": "Jons Emon",
+    "subject": "Web Development",
+    "desig": "Manager"
+  }
+]
