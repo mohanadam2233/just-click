@@ -1,119 +1,64 @@
+# app/apps/auth/models.py
 from __future__ import annotations
+
 from typing import Optional
 from datetime import datetime
+import enum
 
-from sqlalchemy import UniqueConstraint, Index
+from sqlalchemy import UniqueConstraint, Index, CheckConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from cmcp.config.database import db
-from cmcp.common.models.base import BaseModel, StatusEnum
+from cmcp.common.models.base import BaseModel
+
+
+class UserTypeEnum(str, enum.Enum):
+    STUDENT = "student"
+    TEACHER = "teacher"
+    STAFF = "staff"
+    ADMIN = "admin"
+
+
+class LinkedEntityTypeEnum(str, enum.Enum):
+    STUDENT_PROFILE = "student_profile"
+    STAFF_PROFILE = "staff_profile"
 
 
 class User(BaseModel):
-    """
-    Core user record. Keep it small: identity + auth + lifecycle.
-    Status uses your global StatusEnum (ACTIVE/INACTIVE).
-    """
     __tablename__ = "users"
 
-    # identity
-    username: Mapped[str] = mapped_column(db.String(150), unique=True, nullable=False, index=True)
-
-
-    # auth
+    username: Mapped[str] = mapped_column(db.String(150), nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(db.String(255), nullable=False)
 
-    # lifecycle
-    status: Mapped[StatusEnum] = mapped_column(
-        db.Enum(StatusEnum, name="user_status_enum"),
+    user_type: Mapped[UserTypeEnum] = mapped_column(
+        db.Enum(UserTypeEnum, name="user_type_enum"),
         nullable=False,
-        default=StatusEnum.ACTIVE,
+        index=True,
     )
-    last_login: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True))
 
-    # relationships (loaded when needed)
-    affiliations = db.relationship(
+    last_login: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True))
+    is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=True, nullable=False, index=True)
+
+    affiliations: Mapped[list["UserAffiliation"]] = db.relationship(
         "UserAffiliation",
         back_populates="user",
         cascade="all, delete-orphan",
-        lazy="select"
+        lazy="select",
     )
-
-    # ADD THESE MISSING RELATIONSHIPS
-    created_payment_entries = db.relationship(
-        "PaymentEntry",
-        back_populates="created_by",
-        foreign_keys="PaymentEntry.created_by_id"
-    )
-
-    created_expenses = db.relationship(
-        "Expense",
-        back_populates="created_by",
-        foreign_keys="Expense.created_by_id"
-    )
-
-    created_journal_entries = db.relationship(
-        "JournalEntry",
-        back_populates="created_by",
-        foreign_keys="JournalEntry.created_by_id"
-    )
-
-    submitted_period_closing_vouchers = db.relationship(
-        "PeriodClosingVoucher",
-        back_populates="submitted_by",
-        foreign_keys="PeriodClosingVoucher.submitted_by_id"
-    )
-
-    created_purchase_receipts = db.relationship("PurchaseReceipt", back_populates="created_by")
-    created_purchase_invoices = db.relationship("PurchaseInvoice", back_populates="created_by")
 
     __table_args__ = (
-        Index("ix_users_status", "status"),
+        UniqueConstraint("username", name="uq_users_username"),
+        Index("ix_users_enabled", "is_enabled"),
     )
-
-    def __repr__(self) -> str:
-        return f"<User id={self.id} username={self.username!r}>"
-
-
-class UserType(BaseModel):
-    """
-    High-level classification for a user in a given affiliation, e.g.:
-    - 'staff'
-    - 'student'
-    - 'guardian'
-    Keep both code and name for flexibility; code is a stable identifier.
-    """
-    __tablename__ = "user_types"
-
-
-    name: Mapped[str] = mapped_column(db.String(100), unique=True, nullable=False)            # e.g. 'Staff'
-    description: Mapped[Optional[str]] = mapped_column(db.String(255))
-
-    status: Mapped[StatusEnum] = mapped_column(
-        db.Enum(StatusEnum, name="user_type_status_enum"),
-        nullable=False,
-        default=StatusEnum.ACTIVE,
-    )
-
-    def __repr__(self) -> str:
-        return f"<UserType id={self.id} code={self.code!r}>"
 
 
 class UserAffiliation(BaseModel):
     """
-    Scopes a user to a company/branch and tags them with a user_type.
-    Optional 'linked_entity_*' lets you bind to a concrete domain record
-    (e.g., Employees.id, Students.id) without tight FK coupling.
-
-    Examples:
-      - user_id=1, company=10, branch=100, user_type='staff',
-       linked_entity_id=42
-      - user_id=1, company=10, branch=NULL, user_type='guardian',
-        linked_entity_id=7
+    Links a global User to a Company (University).
+    Also links to the actual profile record (StudentProfile or StaffProfile) using polymorphic reference.
     """
     __tablename__ = "user_affiliations"
 
-    # who
     user_id: Mapped[int] = mapped_column(
         db.BigInteger,
         db.ForeignKey("users.id", ondelete="CASCADE"),
@@ -121,57 +66,33 @@ class UserAffiliation(BaseModel):
         index=True,
     )
 
-    # scope
     company_id: Mapped[int] = mapped_column(
         db.BigInteger,
         db.ForeignKey("companies.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
-    branch_id: Mapped[Optional[int]] = mapped_column(
-        db.BigInteger,
-        db.ForeignKey("branches.id", ondelete="SET NULL"),
+
+    is_primary: Mapped[bool] = mapped_column(db.Boolean, default=False, nullable=False, index=True)
+    is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=True, nullable=False, index=True)
+
+    # Polymorphic link to profile table
+    linked_entity_type: Mapped[Optional[LinkedEntityTypeEnum]] = mapped_column(
+        db.Enum(LinkedEntityTypeEnum, name="linked_entity_type_enum"),
         nullable=True,
         index=True,
     )
+    linked_entity_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True, index=True)
 
-    # classification
-    user_type_id: Mapped[int] = mapped_column(
-        db.BigInteger,
-        db.ForeignKey("user_types.id", ondelete="RESTRICT"),
-        nullable=False,
-        index=True,
-    )
-
-    linked_entity_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True)
-
-    # quality of life
-    is_primary: Mapped[bool] = mapped_column(db.Boolean, nullable=False, default=False)
-
-    # relationships
-    user = db.relationship("User", back_populates="affiliations", lazy="select")
-    company = db.relationship("Company", lazy="select")
-    branch = db.relationship("Branch", lazy="select")
-    user_type = db.relationship("UserType", lazy="select")
+    user: Mapped["User"] = db.relationship("User", back_populates="affiliations", lazy="select")
 
     __table_args__ = (
-        # prevent duplicate affiliations for the same exact scope + type + entity
-        UniqueConstraint(
-            "user_id",
-            "company_id",
-            "branch_id",
-            "user_type_id",
-
-            "linked_entity_id",
-            name="uq_user_affiliation_scope",
+        UniqueConstraint("user_id", "company_id", name="uq_user_affiliation_user_company"),
+        # If you set a type, you must set an id (and vice versa)
+        CheckConstraint(
+            "(linked_entity_type is null and linked_entity_id is null) OR "
+            "(linked_entity_type is not null and linked_entity_id is not null)",
+            name="ck_user_affiliation_linked_entity_pair",
         ),
-        Index("ix_user_aff_primary", "user_id", "is_primary"),
-        Index("ix_user_aff_entity",  "linked_entity_id"),
+        Index("ix_user_aff_company_user", "company_id", "user_id"),
     )
-
-    def __repr__(self) -> str:
-        return (
-            f"<UserAffiliation user_id={self.user_id} company_id={self.company_id} "
-            f"branch_id={self.branch_id} user_type_id={self.user_type_id} "
-            f"entity={self.linked_entity_kind}:{self.linked_entity_id}>"
-        )
