@@ -1,58 +1,45 @@
-# app/auth/schemas.py
 from __future__ import annotations
+
 from typing import Optional, List
-from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class LoginRequest(BaseModel):
     username: str
     password: str
+    company_id: Optional[int] = None  # optional: lets UI choose active company
 
-
-class AffiliationOut(BaseModel):
-    id: int
-    company_id: int
-    branch_id: Optional[int]
-    user_type_id: int
-    user_type: str
-    is_primary: bool
-    linked_entity_id: Optional[int]
-
-
-class UserLite(BaseModel):
-    id: int
-    username: str
-
-
-class MeResponse(BaseModel):
-    ok: bool = True
-    user: UserLite
-
-
-class UserProfileResponse(BaseModel):
-    ok: bool = True
-    profile: dict  # simple dict; you can replace with a typed model later
-
-
-class LoginResponse(BaseModel):
-    ok: bool = True
-    user: UserLite
-    message: str = Field(default="Login successful")
-
-
-class LogoutResponse(BaseModel):
-    ok: bool = True
-    message: str = Field(default="Logout successful")
-
-
-
-class ResetPasswordRequest(BaseModel):
-    new_password: str
 
 class ChangeMyPasswordRequest(BaseModel):
     old_password: str
     new_password: str
 
-class UpdateAccountStatusRequest(BaseModel):
-    new_status: str  # "Active" | "Inactive"
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str
+
+
+class AffiliationOut(BaseModel):
+    id: int
+    company_id: int
+    is_primary: bool
+    is_enabled: bool
+    is_company_owner: bool
+    linked_entity_type: Optional[str] = None
+    linked_entity_id: Optional[int] = None
+
+
+class UserProfileOut(BaseModel):
+    user_id: int
+    username: str
+    user_type: str
+    is_system_owner: bool
+    last_login: Optional[str] = None
+
+    affiliations: List[AffiliationOut]
+
+    # RBAC (for frontend)
+    active_company_id: Optional[int] = None
+    roles: List[str] = []
+    permissions: List[str] = []
+    is_company_admin: bool = False
