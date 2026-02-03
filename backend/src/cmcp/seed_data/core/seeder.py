@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import logging
 from typing import Optional, Tuple
 
@@ -6,26 +7,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.application_education.groups.student_group_model import Section
-# Org models (kept for future tenant seeding)
-from app.application_org.models.company import Company, Branch, Department
-
-# Users / affiliations
-from app.auth.models.users import User, UserAffiliation, UserType
-from app.application_rbac.rbac_models import Role, UserRole
-
-# Password hashing
-try:
-    from app.common.security.passwords import hash_password
-except Exception:
-    from src.common.security.passwords import hash_password  # type: ignore
-
-# Seed constants
-from .data import (
-    DEFAULT_DEPARTMENTS,   # KEPT
-    DEFAULT_USER_TYPES,
-    SYSTEM_OWNER_USERS,
-)
+from cmcp.modules.auth.models import User, UserTypeEnum
+from cmcp.common.security.passwords import hash_password
+from cmcp.seed_data.core.data import SYSTEM_OWNER_USERS
 
 logger = logging.getLogger(__name__)
 
@@ -33,13 +17,12 @@ logger = logging.getLogger(__name__)
 # ------------------------------------------------------------
 # helpers
 # ------------------------------------------------------------
-
 def _get_or_create(
     db: Session,
     model,
     *,
     defaults: Optional[dict] = None,
-    **filters
+    **filters,
 ) -> Tuple[object, bool]:
     obj = db.scalar(select(model).filter_by(**filters))
     if obj:
@@ -48,7 +31,7 @@ def _get_or_create(
     obj = model(**{**filters, **(defaults or {})})
     db.add(obj)
     try:
-        db.flush()
+        db.flush([obj])
         return obj, True
     except IntegrityError:
         db.rollback()
@@ -59,102 +42,70 @@ def _safe_hash(plain: str) -> str:
     return hash_password(plain)
 
 
+
 # ------------------------------------------------------------
 # seeders
 # ------------------------------------------------------------
-GLOBAL_SECTIONS = ["A", "B", "C", "D", "E", "F", "G"]
-
-def _seed_global_sections(db: Session) -> None:
-    logger.info("Seeding global education sections...")
-
-    created = 0
-    for name in GLOBAL_SECTIONS:
-        name = name.strip().upper()
-        exists = db.scalar(select(Section).where(Section.section_name == name))
-        if exists:
-            continue
-
-        db.add(Section(section_name=name))
-        created += 1
-
-    if created:
-        db.flush()
-
-    logger.info("✅ Sections seeded (created=%s)", created)
-def _seed_user_types(db: Session) -> None:
-    logger.info("Seeding user types...")
-
-    DESCRIPTIONS = {
-        "Owner": "Company owner / primary controller for a tenant.",
-        "System User": "Generic system user type for day-to-day users.",
-        "System Administrator": "System-wide administration and management.",
-    }
-
-    for name in DEFAULT_USER_TYPES:
-        _get_or_create(
-            db,
-            UserType,
-            name=name,
-            defaults={"description": DESCRIPTIONS.get(name, name)},
-        )
-
-    logger.info("✅ User types seeded.")
-
-
 def _seed_system_owner_users(db: Session) -> None:
     """
     Create global system owner users.
-    NO companies. NO affiliations.
+    ✅ No companies
+    ✅ No affiliations
+    ✅ No user_roles (role assignment is per company)
     """
-    logger.info("Seeding global system owner users (no affiliations)...")
-
-    system_admin_role = db.scalar(select(Role).filter_by(name="System Admin"))
-    if not system_admin_role:
-        logger.error("❌ Role 'System Admin' not found. Cannot seed system owners.")
-        return
+    logger.info("Seeding system owner users...")
 
     for spec in SYSTEM_OWNER_USERS:
-        user, _ = _get_or_create(
+        username = spec["username"].strip()
+
+        user, created = _get_or_create(
             db,
             User,
-            username=spec["username"].strip(),
-            defaults={"password_hash": _safe_hash(spec["password"])},
-        )
-
-        _get_or_create(
-            db,
-            UserRole,
-            user_id=user.id,
-            role_id=system_admin_role.id,
-            company_id=None,          # SYSTEM scope
-            branch_id=None,           # SYSTEM scope
-            user_affiliation_id=None, # NO affiliation
+            username=username,
             defaults={
-                "is_active": True,
-                "assigned_by": None,
+                "password_hash": _safe_hash(spec["password"]),
+                "user_type": UserTypeEnum.ADMIN,   # sensible default for sys owner
+                "is_system_owner": True,
+                "is_enabled": True,
             },
         )
 
-    logger.info("✅ System owner users created.")
+        # If user already existed, ensure flags are correct (idempotent seed)
+        changed = False
+        if getattr(user, "is_system_owner", False) is not True:
+            user.is_system_owner = True
+            changed = True
+        if getattr(user, "is_enabled", True) is not True:
+            user.is_enabled = True
+            changed = True
+        if getattr(user, "user_type", None) != UserTypeEnum.ADMIN:
+            user.user_type = UserTypeEnum.ADMIN
+            changed = True
+
+        if changed:
+            db.flush([user])
+
+        logger.info("✅ %s system owner: %s", "Created" if created else "Ensured", username)
+
+    logger.info("✅ System owner users seeded.")
 
 
 # ------------------------------------------------------------
-# PUBLIC ENTRY POINT (THIS is what flask seed core should call)
+# PUBLIC ENTRY POINT (called by seed cli: seed core)
 # ------------------------------------------------------------
-
 def seed_core(db: Session) -> None:
     """
     CORE seeding only:
-      - UserTypes
-      - System owner users (System Admins)
+      - system owner users (platform admins)
+      - optional: global sections
 
     ❌ No companies
-    ❌ No branches
-    ❌ No departments
+    ❌ No affiliations
+    ❌ No user_roles (company-scoped)
     """
-    logger.info("🚀 Seeding CORE system data...")
+    logger.info("🚀 Seeding CORE data...")
 
-    _seed_user_types(db)
     _seed_system_owner_users(db)
-    _seed_global_sections(db)
+
+
     logger.info("🎉 Core seeding complete.")

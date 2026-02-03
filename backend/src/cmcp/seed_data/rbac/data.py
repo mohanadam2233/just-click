@@ -1,181 +1,180 @@
 from __future__ import annotations
 from typing import Dict, List, Tuple
 
+# ─────────────────────────────────────────────────────────────
+# Constants
+# ─────────────────────────────────────────────────────────────
 WILDCARD_DOCTYPE_NAME = "*"
 WILDCARD_ACTION_NAME = "*"
 
+# ─────────────────────────────────────────────────────────────
+# Actions
+# ─────────────────────────────────────────────────────────────
+# MANAGE expands to: READ, CREATE, UPDATE, DELETE, UPLOAD, DOWNLOAD
 DEFAULT_ACTIONS: List[Tuple[str, str]] = [
-    ("READ",   "View a resource"),
-    ("CREATE", "Create a new resource"),
-    ("UPDATE", "Modify a resource"),
-    ("DELETE", "Permanently remove a resource"),
+    ("READ",     "View details"),
+    ("CREATE",   "Add new record"),
+    ("UPDATE",   "Edit record"),
+    ("DELETE",   "Remove record"),
 
-    ("SUBMIT", "Move a document to submitted/posted state"),
-    ("CANCEL", "Cancel a submitted document"),
-    ("AMEND",  "Amend a submitted document"),
+    ("UPLOAD",   "Upload files (PDF/PPT)"),
+    ("DOWNLOAD", "Download files"),
 
-    ("PRINT",  "Generate a printable version"),
-    ("EXPORT", "Export data"),
-    ("IMPORT", "Import bulk data"),
+    ("MANAGE",   "Full Control (CRUD + Upload/Download)"),
 
-    ("MANAGE", "CRUD = READ, CREATE, UPDATE, DELETE"),
-    ("ASSIGN", "Assign roles or permissions"),
-
-    (WILDCARD_ACTION_NAME, "Unrestricted access to all actions within a resource."),
+    (WILDCARD_ACTION_NAME, "Superuser access"),
 ]
 
-# Minimal modules for now
+# ─────────────────────────────────────────────────────────────
+# Modules (UI grouping only)
+# NOTE: Your DocType table does NOT store module.
+# This is only for organizing seed data / UI menus later.
+# ─────────────────────────────────────────────────────────────
 DEFAULT_DOCTYPE_MODULES = [
-    "System",
     "Access Control",
-    "Education",
-    "Exams",
-    "Fees",
+    "Academic",
+    "People",
+    "Content",
 ]
 
-# ✅ Only what you said you need (courses, academic year/semester, faculty/department, etc.)
+# ─────────────────────────────────────────────────────────────
+# DocType registry names
+# Must match your app’s registry names (human readable).
+# ─────────────────────────────────────────────────────────────
 DEFAULT_DOCTYPE_MAPPINGS: Dict[str, List[str]] = {
-    "System": [
-        "Company",
-    ],
     "Access Control": [
-        "User",
-        "User Affiliation",
         "Role",
         "User Role",
-        "Action",
-        "DocType",
         "Permission",
-        "Role Permission",
-        "Permission Override",
+        "DocType",
+        "Action",
     ],
-    "Education": [
-        "Academic Year",
-        "Academic Term",     # semester/term
+
+    "Academic": [
         "Faculty",
         "Department",
-        "Program",
+        "Academic Year",
+        "Academic Term",
         "Course",
-        "Subject",
-        "Class",
-        "Instructor",
-        "Student",
-        "Enrollment",
-        "Attendance",
+        "Chapter",
     ],
-    "Exams": [
-        "Assessment",
-        "Assessment Mark",
-        "Grade Scale",
+
+    "People": [
+        "Student Profile",
+        "Staff Profile",
+        "Classroom",
     ],
-    "Fees": [
-        "Fee Category",
-        "Fee Structure",
-        "Fee Invoice",
-        "Fee Payment",
+
+    "Content": [
+        "Material",
+        "Student Material Interaction",
     ],
 }
 
-# Roles: simple + standard
+# ─────────────────────────────────────────────────────────────
+# Roles
+# ─────────────────────────────────────────────────────────────
 DEFAULT_ROLES = [
-    {"name": "System Owner", "scope": "SYSTEM",  "description": "Platform owner. Full access across all companies."},
-    {"name": "Company Owner", "scope": "COMPANY", "description": "Tenant owner. Full access within the company."},
+    {"name": "Administrator", "description": "System admin/developer. Full access to everything."},
+    {"name": "Super Admin",   "description": "University owner. Full access within their company."},
 
-    {"name": "Admin",   "scope": "COMPANY", "description": "University administrator."},
-    {"name": "Staff",   "scope": "COMPANY", "description": "General staff."},
-    {"name": "Teacher", "scope": "COMPANY", "description": "Academic staff."},
-    {"name": "Student", "scope": "COMPANY", "description": "Student portal access."},
+    {"name": "Academic Staff", "description": "Registrar/office staff. Curriculum + enrollment support."},
+
+    {"name": "Teacher", "description": "Lecturer. Uploads materials, manages chapters."},
+    {"name": "Student", "description": "Learner. Views and downloads materials."},
 ]
 
-# Role permission mapping (simple, sane defaults)
+# ─────────────────────────────────────────────────────────────
+# Permissions Matrix
+# ─────────────────────────────────────────────────────────────
 ROLE_PERMISSION_MAP: Dict[str, List[str]] = {
-    "System Owner": [
+    # 1) Administrator (system)
+    "Administrator": [
         f"{WILDCARD_DOCTYPE_NAME}:{WILDCARD_ACTION_NAME}",
     ],
 
-    "Company Owner": [
-        f"{WILDCARD_DOCTYPE_NAME}:{WILDCARD_ACTION_NAME}",
-    ],
+    # 2) Super Admin (company owner)
+    "Super Admin": [
+        # Company settings handled elsewhere (affiliation is_company_owner etc),
+        # here we grant broad app-level access.
+        "Role:READ",
+        "User Role:MANAGE",
+        "Permission:READ",
+        "DocType:READ",
+        "Action:READ",
 
-    "Admin": [
-        # Manage education setup
-        "Academic Year:MANAGE",
-        "Academic Term:MANAGE",
         "Faculty:MANAGE",
         "Department:MANAGE",
-        "Program:MANAGE",
+        "Academic Year:MANAGE",
+        "Academic Term:MANAGE",
         "Course:MANAGE",
-        "Subject:MANAGE",
-        "Class:MANAGE",
+        "Chapter:MANAGE",
+        "Classroom:MANAGE",
 
-        # People
-        "Instructor:MANAGE",
-        "Student:MANAGE",
+        "Student Profile:MANAGE",
+        "Staff Profile:MANAGE",
 
-        # Enrollments + attendance
-        "Enrollment:MANAGE",
-        "Attendance:MANAGE",
-
-        # Exams
-        "Assessment:MANAGE",
-        "Assessment Mark:MANAGE",
-        "Grade Scale:MANAGE",
-
-        # Fees
-        "Fee Category:MANAGE",
-        "Fee Structure:MANAGE",
-        "Fee Invoice:MANAGE",
-        "Fee Payment:MANAGE",
-
-        # Access control (not full manage by default, but can read)
-        "User:READ",
-        "Role:READ",
-        "User Role:READ",
+        "Material:MANAGE",
+        "Student Material Interaction:READ",
     ],
 
-    "Staff": [
-        "Student:READ",
-        "Enrollment:MANAGE",
-        "Attendance:MANAGE",
+    # 3) Academic Staff
+    "Academic Staff": [
+        "User Role:READ",
 
-        "Fee Invoice:MANAGE",
-        "Fee Payment:MANAGE",
+        "Student Profile:MANAGE",
+        "Staff Profile:READ",
 
-        # Read structure
+        "Faculty:READ",
+        "Department:READ",
+        "Academic Year:MANAGE",
+        "Academic Term:MANAGE",
+        "Course:MANAGE",
+        "Classroom:MANAGE",
+
+        "Chapter:READ",
+        "Material:READ",
+        "Material:DOWNLOAD",
+    ],
+
+    # 4) Teacher
+    "Teacher": [
+        "Staff Profile:READ",
+
+        "Faculty:READ",
+        "Department:READ",
         "Academic Year:READ",
         "Academic Term:READ",
-        "Program:READ",
         "Course:READ",
-        "Class:READ",
+        "Classroom:READ",
+
+        "Student Profile:READ",
+
+        "Chapter:MANAGE",
+        "Material:CREATE",
+        "Material:READ",
+        "Material:UPDATE",
+        "Material:DELETE",
+        "Material:UPLOAD",
+        "Material:DOWNLOAD",
     ],
 
-    "Teacher": [
-        "Student:READ",
-        "Class:READ",
-        "Course:READ",
-        "Subject:READ",
-
-        "Attendance:MANAGE",
-
-        "Assessment:READ",
-        "Assessment Mark:MANAGE",
-        "Grade Scale:READ",
-    ],
-
+    # 5) Student
     "Student": [
-        # mostly read
-        "Program:READ",
+        "Student Profile:READ",
+
+        "Faculty:READ",
+        "Department:READ",
+        "Academic Year:READ",
+        "Academic Term:READ",
         "Course:READ",
-        "Subject:READ",
-        "Class:READ",
+        "Chapter:READ",
 
-        "Enrollment:READ",
-        "Attendance:READ",
+        "Material:READ",
+        "Material:DOWNLOAD",
 
-        "Assessment:READ",
-        "Assessment Mark:READ",
-
-        "Fee Invoice:READ",
-        "Fee Payment:READ",
+        "Student Material Interaction:CREATE",
+        "Student Material Interaction:READ",
+        "Student Material Interaction:UPDATE",
     ],
 }

@@ -4,7 +4,7 @@ import random
 from typing import Optional
 from cryptography.fernet import InvalidToken
 # Import the single Fernet instance configured from your .env
-from config.settings import FERNET_INSTANCE
+from cmcp.config.settings import FERNET_INSTANCE
 
 
 def generate_password() -> str:

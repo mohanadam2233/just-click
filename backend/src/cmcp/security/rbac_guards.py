@@ -8,8 +8,19 @@ from flask import g, jsonify, request
 from cmcp.security.rbac_context import AuthContext, build_auth_context
 
 
-def attach_auth_context_to_g(*, user_id: int, company_id: Optional[int] = None) -> None:
+# -------------------------
+# Attach context
+# -------------------------
+def attach_auth_context(*, user_id: int, company_id: Optional[int] = None) -> None:
+    """
+    Canonical attach function used by middleware.
+    """
     g.auth = build_auth_context(user_id=user_id, company_id=company_id)
+
+
+# Backward/alt name (optional)
+def attach_auth_context_to_g(*, user_id: int, company_id: Optional[int] = None) -> None:
+    attach_auth_context(user_id=user_id, company_id=company_id)
 
 
 def _ctx() -> Optional[AuthContext]:
@@ -24,7 +35,6 @@ def ensure_company_scope(*, company_id: int) -> None:
     if not ctx:
         raise PermissionError("Unauthorized")
 
-    # system owner bypass
     if ctx.is_system_owner:
         return
 

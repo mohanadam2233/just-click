@@ -1,39 +1,15 @@
-from typing import List, Dict
+from __future__ import annotations
+from typing import Dict, List
 
 # ------------------------------------------------------------
-# Lean, reusable departments (KEEP AS-IS)
+# System owner accounts (global / platform admins)
 # ------------------------------------------------------------
-
-DEFAULT_DEPARTMENTS: List[str] = [
-    "Administration",
-    "Finance",
-    "Sales",
-    "Purchasing",
-    "Logistics",
-    "Operations",
-    "Human Resources",
-    "IT",
-    "Customer Service",
-    "Warehouse",
-]
-
-# ------------------------------------------------------------
-# User types seeded first
-# ------------------------------------------------------------
-
-DEFAULT_USER_TYPES: List[str] = [
-    "Owner",
-    "System User",
-    "System Administrator",
-]
-
-# ------------------------------------------------------------
-# System-level owners (users only, no affiliations)
-# ------------------------------------------------------------
-
-SYSTEM_OWNER_USERS: List[Dict] = [
+# These users have:
+# - is_system_owner=True
+# - no affiliations
+# - no company roles (UserRole requires company_id)
+SYSTEM_OWNER_USERS: List[Dict[str, str]] = [
     {"username": "sys_owner1", "password": "ChangeMe!123"},
     {"username": "sys_owner2", "password": "ChangeMe!123"},
 ]
 
-# ❌ INITIAL_COMPANIES REMOVED (intentionally)
