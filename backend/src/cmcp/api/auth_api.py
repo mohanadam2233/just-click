@@ -69,13 +69,8 @@ def logout():
     return resp
 
 
-# @bp.get("/me")
-# def me():
-#     # This line is correct and will now work properly
-#     # because the other checks are in place.
-#     user_profile = get_current_user()
-#
-#     return api_success(data={"user": user_profile})
+
+
 @bp.get("/me")
 def me():
     # ensures session & sets g.current_user / g.auth
@@ -176,3 +171,16 @@ def update_user_account_status(user_id: int):
         return api_error(f"Invalid request: {e}", status_code=400)
     except Exception as e:
         return api_error(f"An unexpected error occurred: {e}", status_code=500)
+
+
+
+
+
+
+
+from cmcp.security.rbac_guards import require_company_and_permission
+
+@bp.get("/materials")
+@require_company_and_permission(doctype="Material", action="READ")
+def list_materials():
+    ...

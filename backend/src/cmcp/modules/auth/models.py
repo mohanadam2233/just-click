@@ -36,6 +36,8 @@ class User(BaseModel):
         index=True,
     )
 
+    is_system_owner: Mapped[bool] = mapped_column(db.Boolean, default=False, nullable=False, index=True)
+
     last_login: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True))
     is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=True, nullable=False, index=True)
 
@@ -75,6 +77,8 @@ class UserAffiliation(BaseModel):
 
     is_primary: Mapped[bool] = mapped_column(db.Boolean, default=False, nullable=False, index=True)
     is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=True, nullable=False, index=True)
+
+    is_company_owner: Mapped[bool] = mapped_column(db.Boolean, default=False, nullable=False, index=True)
 
     # Polymorphic link to profile table
     linked_entity_type: Mapped[Optional[LinkedEntityTypeEnum]] = mapped_column(
