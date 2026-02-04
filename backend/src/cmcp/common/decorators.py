@@ -6,7 +6,7 @@ from typing import Callable, Optional
 import logging
 
 from flask import request, jsonify
-from config.redis_config import get_redis_kv
+from cmcp.config.redis_config import get_redis_kv
 
 log = logging.getLogger(__name__)
 
