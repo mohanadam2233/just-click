@@ -1,16 +1,20 @@
-
-# core/middleware/session_auth.py
 import logging
+from typing import Optional
+
 from flask import g, session, request, abort
+
+from sqlalchemy import select
+
+from cmcp.config.database import db
+from cmcp.modules.auth.models import User  # ✅ your new model
 from cmcp.modules.auth.service.auth_service import AuthService
 from cmcp.common.cache.session_manager import get_cached_user_status, is_session_indexed
-from cmcp.common.models.base import StatusEnum
-from cmcp.security.rbac_guards import attach_auth_context
-# Initialize the AuthService instance
+from cmcp.security.rbac_guards import attach_auth_context  # ✅ we created this
+
+
 _auth = AuthService()
 log = logging.getLogger(__name__)
 
-# List of public endpoints that don't need a session check
 AUTH_WHITELIST = {
     "/api/auth/login",
     "/api/auth/logout",
@@ -18,70 +22,116 @@ AUTH_WHITELIST = {
 }
 
 
+def _requested_company_id() -> Optional[int]:
+    """
+    Pick active company for this request.
+    Priority:
+      1) Header: X-Company-Id
+      2) Query: company_id
+    """
+    raw = request.headers.get("X-Company-Id") or request.args.get("company_id")
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except Exception:
+        return None
+
+
+def _db_user_is_enabled(user_id: int) -> Optional[bool]:
+    """
+    Fallback check if Redis does not have status cached.
+    Returns:
+      True / False if user exists
+      None if user not found
+    """
+    s = db.session
+    # Only fetch one boolean column
+    return s.scalar(select(User.is_enabled).where(User.id == int(user_id)))
+
+
+def _status_allows_access(cached_status: Optional[str], *, user_id: int) -> bool:
+    """
+    Decide if user is enabled using:
+      1) Redis cached value if present
+      2) DB fallback if Redis missing
+    Accepts common encodings:
+      "enabled"/"disabled", "true"/"false", "1"/"0"
+    """
+    if cached_status is not None:
+        v = str(cached_status).strip().lower()
+        if v in {"enabled", "true", "1", "yes"}:
+            return True
+        if v in {"disabled", "false", "0", "no"}:
+            return False
+        # unknown value => fallback to DB (safe)
+        log.warning("Unknown cached user_status=%r for user_id=%s; falling back to DB.", cached_status, user_id)
+
+    enabled = _db_user_is_enabled(user_id)
+    if enabled is None:
+        # user not found => treat as invalid session
+        return False
+    return bool(enabled)
+
+
 def before_request_session_auth():
     """
-    Middleware that performs all session and user authentication checks
-    and loads the user profile for protected endpoints.
+    Middleware:
+      - verifies session user_id exists
+      - gates disabled users (User.is_enabled)
+      - ensures session is indexed (anti-stolen-cookie)
+      - loads cached profile into g.current_user
+      - attaches RBAC AuthContext into g.auth (non-fatal)
     """
-    # Initialize current user as None for every new request
     g.current_user = None
+    g.auth = None
 
-    # ✅ Skip CORS preflight. OPTIONS usually has no cookies.
+    # Skip preflight (no cookies usually)
     if request.method == "OPTIONS":
         return
 
-    # Bypass auth for public endpoints
+    # Public endpoints
     if request.path in AUTH_WHITELIST:
         return
 
-    # Log incoming request info
-    log.info(f"--- Request to {request.path} ---")
-    log.info(f"Flask session object before processing: {dict(session)}")
-
-    # Check if user_id exists in session
     user_id = session.get("user_id")
     if not user_id:
-        log.warning("User ID not found in session. User is anonymous. Aborting with 401.")
-        # `require_login_globally` will handle the 401 response for protected endpoints
-        return
-
-    log.info(f"Found user_id '{user_id}' in session. Performing security checks...")
+        return  # global require-login handler will respond
 
     try:
-        # --- HARD GATE 1: Check cached account status ---
-        cached_status = get_cached_user_status(user_id)
-        if cached_status and cached_status != StatusEnum.ACTIVE.value:
-            log.warning(f"User {user_id} is not active. Clearing session.")
-            session.clear()
-            # It's better to use abort(403) for account status issues
-            abort(403, description="Your account is locked.")
+        uid = int(user_id)
+    except Exception:
+        session.clear()
+        abort(401, description="Invalid session user id.")
 
-        # --- HARD GATE 2: Check session indexing ---
-        if not is_session_indexed(user_id):
-            log.warning(f"Session for user {user_id} is not indexed. Invalid session or timing issue.")
-            # Do NOT remove the session from Redis here, as it might be a temporary
-            # state right after login. Just clear the browser session and force a re-login.
+    try:
+        # --- HARD GATE 1: enabled check (Redis -> DB fallback) ---
+        cached_status = get_cached_user_status(uid)
+        if not _status_allows_access(cached_status, user_id=uid):
+            session.clear()
+            abort(403, description="Your account is disabled.")
+
+        # --- HARD GATE 2: session indexing ---
+        if not is_session_indexed(uid):
             session.clear()
             abort(401, description="Invalid session. Please log in again.")
 
-        # --- FINAL STEP: Load user profile from cache (only if checks pass) ---
-        prof = _auth.get_cached_profile(int(user_id))
-
-        if prof and prof.get("ok"):
-            g.current_user = prof.get("profile")
-            # ✅ Attach RBAC affiliation/permission context for downstream guards (non-fatal)
-            try:
-                attach_auth_context(int(user_id))
-            except Exception as e:
-                log.warning(f"attach_auth_context failed for user {user_id}: {e}", exc_info=True)
-
-            log.info(f"✅ Successfully loaded profile for user {user_id} into g.current_user.")
-        else:
-            log.warning(f"Could not retrieve profile for user {user_id}. Profile is invalid. Clearing session.")
-            session.clear()  # Clear session if profile is invalid
+        # --- Load profile (cache) ---
+        prof = _auth.get_cached_profile(uid)
+        if not prof or not prof.get("ok"):
+            session.clear()
             abort(401, description="Session expired or invalid. Please log in again.")
 
+        g.current_user = prof.get("profile")
+
+        # --- Attach RBAC context (non-fatal) ---
+        try:
+            cid = _requested_company_id()
+            attach_auth_context(user_id=uid, company_id=cid)
+        except Exception as e:
+            log.warning("attach_auth_context failed uid=%s err=%s", uid, e, exc_info=True)
+
     except Exception as e:
-        log.error(f"An exception occurred during authentication for {user_id}: {e}", exc_info=True)
+        log.error("Session auth middleware error uid=%s err=%s", uid, e, exc_info=True)
         session.clear()
         abort(500)

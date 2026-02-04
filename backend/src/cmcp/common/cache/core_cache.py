@@ -4,7 +4,7 @@ from __future__ import annotations
 import json, random, logging
 from typing import Any, Optional
 
-from config.redis_config import get_redis_kv
+from cmcp.config.redis_config import get_redis_kv
 from .local_cache import get_local_cache
 
 log = logging.getLogger(__name__)

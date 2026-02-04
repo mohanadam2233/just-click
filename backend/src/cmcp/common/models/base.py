@@ -8,7 +8,7 @@ import uuid
 from sqlalchemy import func, select, BigInteger, String, ForeignKey, Boolean
 from sqlalchemy.inspection import inspect as sa_inspect
 from sqlalchemy.orm import Mapped, mapped_column
-from config.database import db
+from cmcp.config.database import db
 
 # ---------- Mixins ----------
 
