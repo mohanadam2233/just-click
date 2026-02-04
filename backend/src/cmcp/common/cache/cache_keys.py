@@ -44,8 +44,19 @@ def build_list_cache_key(
         base += f":{_hash_params(params)}"
     return base
 
-def build_user_profile_cache_key(user_id: int, version: int, epoch: int = 1) -> str:
-    return f"user_profile:e{epoch}:v{version}:{user_id}"
+def build_user_profile_cache_key(
+    user_id: int,
+    version: int,
+    epoch: int = 1,
+    *,
+    company_id: Optional[int] = None,
+) -> str:
+    """
+    User profile cache MUST be scoped by company because roles/permissions differ.
+    company_id=None means "no active company selected" (still a valid profile shape).
+    """
+    c = int(company_id) if company_id is not None else 0
+    return f"user_profile:e{epoch}:v{version}:{user_id}:c{c}"
 
 def build_scoped_user_profile_cache_key(
     user_id: int,

@@ -1,14 +1,14 @@
-# app/apps/rbac/models.py
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, List
 
 from sqlalchemy import UniqueConstraint, Index
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.dialects.postgresql import CITEXT
 
 from cmcp.config.database import db
 from cmcp.common.models.base import BaseModel, TenantMixin
+
 
 
 class DocType(BaseModel):
@@ -23,7 +23,13 @@ class DocType(BaseModel):
     description: Mapped[Optional[str]] = mapped_column(db.Text)
 
     is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=True, nullable=False, index=True)
-
+    # ✅ backref relationship
+    permissions: Mapped[List["Permission"]] = relationship(
+        "Permission",
+        back_populates="doctype",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     __table_args__ = (
         Index("ix_doctype_enabled", "is_enabled"),
     )
@@ -42,7 +48,12 @@ class Action(BaseModel):
     description: Mapped[Optional[str]] = mapped_column(db.Text)
 
     is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=True, nullable=False, index=True)
-
+    permissions: Mapped[List["Permission"]] = relationship(
+        "Permission",
+        back_populates="action",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
     __table_args__ = (
         Index("ix_actions_enabled", "is_enabled"),
     )
@@ -70,6 +81,16 @@ class Permission(BaseModel):
     )
 
     is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=True, nullable=False, index=True)
+    # ✅ relationships required by your seeder (Permission.doctype / Permission.action)
+    doctype: Mapped["DocType"] = relationship("DocType", back_populates="permissions")
+    action: Mapped["Action"] = relationship("Action", back_populates="permissions")
+
+    role_permissions: Mapped[List["RolePermission"]] = relationship(
+        "RolePermission",
+        back_populates="permission",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
 
     __table_args__ = (
         UniqueConstraint("doctype_id", "action_id", name="uq_perm_doctype_action"),
@@ -90,6 +111,13 @@ class Role(BaseModel):
     description: Mapped[Optional[str]] = mapped_column(db.Text)
 
     is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=True, nullable=False, index=True)
+    role_permissions: Mapped[List["RolePermission"]] = relationship(
+        "RolePermission",
+        back_populates="role",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+    )
+
 
     __table_args__ = (
         Index("ix_roles_enabled", "is_enabled"),
@@ -117,6 +145,9 @@ class RolePermission(BaseModel):
     )
 
     is_allowed: Mapped[bool] = mapped_column(db.Boolean, default=True, nullable=False)
+    # ✅ relationships
+    role: Mapped["Role"] = relationship("Role", back_populates="role_permissions")
+    permission: Mapped["Permission"] = relationship("Permission", back_populates="role_permissions")
 
     __table_args__ = (
         UniqueConstraint("role_id", "permission_id", name="uq_role_perm"),

@@ -111,10 +111,7 @@ def reset_user_password(user_id: int):
 
 
 
-
-from cmcp.security.rbac_guards import require_company_and_permission
-
-@bp.get("/materials")
-@require_company_and_permission(doctype="Material", action="READ")
-def list_materials():
-    ...
+# @bp.get("/materials")
+# @require_company_and_permission(doctype="Material", action="READ")
+# def list_materials():
+#     ...

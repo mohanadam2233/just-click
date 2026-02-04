@@ -120,12 +120,10 @@ class AuthService:
         }
 
     def get_cached_profile(self, user_id: int, company_id: Optional[int] = None) -> Dict[str, Any]:
-        """
-        Cache key should include company_id because permissions/roles depend on active company.
-        """
         return get_or_build_user_profile(
             user_id=int(user_id),
+            company_id=company_id,  # ✅ IMPORTANT
             builder=lambda: self.build_user_profile_dict(int(user_id), company_id),
             ttl=3 * 3600,
-            # if your cache helper supports extra params, add company_id; if not, embed in builder logic only
         )
+
