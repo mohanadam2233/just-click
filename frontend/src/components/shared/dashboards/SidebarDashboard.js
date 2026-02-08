@@ -33,49 +33,27 @@ const SidebarDashboard = () => {
             </svg>
           ),
         },
-        {
-          name: "My Profile",
-          path: "/dashboards/admin-profile",
-          icon: (
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="feather feather-user"
-            >
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-              <circle cx="12" cy="7" r="4"></circle>
-            </svg>
-          ),
-        },
-        {
-          name: "Message",
-          path: "/dashboards/admin-message",
-          tag: 12,
-          icon: (
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="feather feather-book-open"
-            >
-              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
-              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
-            </svg>
-          ),
-        },
+        // {
+        //   name: "Message",
+        //   path: "/dashboards/admin-message",
+        //   tag: 12,
+        //   icon: (
+        //     <svg
+        //       xmlns="http://www.w3.org/2000/svg"
+        //       width="16"
+        //       height="24"
+        //       viewBox="0 0 24 24"
+        //       fill="none"
+        //       stroke="currentColor"
+        //       strokeWidth="2"
+        //       strokeLinecap="round"
+        //       strokeLinejoin="round"
+        //       className="feather feather-bookmark"
+        //     >
+        //       <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+        //     </svg>
+        //   ),
+        // },
         {
           name: "Courses",
           path: "/dashboards/admin-course",
@@ -117,8 +95,8 @@ const SidebarDashboard = () => {
           ),
         },
         {
-          name: "Quiz Attempts",
-          path: "/dashboards/admin-quiz-attempts",
+          name: "My Profile",
+          path: "/dashboards/admin-profile",
           icon: (
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -130,14 +108,35 @@ const SidebarDashboard = () => {
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="feather feather-help-circle"
+              className="feather feather-user"
             >
-              <circle cx="12" cy="12" r="10"></circle>
-              <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
-              <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+              <circle cx="12" cy="7" r="4"></circle>
             </svg>
           ),
         },
+        // {
+        //   name: "Quiz Attempts",
+        //   path: "/dashboards/admin-quiz-attempts",
+        //   icon: (
+        //     <svg
+        //       xmlns="http://www.w3.org/2000/svg"
+        //       width="16"
+        //       height="24"
+        //       viewBox="0 0 24 24"
+        //       fill="none"
+        //       stroke="currentColor"
+        //       strokeWidth="2"
+        //       strokeLinecap="round"
+        //       strokeLinejoin="round"
+        //       className="feather feather-help-circle"
+        //     >
+        //       <circle cx="12" cy="12" r="10"></circle>
+        //       <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+        //       <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        //     </svg>
+        //   ),
+        // },
       ],
     },
     {
@@ -700,8 +699,8 @@ const SidebarDashboard = () => {
   const items = isAdmin
     ? adminItems
     : isInstructor
-    ? instructorItems
-    : studentItems;
+      ? instructorItems
+      : studentItems;
   return (
     <div className="lg:col-start-1 lg:col-span-3">
       {/* navigation menu */}
