@@ -35,15 +35,10 @@ const Navbar = () => {
             isHome5Dark
               ? "lg:container 3xl:container2-lg"
               : isHome2 || isHome2Dark
-              ? "container sm:container-fluid lg:container 3xl:container-secondary "
-              : "lg:container 3xl:container-secondary-lg "
+                ? "container sm:container-fluid lg:container 3xl:container-secondary "
+                : "lg:container 3xl:container-secondary-lg "
           } 4xl:container mx-auto relative`}
         >
-          {isHome4 || isHome4Dark || isHome5 || isHome5Dark ? (
-            <NavbarTop />
-          ) : (
-            ""
-          )}
           <div className="grid grid-cols-2 lg:grid-cols-12 items-center gap-15px">
             {/* navbar left */}
             <NavbarLogo />

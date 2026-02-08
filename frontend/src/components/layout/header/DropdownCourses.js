@@ -13,31 +13,6 @@ const DropdownCourses = () => {
           status: "All Coures",
           path: "/courses",
         },
-        {
-          name: "Coures Grid (Dark)",
-          status: null,
-          path: "/courses-dark",
-        },
-        {
-          name: "Coures Grid",
-          status: null,
-          path: "/course-grid",
-        },
-        {
-          name: "Coures Grid (Dark)",
-          status: null,
-          path: "/course-grid-dark",
-        },
-        {
-          name: "Coures List",
-          status: null,
-          path: "/course-list",
-        },
-        {
-          name: "Coures List (Dark)",
-          status: null,
-          path: "/course-list-dark",
-        },
       ],
     },
     {
@@ -62,16 +37,6 @@ const DropdownCourses = () => {
           name: "Details 2 (Dark)",
           status: null,
           path: "/course-details-2-dark",
-        },
-        {
-          name: "Course Details 3",
-          status: null,
-          path: "/course-details-3",
-        },
-        {
-          name: "Details 3 (Dark)",
-          status: null,
-          path: "/course-details-3-dark",
         },
       ],
     },

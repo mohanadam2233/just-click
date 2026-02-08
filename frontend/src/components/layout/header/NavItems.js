@@ -10,11 +10,11 @@ import DropdownEcommerce from "./DropdownEcommerce";
 const NavItems = () => {
   const navItems = [
     {
-      id: 1,
-      name: "Demos",
-      path: "/",
-      dropdown: <DropdownDemoes />,
-      isRelative: false,
+      id: 4,
+      name: "Dashboard",
+      path: "/dashboards/instructor-dashboard",
+      dropdown: <DropdownDashboard />,
+      isRelative: true,
     },
     {
       id: 2,
@@ -29,20 +29,6 @@ const NavItems = () => {
       path: "/courses",
       dropdown: <DropdownCourses />,
       isRelative: false,
-    },
-    {
-      id: 4,
-      name: "Dashboard",
-      path: "/dashboards/instructor-dashboard",
-      dropdown: <DropdownDashboard />,
-      isRelative: true,
-    },
-    {
-      id: 5,
-      name: "eCommerce",
-      path: "/ecommerce/shop",
-      dropdown: <DropdownEcommerce />,
-      isRelative: true,
     },
   ];
   return (
