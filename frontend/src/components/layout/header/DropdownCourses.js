@@ -44,34 +44,9 @@ const DropdownCourses = () => {
       title: "Get Started 3",
       items: [
         {
-          name: "Become An Instructor",
-          status: null,
-          path: "/dashboards/become-an-instructor",
-        },
-        {
           name: "Create Coure",
           status: "Career",
           path: "/dashboards/create-course",
-        },
-        {
-          name: "Instructor",
-          status: null,
-          path: "/instructors",
-        },
-        {
-          name: "Instructor (Dark)",
-          status: null,
-          path: "/instructors-dark",
-        },
-        {
-          name: "Instructor Details",
-          status: null,
-          path: "/instructors/1",
-        },
-        {
-          name: "Course Lesson",
-          status: "New",
-          path: "/lessons/1",
         },
       ],
     },
