@@ -2,7 +2,7 @@
 from __future__ import annotations
 from typing import Optional, List
 from flask import session, request, current_app
-from config.redis_config import get_redis_kv
+from cmcp.config.redis_config import get_redis_kv
 
 r = get_redis_kv()
 
@@ -67,13 +67,9 @@ def is_session_indexed(user_id: int) -> bool:
 
 
 def remove_session(user_id: int) -> None:
-    """
-    Deletes the current session payload from Redis and removes it from the user's index.
-    This is for explicit, single-session logout actions.
-    """
     sid = current_session_id()
     if sid:
         prefix = current_app.config.get("SESSION_KEY_PREFIX", "")
-        payload_key = f"{prefix}{sid}"
-        r.delete(payload_key)  # Delete the session payload
-        r.srem(_k_index(user_id), sid) # Remove from the user's index set
+        payload_key = f"{prefix}{sid}" if prefix else sid
+        r.delete(payload_key)
+        r.srem(_k_index(user_id), sid)

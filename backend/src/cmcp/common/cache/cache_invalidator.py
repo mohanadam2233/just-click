@@ -9,9 +9,7 @@ from .cache import get_version
 from .core_cache import bump_version
 from .cache_keys import detail_version_key, list_version_key, user_profile_version_key, build_detail_cache_key, \
     price_list_version_key, coa_balance_version_key, global_epoch_key
-from app.application_doctypes.core_lists.config import CacheScope, get_list_config
-from app.application_doctypes.core_lists.cache import build_list_scope_key
-from app.security.rbac_effective import AffiliationContext
+
 
 log = logging.getLogger(__name__)
 
@@ -41,14 +39,6 @@ def _bump(module_name: str, entity_name: str, scope_key: str) -> int:
     log.info("[cache] BUMP LIST %s -> v%s", ve, v)
     return v
 
-def bump_list_cache_with_context(module_name: str, entity_name: str, context: AffiliationContext, *, params: dict) -> int:
-    """
-    Align write invalidation with the *same* scope logic the read path used for this request.
-    Use this when your write has the same filter params (company_id/branch_id) available.
-    """
-    cfg = get_list_config(module_name, entity_name)
-    scope_key = build_list_scope_key(cfg, context, params=params)
-    return _bump(module_name, entity_name, scope_key)
 
 # ----- explicit, resource-targeted invalidators -----
 def bump_list_cache_global(module_name: str, entity_name: str) -> int:
@@ -64,20 +54,6 @@ def bump_list_cache_branch(module_name: str, entity_name: str, company_id: int, 
 
 
 
-def bump_list_cache(module_name: str, entity_name: str, context: AffiliationContext) -> int:
-    """
-    Intelligently bump the version for a list, using the same scope logic as reads.
-    """
-    try:
-        cfg = get_list_config(module_name, entity_name)
-        scope_key = build_list_scope_key(cfg, context)
-        ve = f"{module_name}:{entity_name}:scope:{scope_key}"
-        v = bump_version(list_version_key(ve, company_id=None))
-        log.info("[cache] BUMP LIST %s -> v%s", ve, v)
-        return v
-    except Exception as e:
-        log.error("bump_list_cache failed for %s:%s err=%s", module_name, entity_name, e)
-        return 0
 
 
 def bump_stock_dropdowns(module_name: str, entity_name: str, company_id: int) -> None:
