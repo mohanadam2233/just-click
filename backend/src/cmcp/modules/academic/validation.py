@@ -20,7 +20,6 @@ ERR_CHAPTER_NOT_FOUND = "Chapter not found."
 ERR_FACULTY_EXISTS = "Faculty already exists with this name."
 ERR_FACULTY_CODE_EXISTS = "Faculty code already exists."
 
-ERR_DEPARTMENT_EXISTS = "Department already exists with this name."
 ERR_DEPARTMENT_EXISTS_IN_FACULTY = "Department already exists with this name in this faculty."
 ERR_DEPARTMENT_CODE_EXISTS = "Department code already exists."
 
@@ -29,7 +28,6 @@ ERR_ACADEMIC_YEAR_EXISTS = "Academic year already exists with this name."
 ERR_SEMESTER_EXISTS_NAME = "Semester already exists with this name."
 ERR_SEMESTER_EXISTS_NUMBER = "Semester already exists with this number in this academic year."
 
-ERR_COURSE_EXISTS_TITLE = "Course already exists with this title."
 ERR_COURSE_EXISTS_TITLE_IN_SCOPE = "Course already exists with this title in this department and semester."
 ERR_COURSE_CODE_EXISTS = "Course code already exists."
 
@@ -47,7 +45,7 @@ def cannot_delete_linked(entity: str, linked_to: str) -> str:
 # ----------------------------
 # Required field helpers
 # ----------------------------
-def require_text(value: str, *, field_label: str) -> str:
+def require_text(value: str | None, *, field_label: str) -> str:
     v = (value or "").strip()
     if not v:
         raise BusinessValidationError(f"{field_label} is required.")

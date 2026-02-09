@@ -23,19 +23,14 @@ class AuthContext:
     username: str
     user_type: str
 
-    # global super power
+    # system-wide bypass (User.is_system_owner OR Administrator role anywhere)
     is_system_owner: bool
+    is_system_admin: bool
 
-    # all enabled affiliations
     companies: List[CompanyMini]
-
-    # chosen company for this request
     active_company_id: Optional[int]
 
-    # role names within active_company_id
     roles: List[str]
-
-    # permissions like {"Material:READ", ...} or {"*"} wildcard
     permissions: Set[str]
 
     # company-level full access (owner/admin)
@@ -51,19 +46,38 @@ def _pick_active_company_id(companies: List[CompanyMini], requested: Optional[in
     return int(companies[0].company_id) if companies else None
 
 
-def build_auth_context(*, user_id: int, company_id: Optional[int] = None) -> AuthContext:
+def _user_has_administrator_role(*, user_id: int) -> bool:
     """
-    Build context for one request.
-    If company_id not provided, uses primary affiliation, else first affiliation.
+    System-wide admin: if user has Role 'Administrator' in ANY company,
+    treat them as system admin (scope bypass).
     """
     s = db.session
+    q = (
+        select(UserRole.id)
+        .select_from(UserRole)
+        .join(Role, Role.id == UserRole.role_id)
+        .where(
+            UserRole.user_id == int(user_id),
+            UserRole.is_enabled.is_(True),
+            Role.is_enabled.is_(True),
+            Role.name == "Administrator",
+        )
+        .limit(1)
+    )
+    return bool(s.scalar(q))
+
+
+def build_auth_context(*, user_id: int, company_id: Optional[int] = None) -> AuthContext:
+    s = db.session
     user = s.scalar(select(User).where(User.id == int(user_id)))
+
     if not user or not user.is_enabled:
         return AuthContext(
             user_id=int(user_id),
             username="",
             user_type="unknown",
             is_system_owner=False,
+            is_system_admin=False,
             companies=[],
             active_company_id=None,
             roles=[],
@@ -71,6 +85,7 @@ def build_auth_context(*, user_id: int, company_id: Optional[int] = None) -> Aut
             is_company_admin=False,
         )
 
+    # affiliations
     affs = list(
         s.scalars(
             select(UserAffiliation).where(
@@ -91,27 +106,33 @@ def build_auth_context(*, user_id: int, company_id: Optional[int] = None) -> Aut
 
     active_company_id = _pick_active_company_id(companies, company_id)
 
-    # If system owner: wildcard permissions everywhere (scope check bypass)
-    if bool(getattr(user, "is_system_owner", False)):
+    # system owner flag
+    is_system_owner = bool(getattr(user, "is_system_owner", False))
+    is_system_admin = bool(is_system_owner) or _user_has_administrator_role(user_id=int(user.id))
+
+    # System-wide: wildcard
+    if is_system_admin:
         return AuthContext(
             user_id=int(user.id),
             username=str(user.username),
             user_type=str(user.user_type.value),
-            is_system_owner=True,
+            is_system_owner=is_system_owner,
+            is_system_admin=True,
             companies=companies,
             active_company_id=active_company_id,
-            roles=["System Owner"],
+            roles=["Administrator"] if not is_system_owner else ["System Owner"],
             permissions={"*"},
             is_company_admin=True,
         )
 
-    # If no company selected, keep minimal
+    # If no company selected, minimal context
     if active_company_id is None:
         return AuthContext(
             user_id=int(user.id),
             username=str(user.username),
             user_type=str(user.user_type.value),
             is_system_owner=False,
+            is_system_admin=False,
             companies=companies,
             active_company_id=None,
             roles=[],
@@ -119,7 +140,7 @@ def build_auth_context(*, user_id: int, company_id: Optional[int] = None) -> Aut
             is_company_admin=False,
         )
 
-    # roles for this company
+    # roles for active company
     urs = list(
         s.scalars(
             select(UserRole).where(
@@ -131,22 +152,17 @@ def build_auth_context(*, user_id: int, company_id: Optional[int] = None) -> Aut
     )
 
     role_ids = [int(x.role_id) for x in urs]
-    roles = []
+    roles: List[str] = []
     if role_ids:
-        role_rows = list(
-            s.scalars(select(Role).where(Role.id.in_(role_ids), Role.is_enabled.is_(True))).all()
-        )
+        role_rows = list(s.scalars(select(Role).where(Role.id.in_(role_ids), Role.is_enabled.is_(True))).all())
         role_by_id = {int(r.id): r for r in role_rows}
         roles = [str(role_by_id[rid].name) for rid in role_ids if rid in role_by_id]
 
-    # company owner => wildcard inside company
     is_company_owner = any(c.company_id == int(active_company_id) and c.is_company_owner for c in companies)
-
-    # also treat Role name "Admin" as company admin (optional, but useful)
-    is_role_admin = any(r.lower() == "admin" for r in roles)
+    is_role_admin = any(r.lower() in ("admin", "super admin") for r in roles)
 
     if is_company_owner or is_role_admin:
-        perms = {"*"}
+        perms = {"*"}  # wildcard inside company
         is_company_admin = True
     else:
         perms = compute_permissions_for_role_ids(role_ids=role_ids)
@@ -157,6 +173,7 @@ def build_auth_context(*, user_id: int, company_id: Optional[int] = None) -> Aut
         username=str(user.username),
         user_type=str(user.user_type.value),
         is_system_owner=False,
+        is_system_admin=False,
         companies=companies,
         active_company_id=int(active_company_id),
         roles=roles,

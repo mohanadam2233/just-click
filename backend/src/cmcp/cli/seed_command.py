@@ -48,10 +48,17 @@ def seed_all() -> None:
 def seed_rbac_only() -> None:
     """Seed RBAC (DocTypes, Actions, Permissions, Roles, RolePermissions)."""
     try:
-        click.echo("🌱 Seeding RBAC...")
+
+        # 2) RBAC
+        click.echo("🔐 Seeding RBAC...")
         seed_rbac(db.session)
         db.session.commit()
         click.secho("✅ RBAC seeded successfully!", fg="green")
+        # 3) University/company mock
+        click.echo("🏫 Seeding UNIVERSITY...")
+        from cmcp.seed_data.university.seeder import seed_university
+        seed_university(db.session)
+
 
     except Exception as e:
         db.session.rollback()
@@ -77,4 +84,20 @@ def seed_core_only() -> None:
         db.session.rollback()
         logger.error("Core seeding failed", exc_info=True)
         click.secho(f"❌ Error seeding core data: {e}", fg="red")
+        raise SystemExit(1)
+@seed_cli.command("university")
+@with_appcontext
+def seed_university_only() -> None:
+    """Seed one university/company + super admin + academic mock data."""
+    try:
+        click.echo("🏫 Seeding university data...")
+        from cmcp.seed_data.university.seeder import seed_university
+        seed_university(db.session)
+        db.session.commit()
+        click.secho("✅ University seeded successfully!", fg="green")
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error("University seeding failed", exc_info=True)
+        click.secho(f"❌ University seeding failed: {e}", fg="red")
         raise SystemExit(1)

@@ -1,4 +1,3 @@
-# app/core/base_service.py
 from __future__ import annotations
 
 import logging
@@ -21,10 +20,6 @@ class _UnsetType:
 
 
 UNSET = _UnsetType()
-"""
-Use UNSET to mean "do not change this field".
-If a key is present with value None, we WILL set it to NULL.
-"""
 
 
 class BaseService(Generic[T]):
@@ -34,17 +29,10 @@ class BaseService(Generic[T]):
         self.repo: BaseRepository[T] = repo_cls(model, self.s)
         self._tenant_aware = hasattr(model, "company_id")
 
-    # ---------- transaction ----------
     @contextmanager
     def transaction(self):
-        """
-        Safe tx boundary:
-        - if caller already started a transaction, we just run inside it
-        - if not, we commit/rollback here
-        """
         try:
             yield
-            # If you are in a transaction, don't commit here
             if not self.s.in_transaction():
                 self.s.commit()
             else:
@@ -54,32 +42,14 @@ class BaseService(Generic[T]):
                 self.s.rollback()
             raise
 
-    # ---------- hooks ----------
-    def validate_create(self, company_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
-        return data
-
-    def validate_update(self, company_id: int, obj: T, data: Dict[str, Any]) -> Dict[str, Any]:
-        return data
-
-    def before_save(self, obj: T, *, is_new: bool) -> None:
-        return
-
-    def after_save(self, obj: T, *, is_new: bool) -> None:
-        return
-
-    def before_delete(self, obj: T) -> None:
-        return
-
-    def after_delete(self, obj: T) -> None:
-        return
-
     # ---------- serialization ----------
     def serialize(self, obj: T) -> Dict[str, Any]:
+        if not obj:
+            return {}
         if hasattr(obj, "to_dict"):
             return obj.to_dict()
         if hasattr(obj, "as_dict"):
             return obj.as_dict()
-        # safe fallback
         d = {}
         for k, v in getattr(obj, "__dict__", {}).items():
             if not k.startswith("_"):
@@ -90,16 +60,11 @@ class BaseService(Generic[T]):
     def create(self, *, company_id: int, data: Dict[str, Any]) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         try:
             payload = dict(data)
-
             if self._tenant_aware and "company_id" not in payload:
                 payload["company_id"] = company_id
 
-            payload = self.validate_create(company_id, payload)
-
             with self.transaction():
                 obj = self.repo.create(payload)
-                self.before_save(obj, is_new=True)
-                self.after_save(obj, is_new=True)
 
             return True, f"{self.model.__name__} created", {"id": getattr(obj, "id", None), "record": self.serialize(obj)}
 
@@ -119,19 +84,12 @@ class BaseService(Generic[T]):
         data: Dict[str, Any],
         allow_nulls: bool = True,
     ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
-        """
-        allow_nulls=True:
-          - if field provided with None => set NULL (clear)
-          - if field not provided => unchanged
-        To skip a field explicitly, set it to UNSET.
-        """
         try:
             obj = self.repo.get(id, company_id=company_id)
             if not obj:
                 raise NotFoundError(f"{self.model.__name__} not found.")
 
             payload = dict(data)
-            payload = self.validate_update(company_id, obj, payload)
 
             with self.transaction():
                 for k, v in payload.items():
@@ -142,10 +100,7 @@ class BaseService(Generic[T]):
                     if v is None and not allow_nulls:
                         continue
                     setattr(obj, k, v)
-
-                self.before_save(obj, is_new=False)
                 self.s.flush([obj])
-                self.after_save(obj, is_new=False)
 
             return True, f"{self.model.__name__} updated", {"id": getattr(obj, "id", None), "record": self.serialize(obj)}
 
@@ -157,33 +112,19 @@ class BaseService(Generic[T]):
             log.exception("update failed: %s", e)
             return False, "Unexpected error.", None
 
-    def delete(
-        self,
-        *,
-        company_id: int,
-        id: int,
-        soft: bool = True,
-    ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+    def delete(self, *, company_id: int, id: int, soft: bool = True) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         try:
             obj = self.repo.get(id, company_id=company_id)
             if not obj:
                 raise NotFoundError(f"{self.model.__name__} not found.")
 
             with self.transaction():
-                self.before_delete(obj)
-                if soft:
-                    # single record soft delete
-                    if hasattr(obj, "is_enabled"):
-                        setattr(obj, "is_enabled", False)
-                        self.s.flush([obj])
-                    else:
-                        self.s.delete(obj)
-                        self.s.flush()
+                if soft and hasattr(obj, "is_enabled"):
+                    setattr(obj, "is_enabled", False)
+                    self.s.flush([obj])
                 else:
                     self.s.delete(obj)
                     self.s.flush()
-
-                self.after_delete(obj)
 
             return True, f"{self.model.__name__} deleted", {"id": id}
 
@@ -193,13 +134,7 @@ class BaseService(Generic[T]):
             log.exception("delete failed: %s", e)
             return False, "Unexpected error.", None
 
-    def bulk_delete(
-        self,
-        *,
-        company_id: int,
-        ids: List[int],
-        soft: bool = True,
-    ) -> Tuple[bool, str, Dict[str, Any]]:
+    def bulk_delete(self, *, company_id: int, ids: List[int], soft: bool = True) -> Tuple[bool, str, Dict[str, Any]]:
         try:
             ids = [int(x) for x in ids if x]
             if not ids:
@@ -217,7 +152,7 @@ class BaseService(Generic[T]):
             log.exception("bulk_delete failed: %s", e)
             return False, "Bulk delete failed.", {"deleted": 0, "requested": len(ids or [])}
 
-    # ---------- Query APIs for list/detail pages ----------
+    # ---------- Query APIs ----------
     def get_one(self, *, company_id: int, id: int, eager_load: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
         obj = self.repo.get(id, company_id=company_id, eager_load=eager_load)
         return self.serialize(obj) if obj else None
@@ -237,6 +172,7 @@ class BaseService(Generic[T]):
         sort_order: Optional[str] = None,
         sort_fields: Optional[Dict[str, Any]] = None,
         default_sort: Optional[List[Any]] = None,
+        only_enabled: bool = False,
     ) -> Dict[str, Any]:
         res: PageResult[T] = self.repo.paginate(
             page=page,
@@ -251,6 +187,7 @@ class BaseService(Generic[T]):
             sort_order=sort_order,
             sort_fields=sort_fields,
             default_sort=default_sort,
+            only_enabled=only_enabled,
         )
         return {
             "items": [self.serialize(x) for x in res.items],
@@ -258,4 +195,51 @@ class BaseService(Generic[T]):
             "page": res.page,
             "per_page": res.per_page,
             "pages": res.pages,
+        }
+
+    def list_scroll(
+        self,
+        *,
+        company_id: int,
+        limit: int = 20,
+        offset: int = 0,
+        eager_load: Optional[List[str]] = None,
+        search: Optional[str] = None,
+        search_columns: Optional[List[Any]] = None,
+        filters: Optional[Dict[str, Any]] = None,
+        allowed_filters: Optional[Dict[str, Any]] = None,
+        sort_key: Optional[str] = None,
+        sort_order: Optional[str] = None,
+        sort_fields: Optional[Dict[str, Any]] = None,
+        default_sort: Optional[List[Any]] = None,
+        only_enabled: bool = False,
+    ) -> Dict[str, Any]:
+        limit = max(int(limit), 1)
+        offset = max(int(offset), 0)
+
+        items = self.repo.list(
+            company_id=company_id,
+            eager_load=eager_load,
+            search=search,
+            search_columns=search_columns,
+            filters=filters,
+            allowed_filters=allowed_filters,
+            sort_key=sort_key,
+            sort_order=sort_order,
+            sort_fields=sort_fields,
+            default_sort=default_sort,
+            only_enabled=only_enabled,
+            limit=limit,
+            offset=offset,
+        )
+
+        return {
+            "items": [self.serialize(x) for x in items],
+            "scroll": {
+                "limit": limit,
+                "offset": offset,
+                "returned": len(items),
+                "next_offset": offset + len(items),
+                "has_more": len(items) == limit,
+            },
         }
