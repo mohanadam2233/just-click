@@ -1,18 +1,23 @@
 from __future__ import annotations
 
 from typing import Optional, List
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, ConfigDict
+
+
+class _BaseIn(BaseModel):
+    # 🚫 reject unknown fields like company_id
+    model_config = ConfigDict(extra="forbid")
 
 
 # ----------------------------
 # Faculty
 # ----------------------------
-class FacultyCreate(BaseModel):
+class FacultyCreate(_BaseIn):
     name: str
     code: Optional[str] = None
 
 
-class FacultyUpdate(BaseModel):
+class FacultyUpdate(_BaseIn):
     name: Optional[str] = None
     code: Optional[str] = None
     is_enabled: Optional[bool] = None
@@ -21,13 +26,13 @@ class FacultyUpdate(BaseModel):
 # ----------------------------
 # Department
 # ----------------------------
-class DepartmentCreate(BaseModel):
+class DepartmentCreate(_BaseIn):
     faculty_id: int
     name: str
     code: Optional[str] = None
 
 
-class DepartmentUpdate(BaseModel):
+class DepartmentUpdate(_BaseIn):
     faculty_id: Optional[int] = None
     name: Optional[str] = None
     code: Optional[str] = None
@@ -37,11 +42,11 @@ class DepartmentUpdate(BaseModel):
 # ----------------------------
 # Academic Year
 # ----------------------------
-class AcademicYearCreate(BaseModel):
+class AcademicYearCreate(_BaseIn):
     name: str
 
 
-class AcademicYearUpdate(BaseModel):
+class AcademicYearUpdate(_BaseIn):
     name: Optional[str] = None
     is_enabled: Optional[bool] = None
 
@@ -49,7 +54,7 @@ class AcademicYearUpdate(BaseModel):
 # ----------------------------
 # Semester
 # ----------------------------
-class SemesterCreate(BaseModel):
+class SemesterCreate(_BaseIn):
     academic_year_id: int
     number: int
     name: Optional[str] = None
@@ -62,7 +67,7 @@ class SemesterCreate(BaseModel):
         return v
 
 
-class SemesterUpdate(BaseModel):
+class SemesterUpdate(_BaseIn):
     academic_year_id: Optional[int] = None
     number: Optional[int] = None
     name: Optional[str] = None
@@ -79,7 +84,7 @@ class SemesterUpdate(BaseModel):
 # ----------------------------
 # Course
 # ----------------------------
-class CourseCreate(BaseModel):
+class CourseCreate(_BaseIn):
     department_id: int
     semester_id: int
     title: str
@@ -87,7 +92,7 @@ class CourseCreate(BaseModel):
     description: Optional[str] = None
 
 
-class CourseUpdate(BaseModel):
+class CourseUpdate(_BaseIn):
     department_id: Optional[int] = None
     semester_id: Optional[int] = None
     title: Optional[str] = None
@@ -99,7 +104,7 @@ class CourseUpdate(BaseModel):
 # ----------------------------
 # Chapter
 # ----------------------------
-class ChapterCreate(BaseModel):
+class ChapterCreate(_BaseIn):
     course_id: int
     number: int
     title: str
@@ -113,7 +118,7 @@ class ChapterCreate(BaseModel):
         return v
 
 
-class ChapterUpdate(BaseModel):
+class ChapterUpdate(_BaseIn):
     course_id: Optional[int] = None
     number: Optional[int] = None
     title: Optional[str] = None
@@ -131,5 +136,5 @@ class ChapterUpdate(BaseModel):
 # ----------------------------
 # Common
 # ----------------------------
-class BulkDeleteIn(BaseModel):
+class BulkDeleteIn(_BaseIn):
     ids: List[int] = Field(..., min_length=1)
