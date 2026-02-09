@@ -18,11 +18,14 @@ class UserTypeEnum(str, enum.Enum):
     STAFF = "staff"
     ADMIN = "admin"
 
+
 class UserStatusEnum(str, enum.Enum):
     PENDING_EMAIL = "pending_email"          # registered, must verify email
     PENDING_APPROVAL = "pending_approval"    # email verified, waiting admin
     ACTIVE = "active"                        # approved, can login
     REJECTED = "rejected"                    # rejected by admin
+
+
 class LinkedEntityTypeEnum(str, enum.Enum):
     STUDENT_PROFILE = "student_profile"
     STAFF_PROFILE = "staff_profile"
@@ -31,8 +34,12 @@ class LinkedEntityTypeEnum(str, enum.Enum):
 class User(BaseModel):
     __tablename__ = "users"
 
+    # Login is ONLY username (for students: student_id)
     username: Mapped[str] = mapped_column(db.String(150), nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(db.String(255), nullable=False)
+
+    # Email is CONTACT + VERIFICATION only (not login)
+    email: Mapped[str] = mapped_column(db.String(255), nullable=False, index=True)
 
     user_type: Mapped[UserTypeEnum] = mapped_column(
         db.Enum(UserTypeEnum, name="user_type_enum"),
@@ -49,10 +56,18 @@ class User(BaseModel):
 
     is_system_owner: Mapped[bool] = mapped_column(db.Boolean, default=False, nullable=False, index=True)
 
-    last_login: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True))
-    is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=True, nullable=False, index=True)
-    # Email verification
+    # Auth / lifecycle
+    last_login: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
+
+    # IMPORTANT: starts disabled until approved
+    is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=False, nullable=False, index=True)
+
+    # Email verification lifecycle
     email_verified_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
+
+    # store HASH only (never store raw token)
+    email_verify_token_hash: Mapped[Optional[str]] = mapped_column(db.String(255), nullable=True, index=True)
+    email_verify_expires_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
 
     # Admin approval audit
     approved_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
@@ -72,7 +87,7 @@ class User(BaseModel):
     )
     rejection_reason: Mapped[Optional[str]] = mapped_column(db.String(500), nullable=True)
 
-    # Optional: temp password flow (if you use it)
+    # Temp password flow (optional but useful for your approval email)
     must_change_password: Mapped[bool] = mapped_column(db.Boolean, default=False, nullable=False, index=True)
     temp_password_expires_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
 
@@ -85,7 +100,10 @@ class User(BaseModel):
 
     __table_args__ = (
         UniqueConstraint("username", name="uq_users_username"),
+        UniqueConstraint("email", name="uq_users_email"),
         Index("ix_users_enabled", "is_enabled"),
+        Index("ix_users_status", "status"),
+        Index("ix_users_type", "user_type"),
     )
 
 
@@ -111,11 +129,12 @@ class UserAffiliation(BaseModel):
     )
 
     is_primary: Mapped[bool] = mapped_column(db.Boolean, default=False, nullable=False, index=True)
-    is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=True, nullable=False, index=True)
+
+    # IMPORTANT: disabled until approved
+    is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=False, nullable=False, index=True)
 
     is_company_owner: Mapped[bool] = mapped_column(db.Boolean, default=False, nullable=False, index=True)
 
-    # Polymorphic link to profile table
     linked_entity_type: Mapped[Optional[LinkedEntityTypeEnum]] = mapped_column(
         db.Enum(LinkedEntityTypeEnum, name="linked_entity_type_enum"),
         nullable=True,
@@ -127,11 +146,11 @@ class UserAffiliation(BaseModel):
 
     __table_args__ = (
         UniqueConstraint("user_id", "company_id", name="uq_user_affiliation_user_company"),
-        # If you set a type, you must set an id (and vice versa)
         CheckConstraint(
             "(linked_entity_type is null and linked_entity_id is null) OR "
             "(linked_entity_type is not null and linked_entity_id is not null)",
             name="ck_user_affiliation_linked_entity_pair",
         ),
         Index("ix_user_aff_company_user", "company_id", "user_id"),
+        Index("ix_user_aff_enabled", "company_id", "is_enabled"),
     )
