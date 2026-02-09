@@ -18,7 +18,11 @@ class UserTypeEnum(str, enum.Enum):
     STAFF = "staff"
     ADMIN = "admin"
 
-
+class UserStatusEnum(str, enum.Enum):
+    PENDING_EMAIL = "pending_email"          # registered, must verify email
+    PENDING_APPROVAL = "pending_approval"    # email verified, waiting admin
+    ACTIVE = "active"                        # approved, can login
+    REJECTED = "rejected"                    # rejected by admin
 class LinkedEntityTypeEnum(str, enum.Enum):
     STUDENT_PROFILE = "student_profile"
     STAFF_PROFILE = "staff_profile"
@@ -36,10 +40,41 @@ class User(BaseModel):
         index=True,
     )
 
+    status: Mapped[UserStatusEnum] = mapped_column(
+        db.Enum(UserStatusEnum, name="user_status_enum"),
+        nullable=False,
+        default=UserStatusEnum.PENDING_EMAIL,
+        index=True,
+    )
+
     is_system_owner: Mapped[bool] = mapped_column(db.Boolean, default=False, nullable=False, index=True)
 
     last_login: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True))
     is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=True, nullable=False, index=True)
+    # Email verification
+    email_verified_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
+
+    # Admin approval audit
+    approved_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
+    approved_by: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger,
+        db.ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
+    rejected_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
+    rejected_by: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger,
+        db.ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    rejection_reason: Mapped[Optional[str]] = mapped_column(db.String(500), nullable=True)
+
+    # Optional: temp password flow (if you use it)
+    must_change_password: Mapped[bool] = mapped_column(db.Boolean, default=False, nullable=False, index=True)
+    temp_password_expires_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
 
     affiliations: Mapped[list["UserAffiliation"]] = db.relationship(
         "UserAffiliation",
