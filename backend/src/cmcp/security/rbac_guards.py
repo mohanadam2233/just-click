@@ -19,7 +19,9 @@ def attach_auth_context(*, user_id: int, company_id: Optional[int] = None) -> No
 def _ctx() -> Optional[AuthContext]:
     return getattr(g, "auth", None)
 
-
+# Backward/alt name (optional)
+def attach_auth_context_to_g(*, user_id: int, company_id: Optional[int] = None) -> None:
+    attach_auth_context(user_id=user_id, company_id=company_id)
 # -------------------------
 # Scope checks (company)
 # -------------------------
@@ -88,12 +90,50 @@ def require_permission(doctype: str, action: str):
     return _dec
 
 
+# def require_company_and_permission(*, doctype: str, action: str, company_param: str = "company_id"):
+#     """
+#     Standard decorator:
+#     - resolves company_id from ?company_id= or g.auth.active_company_id
+#     - enforces scope
+#     - checks permission
+#     """
+#     def _dec(fn: Callable[..., Any]):
+#         @wraps(fn)
+#         def _wrapped(*args, **kwargs):
+#             ctx = _ctx()
+#             if not ctx:
+#                 return jsonify({"message": "Unauthorized"}), 401
+#
+#             cid = request.args.get(company_param, type=int)
+#             if cid is None:
+#                 cid = int(ctx.active_company_id) if ctx.active_company_id else None
+#
+#             if cid is None:
+#                 return jsonify({"message": "company_id is required."}), 400
+#
+#             try:
+#                 ensure_company_scope(company_id=int(cid))
+#             except PermissionError as e:
+#                 return jsonify({"message": str(e)}), 403
+#
+#             if not has_permission(doctype=doctype, action=action):
+#                 return jsonify({"message": f"You do not have permission to perform this action ({doctype}:{action})."}), 403
+#
+#             # pass company_id into handler if it accepts it
+#             kwargs["company_id"] = int(cid)
+#             return fn(*args, **kwargs)
+#         return _wrapped
+#     return _dec
 def require_company_and_permission(*, doctype: str, action: str, company_param: str = "company_id"):
     """
     Standard decorator:
-    - resolves company_id from ?company_id= or g.auth.active_company_id
+    - resolves company_id from:
+        1) ?company_id=
+        2) JSON body {"company_id": ...}
+        3) g.auth.active_company_id
     - enforces scope
     - checks permission
+    - injects company_id into route kwargs
     """
     def _dec(fn: Callable[..., Any]):
         @wraps(fn)
@@ -102,23 +142,38 @@ def require_company_and_permission(*, doctype: str, action: str, company_param: 
             if not ctx:
                 return jsonify({"message": "Unauthorized"}), 401
 
+            # 1) query param
             cid = request.args.get(company_param, type=int)
+
+            # 2) json body
+            if cid is None:
+                body = request.get_json(silent=True) or {}
+                if isinstance(body, dict):
+                    raw = body.get(company_param)
+                    try:
+                        cid = int(raw) if raw is not None else None
+                    except Exception:
+                        cid = None
+
+            # 3) active company
             if cid is None:
                 cid = int(ctx.active_company_id) if ctx.active_company_id else None
 
             if cid is None:
                 return jsonify({"message": "company_id is required."}), 400
 
+            # scope check
             try:
                 ensure_company_scope(company_id=int(cid))
             except PermissionError as e:
                 return jsonify({"message": str(e)}), 403
 
+            # permission check
             if not has_permission(doctype=doctype, action=action):
                 return jsonify({"message": f"You do not have permission to perform this action ({doctype}:{action})."}), 403
 
-            # pass company_id into handler if it accepts it
             kwargs["company_id"] = int(cid)
             return fn(*args, **kwargs)
+
         return _wrapped
     return _dec
