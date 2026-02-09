@@ -6,11 +6,17 @@ from sqlalchemy import select
 from cmcp.config.database import db
 from cmcp.modules.rbac.models import RolePermission, Permission, DocType, Action
 
+WILDCARD = "*"
+
 
 def compute_permissions_for_role_ids(*, role_ids: List[int]) -> Set[str]:
     """
-    Returns permission strings: {"Material:READ", "Course:CREATE", ...}
-    Uses a single SQL query (fast).
+    Returns permission strings:
+      {"Material:READ", "Course:CREATE", ...} or {"*"} wildcard.
+
+    Notes:
+    - If seed uses "*:*", normalize it to {"*"}.
+    - Keep "Doctype:MANAGE" as-is; rbac_guards expands it at check-time.
     """
     if not role_ids:
         return set()
@@ -34,5 +40,13 @@ def compute_permissions_for_role_ids(*, role_ids: List[int]) -> Set[str]:
 
     perms: Set[str] = set()
     for dt_name, act_name in s.execute(q).all():
-        perms.add(f"{dt_name}:{str(act_name).upper()}")
+        dt = str(dt_name).strip()
+        act = str(act_name).strip().upper()
+
+        # normalize "*:*" to "*"
+        if dt == WILDCARD and act == WILDCARD:
+            perms.add(WILDCARD)
+            continue
+
+        perms.add(f"{dt}:{act}")
     return perms
