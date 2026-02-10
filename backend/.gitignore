@@ -59,7 +59,7 @@ instance/
 *.db
 
 # User-uploaded media (Adjust paths as needed for your project)
-media/
+
 uploads/
 static/uploads/
 storage/
