@@ -12,7 +12,7 @@ const Home_2 = async () => {
   return (
     <PageWrapper>
       <main>
-        <Home2 />
+        {/* <Home2 /> */}
         <ThemeController />
       </main>
     </PageWrapper>
