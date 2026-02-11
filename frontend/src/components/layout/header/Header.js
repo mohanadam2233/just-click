@@ -27,7 +27,7 @@ const Header = () => {
     <header>
       <div>
         {/* header top */}
-        {isHome2Dark || isHome2 ? "" : <HeaderTop />}
+        {/* {isHome2Dark || isHome2 ? "" : <HeaderTop />} */}
         {/* navbar */}
         <Navbar />
         {/* mobile menu */}
