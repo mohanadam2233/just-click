@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime
-from typing import Any, Dict, Generic, Optional, Tuple, Type, TypeVar, List, Iterable
+from typing import Any, Dict, Generic, Optional, Tuple, Type, TypeVar, List, Iterable, Callable
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from cmcp.config.database import db
-from cmcp.core.base_repo import BaseRepository, PageResult
+from cmcp.core.base_repo import BaseRepository, PageResult, DropdownResult
 from cmcp.core.exceptions import BusinessValidationError, NotFoundError
 from cmcp.common.date_utils import format_date_out
 
@@ -386,5 +386,114 @@ class BaseService(Generic[T]):
                 "returned": len(items),
                 "next_offset": offset + len(items),
                 "has_more": len(items) == limit,
+            },
+        }
+
+    def dropdown(
+            self,
+            *,
+            company_id: int,
+            search: Optional[str] = None,
+            limit: int = 20,
+            offset: int = 0,
+            active_only: bool = True,
+            eager_load: Optional[List[str]] = None,
+            search_columns: Optional[List[Any]] = None,
+            filters: Optional[Dict[str, Any]] = None,
+            allowed_filters: Optional[Dict[str, Any]] = None,
+            sort_key: Optional[str] = None,
+            sort_order: Optional[str] = None,
+            sort_fields: Optional[Dict[str, Any]] = None,
+            default_sort: Optional[List[Any]] = None,
+            # mapping config (flexible per-model)
+            value_field: str = "id",
+            label_fields: Optional[List[str]] = None,  # e.g. ["code", "name"]
+            label_getter: Optional[Callable[[T], str]] = None,  # full override
+            meta_fields: Optional[List[str]] = None,  # e.g. ["code","academic_year_id","number","is_enabled"]
+            max_limit: int = 100,
+    ) -> Dict[str, Any]:
+        """
+        Unified dropdown response:
+          {
+            "data": [{"value":..,"label":..,"meta":{...}}],
+            "pagination": {"offset":..,"limit":..,"total":..,"has_more":..}
+          }
+        """
+        res: DropdownResult[T] = self.repo.dropdown(
+            company_id=int(company_id),
+            active_only=bool(active_only),
+            eager_load=eager_load,
+            search=search,
+            search_columns=search_columns,
+            filters=filters,
+            allowed_filters=allowed_filters,
+            sort_key=sort_key,
+            sort_order=sort_order,
+            sort_fields=sort_fields,
+            default_sort=default_sort,
+            limit=limit,
+            offset=offset,
+            max_limit=max_limit,
+        )
+
+        def _default_label(obj: T) -> str:
+            if label_getter:
+                return (label_getter(obj) or "").strip()
+
+            # label_fields: join non-empty with " - "
+            if label_fields:
+                parts: List[str] = []
+                for f in label_fields:
+                    v = getattr(obj, f, None)
+                    if v is None:
+                        continue
+                    s = str(v).strip()
+                    if s:
+                        parts.append(s)
+                if parts:
+                    return " - ".join(parts)
+
+            # fallback: name/title
+            nm = getattr(obj, "name", None)
+            if nm:
+                return str(nm).strip()
+            tt = getattr(obj, "title", None)
+            if tt:
+                return str(tt).strip()
+
+            # final fallback
+            v = getattr(obj, value_field, None)
+            return str(v) if v is not None else ""
+
+        data_out: List[Dict[str, Any]] = []
+        for obj in res.items:
+            value = getattr(obj, value_field, None)
+
+            item: Dict[str, Any] = {
+                "value": value,
+                "label": _default_label(obj),
+            }
+
+            if meta_fields:
+                # use existing serialize() to keep your date formatting consistent
+                meta = self.serialize(obj, only=meta_fields)
+                # normalize is_active if you want (optional; keep meta flexible)
+                if "is_enabled" in meta and "is_active" not in meta:
+                    meta["is_active"] = bool(meta.get("is_enabled"))
+                item["meta"] = meta
+            else:
+                item["meta"] = {}
+
+            data_out.append(item)
+
+        has_more = (int(res.offset) + int(res.limit)) < int(res.total)
+
+        return {
+            "data": data_out,
+            "pagination": {
+                "offset": int(res.offset),
+                "limit": int(res.limit),
+                "total": int(res.total),
+                "has_more": bool(has_more),
             },
         }
