@@ -112,11 +112,8 @@ const Registration = () => {
               </form> */}
               <button className="">
                 <Link
-                  className={`text-size-19 text-whiteColor  px-10 py-5 border  hover:bg-whiteColor inline-block rounded dark:hover:bg-whiteColor-dark dark:hover:text-whiteColor
-                  
-                  bg-secondaryColor border-secondaryColor hover:text-secondaryColor
-                  bg-primaryColor border-primaryColor hover:text-primaryColor
-                  `}
+                  className={`text-size-19 text-whiteColor  px-10 py-5 border  hover:bg-whiteColor inline-block rounded
+                     dark:hover:bg-whiteColor-dark dark:hover:text-whiteColor bg-secondaryColor border-secondaryColor hover:text-secondaryColor  `}
                   href={"/login"}
                 >
                   Signup Now
