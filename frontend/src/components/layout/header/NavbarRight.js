@@ -18,7 +18,7 @@ const NavbarRight = () => {
         {!isHome2Dark && (
           <li className="px-5 lg:px-10px 2xl:px-5 lg:py-4 2xl:py-26px 3xl:py-9 group">
             {/* dropdown menu */}
-            <DropdownCart />
+            {/* <DropdownCart /> */}
           </li>
         )}
         {isHome4 || isHome4Dark || isHome5 || isHome5Dark ? (

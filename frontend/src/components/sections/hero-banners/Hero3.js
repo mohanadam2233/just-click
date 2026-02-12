@@ -30,16 +30,16 @@ const Hero3 = () => {
             <div data-aos="fade-up">
               <HreoName>EDUCATION SOLUTION</HreoName>
               <HeadingXl>
-                Centralized IT Class Materials Platform <br className="hidden md:block" />
-                with AI Study Assistant
+                Centralized IT Materials Platform with AI Study Assistant
               </HeadingXl>
               <p className="text-size-15 md:text-lg text-blackColor dark:text-blackColor-dark font-medium mb-45px">
-                AA unified digital platform for IT departments to manage, organize, and access class materials.<br />
-                enhanced with an AI-powered study assistant grounded in your actual curriculum
+                A unified system for managing IT course materials,
+                <br />
+                enhanced with a curriculum-grounded AI assistant.
               </p>
 
               <div className="space-x-5 md:space-x-30px">
-                <ButtonPrimary path="/courses">Access Department Materials</ButtonPrimary>
+                <ButtonPrimary path="/courses">Access Materials</ButtonPrimary>
                 <ButtonPrimary color="secondary" path="/courses">
                   Explore More
                 </ButtonPrimary>

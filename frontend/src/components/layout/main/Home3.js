@@ -6,16 +6,18 @@ import Instructors2 from "@/components/sections/instructors/Instructors2";
 import PopularSubjects2 from "@/components/sections/popular-subjects/PopularSubjects2";
 import Registration from "@/components/sections/registrations/Registration";
 import BrandHero from "@/components/sections/sub-section/BrandHero";
+import SuccessSteps from "@/components/sections/success-steps/SuccessSteps";
 import Testimonials2 from "@/components/sections/testimonials/Testimonials2";
 
 const Home3 = () => {
   return (
     <>
       <Hero3 />
-      <BrandHero />
-      <PopularSubjects2 />
-      <CoursesFilter />
+      {/* <BrandHero /> */}
+      {/* <PopularSubjects2 /> */}
+      {/* <CoursesFilter /> */}
       <Registration />
+      <SuccessSteps />
       {/* <Instructors2 /> */}
       <Testimonials2 />
       {/* <Blogs2 /> */}

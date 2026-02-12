@@ -10,7 +10,7 @@ import DropdownEcommerce from "./DropdownEcommerce";
 const NavItems = () => {
   const navItems = [
     {
-      id: 4,
+      id: 1,
       name: "Dashboard",
       path: "/dashboards/instructor-dashboard",
       dropdown: <DropdownDashboard />,
@@ -24,10 +24,24 @@ const NavItems = () => {
     //   isRelative: false,
     // },
     {
-      id: 3,
+      id: 2,
       name: "Courses",
       path: "/courses",
       dropdown: <DropdownCourses />,
+      isRelative: false,
+    },
+    {
+      id: 3,
+      name: "About",
+      path: "/#", // make this /about
+      dropdown: null,
+      isRelative: false,
+    },
+    {
+      id: 4,
+      name: "Contact Us",
+      path: "/#", // make this /about
+      dropdown: null,
       isRelative: false,
     },
   ];
