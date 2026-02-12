@@ -39,7 +39,7 @@ class User(BaseModel):
     password_hash: Mapped[str] = mapped_column(db.String(255), nullable=False)
 
     # Email is CONTACT + VERIFICATION only (not login)
-    email: Mapped[str] = mapped_column(db.String(255), nullable=False, index=True)
+    # email: Mapped[str] = mapped_column(db.String(255), nullable=False, index=True)
 
     user_type: Mapped[UserTypeEnum] = mapped_column(
         db.Enum(UserTypeEnum, name="user_type_enum"),
@@ -62,34 +62,34 @@ class User(BaseModel):
     # IMPORTANT: starts disabled until approved
     is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=False, nullable=False, index=True)
 
-    # Email verification lifecycle
-    email_verified_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
-
-    # store HASH only (never store raw token)
-    email_verify_token_hash: Mapped[Optional[str]] = mapped_column(db.String(255), nullable=True, index=True)
-    email_verify_expires_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
-
-    # Admin approval audit
-    approved_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
-    approved_by: Mapped[Optional[int]] = mapped_column(
-        db.BigInteger,
-        db.ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-
-    rejected_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
-    rejected_by: Mapped[Optional[int]] = mapped_column(
-        db.BigInteger,
-        db.ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True,
-        index=True,
-    )
-    rejection_reason: Mapped[Optional[str]] = mapped_column(db.String(500), nullable=True)
-
-    # Temp password flow (optional but useful for your approval email)
-    must_change_password: Mapped[bool] = mapped_column(db.Boolean, default=False, nullable=False, index=True)
-    temp_password_expires_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
+    # # Email verification lifecycle
+    # email_verified_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
+    #
+    # # store HASH only (never store raw token)
+    # email_verify_token_hash: Mapped[Optional[str]] = mapped_column(db.String(255), nullable=True, index=True)
+    # email_verify_expires_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
+    #
+    # # Admin approval audit
+    # approved_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
+    # approved_by: Mapped[Optional[int]] = mapped_column(
+    #     db.BigInteger,
+    #     db.ForeignKey("users.id", ondelete="SET NULL"),
+    #     nullable=True,
+    #     index=True,
+    # )
+    #
+    # rejected_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
+    # rejected_by: Mapped[Optional[int]] = mapped_column(
+    #     db.BigInteger,
+    #     db.ForeignKey("users.id", ondelete="SET NULL"),
+    #     nullable=True,
+    #     index=True,
+    # )
+    # rejection_reason: Mapped[Optional[str]] = mapped_column(db.String(500), nullable=True)
+    #
+    # # Temp password flow (optional but useful for your approval email)
+    # must_change_password: Mapped[bool] = mapped_column(db.Boolean, default=False, nullable=False, index=True)
+    # temp_password_expires_at: Mapped[Optional[datetime]] = mapped_column(db.DateTime(timezone=True), nullable=True)
 
     affiliations: Mapped[list["UserAffiliation"]] = db.relationship(
         "UserAffiliation",
@@ -100,9 +100,9 @@ class User(BaseModel):
 
     __table_args__ = (
         UniqueConstraint("username", name="uq_users_username"),
-        UniqueConstraint("email", name="uq_users_email"),
+        # UniqueConstraint("email", name="uq_users_email"),
         Index("ix_users_enabled", "is_enabled"),
-        Index("ix_users_status", "status"),
+        # Index("ix_users_status", "status"),
         Index("ix_users_type", "user_type"),
     )
 
