@@ -85,6 +85,8 @@ def seed_core_only() -> None:
         logger.error("Core seeding failed", exc_info=True)
         click.secho(f"❌ Error seeding core data: {e}", fg="red")
         raise SystemExit(1)
+
+
 @seed_cli.command("university")
 @with_appcontext
 def seed_university_only() -> None:
