@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from cmcp.config.database import db
 from cmcp.common.models.base import BaseModel, TenantMixin
-
+# greate design
 
 class Classroom(BaseModel, TenantMixin):
     __tablename__ = "edu_classrooms"
