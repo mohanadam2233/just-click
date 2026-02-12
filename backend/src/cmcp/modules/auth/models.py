@@ -47,12 +47,12 @@ class User(BaseModel):
         index=True,
     )
 
-    status: Mapped[UserStatusEnum] = mapped_column(
-        db.Enum(UserStatusEnum, name="user_status_enum"),
-        nullable=False,
-        default=UserStatusEnum.PENDING_EMAIL,
-        index=True,
-    )
+    # status: Mapped[UserStatusEnum] = mapped_column(
+    #     db.Enum(UserStatusEnum, name="user_status_enum"),
+    #     nullable=False,
+    #     default=UserStatusEnum.PENDING_EMAIL,
+    #     index=True,
+    # )
 
     is_system_owner: Mapped[bool] = mapped_column(db.Boolean, default=False, nullable=False, index=True)
 
