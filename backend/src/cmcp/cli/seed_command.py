@@ -31,7 +31,12 @@ def seed_all() -> None:
 
         # 2) RBAC
         click.echo("🔐 Seeding RBAC...")
+        from  cmcp.seed_data.rbac.seeder import  seed_rbac
         seed_rbac(db.session)
+        # 3 # People
+        click.echo("👥 Seeding PEOPLE...")
+        from cmcp.seed_data.people.seeder import seed_people
+        seed_people(db.session)
 
         db.session.commit()
         click.secho("✅ All data seeded successfully!", fg="green")
@@ -103,3 +108,24 @@ def seed_university_only() -> None:
         logger.error("University seeding failed", exc_info=True)
         click.secho(f"❌ University seeding failed: {e}", fg="red")
         raise SystemExit(1)
+
+# education_people
+@seed_cli.command("education_people")
+@with_appcontext
+def seed_people_only() -> None:
+    """Seed classrooms + staff profiles + student profiles."""
+    try:
+        click.echo("👥 Seeding PEOPLE...")
+        from cmcp.seed_data.people.seeder import seed_people
+        seed_people(db.session)
+
+        db.session.commit()
+        click.secho("✅ People seeded successfully!", fg="green")
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error("People seeding failed", exc_info=True)
+        click.secho(f"❌ People seeding failed: {e}", fg="red")
+        raise SystemExit(1)
+
+
