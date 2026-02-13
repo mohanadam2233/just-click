@@ -1,3 +1,4 @@
+
 "use client";
 import TabButtonPrimary from "@/components/shared/buttons/TabButtonPrimary";
 import LoginForm from "@/components/shared/login/LoginForm";
@@ -14,18 +15,15 @@ const LoginTab = () => {
   const { currentIdx, handleTabClick } = useTab();
   const tabButtons = [
     { name: "Login", content: <LoginForm /> },
-    {
-      name: " Sing up",
-      content: <SignUpForm />,
-    },
+    { name: "Sign Up", content: <SignUpForm /> },
   ];
+
   return (
     <section className="relative">
-      <div className="container py-100px">
+      <div className="container py-16 md:py-100px">
         <div className="tab md:w-2/3 mx-auto">
-          {/* tab controller */}
-
-          <div className="tab-links grid grid-cols-2 gap-11px text-blackColor text-lg lg:text-size-22 font-semibold font-hind mb-43px mt-30px md:mt-0">
+          {/* Tab Controller */}
+          <div className="tab-links grid grid-cols-2 gap-4 text-blackColor text-lg lg:text-size-22 font-semibold font-hind mb-8 mt-0 md:mt-0">
             {tabButtons?.map(({ name }, idx) => (
               <TabButtonPrimary
                 key={idx}
@@ -38,8 +36,8 @@ const LoginTab = () => {
             ))}
           </div>
 
-          {/* tab contents */}
-          <div className="shadow-container bg-whiteColor dark:bg-whiteColor-dark pt-10px px-5 pb-10 md:p-50px md:pt-30px rounded-5px">
+          {/* Tab Content Container */}
+          <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 md:p-10 border border-gray-100 dark:border-gray-700">
             <div className="tab-contents">
               {tabButtons.map(({ content }, idx) => (
                 <TabContentWrapper
@@ -53,7 +51,8 @@ const LoginTab = () => {
           </div>
         </div>
       </div>
-      {/* animated icons */}
+
+      {/* Animated Icons (unchanged) */}
       <div>
         <Image
           loading="lazy"

@@ -1,7 +1,7 @@
-const {
-  default: TiltWrapper,
-} = require("@/components/shared/wrappers/TiltWrapper");
-const { default: Image } = require("next/image");
+
+import React from "react";
+import TiltWrapper from "@/components/shared/wrappers/TiltWrapper";
+import Image from "next/image";
 import about10 from "@/assets/images/about/about_10.png";
 import AppleImage from "@/components/shared/animaited-images/AppleImage";
 import BalbImage from "@/components/shared/animaited-images/BalbImage";
@@ -11,6 +11,7 @@ import TriangleImage from "@/components/shared/animaited-images/TriangleImage";
 import ButtonPrimary from "@/components/shared/buttons/ButtonPrimary";
 import HeadingXl from "@/components/shared/headings/HeadingXl";
 import HreoName from "@/components/shared/section-names/HreoName";
+
 const Hero3 = () => {
   return (
     <section data-aos="fade-up">
@@ -25,34 +26,35 @@ const Hero3 = () => {
           <TriangleImage />
         </div>
         <div className="container 2xl:container-secondary-md relative overflow-hidden">
-          <div className="grid grid-cols-1 lg:grid-cols-2 items-center">
+          <div className="grid grid-cols-1 lg:grid-cols-2 items-center gap-30px">
             {/* banner Left */}
             <div data-aos="fade-up">
-              <HreoName>EDUCATION SOLUTION</HreoName>
+              <HreoName>SMART CAMPUS PORTAL</HreoName>
               <HeadingXl>
-                Centralized IT Materials Platform with AI Study Assistant
+                All Your Class Materials & <span className="text-secondaryColor">AI Tutor</span> in One Place.
               </HeadingXl>
-              <p className="text-size-15 md:text-lg text-blackColor dark:text-blackColor-dark font-medium mb-45px">
-                A unified system for managing IT course materials,
-                <br />
-                enhanced with a curriculum-grounded AI assistant.
+              <p className="text-size-15 md:text-lg text-blackColor dark:text-blackColor-dark font-medium mb-45px leading-7">
+                Stop scrolling through WhatsApp history. Access lecture slides, 
+                past exams, and get instant answers from your AI study assistant—anytime, anywhere.
               </p>
 
               <div className="space-x-5 md:space-x-30px">
-                <ButtonPrimary path="/courses">Access Materials</ButtonPrimary>
+                <ButtonPrimary path="/login">
+                    Get Started Now
+                </ButtonPrimary>
                 <ButtonPrimary color="secondary" path="/courses">
-                  Explore More
+                  Browse Courses
                 </ButtonPrimary>
               </div>
             </div>
             {/* banner right */}
             <div data-aos="fade-up">
               <TiltWrapper>
-                <div className="tilt">
+                <div className="tilt relative z-1">
                   <Image
                     className="w-full"
                     src={about10}
-                    alt=""
+                    alt="Student using the portal"
                     placeholder="blur"
                   />
                 </div>
