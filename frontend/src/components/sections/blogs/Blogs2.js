@@ -1,5 +1,5 @@
 "use client";
-import HeadingPrimaryXl from "@/components/shared/headings/HeadingPrimaryXl ";
+import HeadingPrimaryXl from "@/components/shared/headings/HeadingPrimaryXl";
 import SectionNameSecondary from "@/components/shared/section-names/SectionNameSecondary";
 import React from "react";
 import allBlogs from "@/../public/fakedata/blogs.json";
@@ -12,6 +12,7 @@ import blogImage36 from "@/assets/images/blog/blog_36.jpg";
 import Blog from "@/components/shared/blogs/Blog";
 import Link from "next/link";
 import useIsTrue from "@/hooks/useIsTrue";
+
 const Blogs2 = () => {
   const isHome10 = useIsTrue("/home-10");
   const isHome10Dark = useIsTrue("/home-10-dark");
@@ -20,18 +21,18 @@ const Blogs2 = () => {
     isHome10 || isHome10Dark
       ? [blogImage34, blogImage35, blogImage36]
       : [blogImage5, blogImage24, blogImage25];
+      
   return (
     <section>
       <div className="container py-10 md:py-50px lg:py-60px 2xl:py-100px">
-        {/* heading  */}
-
+        {/* heading */}
         <div data-aos="fade-up" className="text-center mb-15px">
           <SectionNameSecondary>NEWS & BLOG</SectionNameSecondary>
           <HeadingPrimaryXl>Latest News & Blogs</HeadingPrimaryXl>
         </div>
+        
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-30px">
-          {/* blogs  */}
-
+          {/* blogs */}
           {blogs.map((blog, idx) => (
             <Blog key={idx} blog={{ ...blog, image: images[idx] }} />
           ))}

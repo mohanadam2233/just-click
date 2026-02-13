@@ -1,126 +1,98 @@
+
 import Image from "next/image";
 import React from "react";
 import registrationImage1 from "@/assets/images/register/register__1.png";
 import registrationImage2 from "@/assets/images/register/register__2.png";
 import registrationImage3 from "@/assets/images/register/register__3.png";
-import PopupVideo from "@/components/shared/popup/PopupVideo";
-import ButtonPrimary from "@/components/shared/buttons/ButtonPrimary";
 import Link from "next/link";
 
 const Registration = () => {
   return (
     <section className="bg-register bg-cover bg-center bg-no-repeat lg:mb-150px">
-      {/* registration overlay  */}
-      <div className="overlay bg-blueDark bg-opacity-90 lg:pb-0 relative z-0">
-        {/* animate icons  */}
+      {/* Registration Overlay */}
+      <div className="overlay bg-blueDark bg-opacity-95 lg:pb-0 relative z-0">
+        {/* Animated Icons Background */}
         <div>
           <Image
-            className="absolute top-0 left-0 lg:left-[8%] 2xl:top-10 animate-move-hor block z--1"
+            className="absolute top-0 left-0 lg:left-[8%] 2xl:top-10 animate-move-hor block z--1 opacity-40"
             src={registrationImage1}
             alt=""
           />
           <Image
-            className="absolute top-1/2 left-3/4 md:left-2/3 lg:left-1/2 2xl:left-[8%] md:top animate-spin-slow block z--1"
+            className="absolute top-1/2 left-3/4 md:left-2/3 lg:left-1/2 2xl:left-[8%] md:top animate-spin-slow block z--1 opacity-40"
             src={registrationImage2}
             alt=""
           />
           <Image
-            className="absolute top-20 lg:top-3/4 md:top-14 right-20 md:right-20 lg:right-[90%] animate-move-var block z--1"
+            className="absolute top-20 lg:top-3/4 md:top-14 right-20 md:right-20 lg:right-[90%] animate-move-var block z--1 opacity-40"
             src={registrationImage3}
             alt=""
           />
         </div>
-        <div className="container py-20">
-          {/* about section   */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-x-30px">
-            {/* about left  */}
+
+        <div className="container py-20 lg:py-24">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-x-30px items-center">
+            
+            {/* Left Side: Compelling Text */}
             <div
-              className="mb-30px lg:mb-0 pb-0  xl:pb-0 lg:col-start-1 lg:col-span-7"
+              className="mb-10 lg:mb-0 lg:col-start-1 lg:col-span-7"
               data-aos="fade-up"
             >
               <div className="relative">
-                <span className="text-sm font-semibold text-primaryColor bg-whitegrey3 px-6 py-5px mb-5 rounded-full inline-block">
-                  Registration
+                <span className="text-sm font-bold text-blackColor bg-secondaryColor px-4 py-1 mb-5 rounded-md inline-block uppercase tracking-wider">
+                  Student Portal Access
                 </span>
-                <h3 className="text-3xl md:text-[35px] 2xl:text-size-42 leading-[45px] 2xl:leading-2xl font-bold text-whiteColor">
-                  Register to{" "}
-                  <span className="relative after:w-full after:h-[7px] after:bg-secondaryColor after:absolute after:left-0 after:bottom-2 md:after:bottom-4 z-0 after:z-[-1]">
-                    Access
-                  </span>{" "}
-                  Your IT Department Materials &{" "}
-                  <span className="text-yellow1">AI Study </span> Assistant
+                <h3 className="text-3xl md:text-5xl font-bold text-whiteColor mb-6 leading-tight">
+                  Unlock Your <span className="text-secondaryColor">Full Potential</span> with Centralized Resources
                 </h3>
-                <div className="flex gap-x-5 items-center">
-                  {/* <PopupVideo /> */}
+                
+                <p className="text-lg text-whiteColor/90 leading-relaxed font-medium max-w-2xl">
+                  Join hundreds of IT students accessing verified lecture notes, 
+                  past exams, and our new AI Study Assistant. Stop searching for 
+                  files—start studying.
+                </p>
 
-                  <div>
-                    <p className="text-size-15 md:text-[22px] lg:text-lg 2xl:text-[22px] leading-6 md:leading-9 lg:leading-8 2xl:leading-9 font-semibold text-white">
-                      Access verified course documents, receive instant AI
-                      explanations, track progress, and stay updated with
-                      lecturer announcements.
-                    </p>
-                  </div>
+                {/* Feature Tags */}
+                <div className="flex flex-wrap gap-4 mt-8">
+                    {['Free Account', 'Instant Access', 'Mobile Friendly'].map((tag, i) => (
+                        <span key={i} className="flex items-center text-whiteColor text-sm font-semibold bg-whiteColor/10 px-3 py-2 rounded-lg border border-whiteColor/10">
+                            <i className="icofont-check-circled text-secondaryColor mr-2"></i>
+                            {tag}
+                        </span>
+                    ))}
                 </div>
               </div>
             </div>
-            {/* sbject right  */}
-            <div className="overflow-visible lg:col-start-8 lg:col-span-5 relative z-1 flex items-center justify-center">
-              {/* <form
-                className="p-35px pt-10 bg-lightGrey10 dark:bg-lightGrey10-dark rounded shadow-experience"
-                data-aos="fade-up"
+
+            {/* Right Side: CTA Card */}
+            <div className="lg:col-start-8 lg:col-span-5 relative z-1 flex justify-center lg:justify-end">
+              <div 
+                className="bg-whiteColor/5 backdrop-blur-sm border border-whiteColor/10 p-8 rounded-2xl shadow-2xl w-full max-w-md text-center"
+                data-aos="fade-up" 
+                data-aos-delay="150"
               >
-                <h3 className="text-xl text-blackColor dark:text-blackColor-dark font-semibold mb-5 font-inter">
-                  Fill Your Registration
-                </h3>
-
-                <input
-                  type="text"
-                  placeholder="Your Name"
-                  className="w-full px-15px py-3 bg-lightGrey8 text-base mb-25px focus:outline-none"
-                />
-
-                <div className="grid grid-cols-1 xl:grid-cols-2 xl:gap-x-30px">
-                  <input
-                    type="email"
-                    placeholder="Email Address"
-                    className="w-full px-15px py-3 bg-lightGrey8 text-base mb-25px focus:outline-none"
-                  />
-
-                  <input
-                    type="text"
-                    placeholder="Phone"
-                    className="w-full px-15px py-3 bg-lightGrey8 text-base mb-25px focus:outline-none"
-                  />
-                </div>
-                <input
-                  type="text"
-                  placeholder="Address"
-                  className="w-full px-15px py-3 bg-lightGrey8 text-base mb-25px focus:outline-none"
-                />
-
-                <textarea
-                  placeholder="Comment"
-                  className="w-full px-15px pb-3 pt-5 bg-lightGrey8 text-base mb-25px h-[155px] placeholder:text-blackColor"
-                  cols="30"
-                  rows="10"
-                />
-                <div>
-                  <ButtonPrimary type="submit" arrow={true}>
-                    Sign Up
-                  </ButtonPrimary>
-                </div>
-              </form> */}
-              <button className="">
+                <h4 className="text-2xl font-bold text-whiteColor mb-2">Ready to start?</h4>
+                <p className="text-whiteColor/70 mb-8">Create your student profile in less than 2 minutes.</p>
+                
                 <Link
-                  className={`text-size-19 text-whiteColor  px-10 py-5 border  hover:bg-whiteColor inline-block rounded
-                     dark:hover:bg-whiteColor-dark dark:hover:text-whiteColor bg-secondaryColor border-secondaryColor hover:text-secondaryColor  `}
-                  href={"/login"}
+                  href="/login"
+                  className="group relative block w-full py-4 px-6 bg-secondaryColor hover:bg-whiteColor text-whiteColor hover:text-secondaryColor font-bold text-lg rounded-lg transition-all duration-300 shadow-lg hover:shadow-secondaryColor/50"
                 >
-                  Signup Now
-                  <i className="icofont-long-arrow-right"></i>
+                  Create Free Account
+                  <i className="icofont-long-arrow-right ml-2 group-hover:ml-3 transition-all"></i>
                 </Link>
-              </button>
+
+                <div className="mt-6 pt-6 border-t border-whiteColor/10">
+                    <p className="text-whiteColor/60 text-sm">
+                        Already have an account?{" "}
+                        <Link href="/login" className="text-secondaryColor font-bold hover:underline">
+                            Log In Here
+                        </Link>
+                    </p>
+                </div>
+              </div>
             </div>
+
           </div>
         </div>
       </div>

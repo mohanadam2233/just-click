@@ -1,5 +1,4 @@
-import About3 from "@/components/sections/abouts/About3";
-import Blogs2 from "@/components/sections/blogs/Blogs2";
+
 import CoursesFilter from "@/components/sections/courses/CoursesFilter";
 import Hero3 from "@/components/sections/hero-banners/Hero3";
 import Instructors2 from "@/components/sections/instructors/Instructors2";

@@ -1,20 +1,22 @@
-import CourseCard from "./CourseCard";
 
-const CoursesGrid = ({ courses, isNotSidebar }) => {
+// components/shared/courses/CoursesGrid.jsx
+import MaterialCard from "./MaterialCard";
+
+const CoursesGrid = ({ materials, isNotSidebar }) => {
   return (
     <div
       className={`grid grid-cols-1 ${
         isNotSidebar
           ? "sm:grid-cols-2 xl:grid-cols-3"
           : "sm:grid-cols-2 md:grid-cols-1 lg:grid-cols-2 xl:grid-cols-3"
-      }   gap-30px`}
+      } gap-30px`}
     >
-      {courses?.length ? (
-        courses?.map((course, idx) => (
-          <CourseCard key={idx} course={course} type={"primaryMd"} />
+      {materials?.length ? (
+        materials?.map((material, idx) => (
+          <MaterialCard key={idx} material={material} type={"primaryMd"} />
         ))
       ) : (
-        <span></span>
+        <span>No materials found.</span>
       )}
     </div>
   );
