@@ -41,11 +41,11 @@ def ensure_found(obj, *, message: str):
     if not obj:
         raise NotFoundError(message)
     return obj
-def require_text(v: str | None, *, label: str) -> str:
-    s = (v or "").strip()
-    if not s:
-        raise BusinessValidationError(f"{label} is required.")
-    return s
+def require_text(value: str | None, *, field_label: str) -> str:
+    v = (value or "").strip()
+    if not v:
+        raise BusinessValidationError(f"{field_label} is required.")
+    return v
 
 
 def normalize_email(v: str | None) -> str:

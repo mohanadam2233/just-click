@@ -16,12 +16,13 @@ from cmcp.modules.auth.schemas import (
 )
 from cmcp.modules.auth.service.auth_service import AuthService
 from cmcp.modules.auth.service.user_service import UserService
+from cmcp.modules.education_people.service import EducationPeopleService
 from cmcp.security.rbac_guards import require_permission
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 auth_svc = AuthService()
 user_svc = UserService()
-
+edu_svc = EducationPeopleService()
 
 @bp.post("/login")
 @public
@@ -109,7 +110,17 @@ def reset_user_password(user_id: int):
         return api_error(f"Unexpected error: {e}", status_code=500)
 
 
+@bp.get("/verify-email")
+@public
+@rate_limit(key_prefix="verify_email", limit=20, window=60)  # optional
+def verify_email():
+    username = (request.args.get("username") or "").strip()
+    token = (request.args.get("token") or "").strip()
 
+    ok, msg = edu_svc.verify_email(username=username, token=token)
+    if ok:
+        return api_success(message=msg, data={"username": username}, status_code=200)
+    return api_error(message=msg, status_code=400)
 
 # @bp.get("/materials")
 # @require_company_and_permission(doctype="Material", action="READ")

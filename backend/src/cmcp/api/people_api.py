@@ -6,8 +6,11 @@ from typing import Any, Dict, Optional, Tuple
 from flask import Blueprint, request
 
 from cmcp.common.api_response import api_success, api_error
+from cmcp.common.decorators import rate_limit
 from cmcp.config.database import db
+from cmcp.core.auth import public
 from cmcp.core.exceptions import BusinessValidationError, NotFoundError
+from cmcp.core.tenant_resolver import resolve_company_id_for_public
 from cmcp.security.rbac_guards import require_company_and_permission
 
 from cmcp.modules.education_people.schemas import (
@@ -164,21 +167,31 @@ def get_classroom(company_id: int, classroom_id: int):
         return api_success(message="OK", data=rec, status_code=200) if rec else api_error("Classroom not found.", status_code=404)
     except Exception as e:
         return _handle_error(e)
-@bp.post("/students/register")
-@require_company_and_permission(doctype="Student", action="CREATE")
-def student_register(company_id: int):
-    """
-    Student self-registration (NO update/delete here).
-    Steps:
-      - checks duplicates
-      - creates User + StudentProfile (disabled)
-      - queues verification email
-    """
+
+
+# @bp.post("/students/register")
+# @public
+# @rate_limit(key_prefix="student_register", limit=10, window=60)
+# def student_register(company_id: int):
+#     try:
+#         payload = StudentRegisterIn.model_validate(request.get_json(silent=True) or {})
+#         ok, msg, out = svc.register_student(company_id=company_id, data=payload.model_dump())
+#         _commit_ok(ok)  # ✅ commit if ok else rollback
+#         return api_success(message=msg, data=out, status_code=201) if ok else api_error(msg, status_code=400)
+#     except Exception as e:
+#         return _handle_error(e)  # ✅ rollback + consistent errors
+@bp.post("/public/students/register")
+@public
+@rate_limit(key_prefix="student_register", limit=10, window=60)
+def public_student_register():
     try:
+        company_id = resolve_company_id_for_public()  # ✅ MVP uses DEFAULT_COMPANY_ID
+
         payload = StudentRegisterIn.model_validate(request.get_json(silent=True) or {})
         ok, msg, out = svc.register_student(company_id=company_id, data=payload.model_dump())
+
+        _commit_ok(ok)
         return api_success(message=msg, data=out, status_code=201) if ok else api_error(msg, status_code=400)
+
     except Exception as e:
-        return api_error(str(e), status_code=400)
-
-
+        return _handle_error(e)

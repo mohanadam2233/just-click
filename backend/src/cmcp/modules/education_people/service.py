@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import logging
 import os
 from datetime import timedelta
 from typing import Any, Dict, Optional, Tuple, List
 
 from sqlalchemy.orm import Session
 
+from cmcp.common.email.outbox_model import EmailOutboxStatus
 from cmcp.config.database import db
 from cmcp.core.base_service import BaseService
 
@@ -33,7 +35,7 @@ from cmcp.modules.education_people.validation import (
 )
 
 
-
+log = logging.getLogger(__name__)
 
 class EducationPeopleService:
     """
@@ -156,96 +158,135 @@ class EducationPeopleService:
         classroom_id = data.get("classroom_id")
         classroom_id = int(classroom_id) if classroom_id else None
 
-        # faculty exists
+        # validations
         if not self.repo.faculty_exists(company_id=company_id, faculty_id=faculty_id):
             return False, ERR_FACULTY_NOT_FOUND, None
-
-        # department exists + belongs to faculty
         if not self.repo.department_exists(company_id=company_id, department_id=department_id, faculty_id=faculty_id):
             return False, ERR_DEPARTMENT_NOT_FOUND, None
-
-        # classroom optional
         if classroom_id and not self.repo.classroom_exists(company_id=company_id, classroom_id=classroom_id):
             return False, ERR_CLASSROOM_NOT_FOUND, None
 
-        # duplicates
         if self.repo.user_by_username(student_id=student_id) or self.repo.student_profile_by_student_id(
-                company_id=company_id, student_id=student_id):
+                company_id=company_id, student_id=student_id
+        ):
             return False, ERR_STUDENT_ID_EXISTS, None
 
         if self.repo.user_by_email(email=email):
             return False, ERR_EMAIL_EXISTS, None
 
-        # create user (no login until approved)
-        user = User(
-            username=student_id,
-            password_hash="!",
-            email=email,
-            user_type=UserTypeEnum.STUDENT,
-            status=UserStatusEnum.PENDING_EMAIL,
-            is_enabled=False,
-            must_change_password=False,
-        )
-        self.s.add(user)
-        self.s.flush()
-
-        prof = StudentProfile(
-            user_id=user.id,
-            company_id=int(company_id),
-            full_name=full_name,
-            student_id=student_id,
-            faculty_id=faculty_id,
-            department_id=department_id,
-            classroom_id=classroom_id,
-            semester_id=None,
-            is_enabled=True,
-        )
-        self.s.add(prof)
-        self.s.flush()
-
-        aff = UserAffiliation(
-            user_id=user.id,
-            company_id=int(company_id),
-            is_primary=True,
-            is_enabled=False,
-            linked_entity_type=LinkedEntityTypeEnum.STUDENT_PROFILE,
-            linked_entity_id=prof.id,
-        )
-        self.s.add(aff)
-
-        # token
         ttl = int(os.getenv("EMAIL_VERIFY_TOKEN_TTL_MINUTES", "30"))
-        tok = generate_email_verify_token(ttl_minutes=ttl)
-        user.email_verify_token_hash = tok.token_hash
-        user.email_verify_expires_at = tok.expires_at
-
-        self.s.commit()
-
-        # enqueue email
         base_url = (os.getenv("APP_BASE_URL", "").rstrip("/")) or "http://localhost:5000"
-        verify_link = f"{base_url}/verify-email?username={student_id}&token={tok.token}"
 
-        self.email_svc.enqueue(
-            to_email=user.email,
-            subject="Verify Your Jamhuriya University Account",
-            template="verify_email",
-            payload={
-                "full_name": prof.full_name,
+        debug_payload = None
+
+        try:
+            # ✅ works even if Flask already began a transaction
+            with self.s.begin_nested():  # SAVEPOINT
+                user = User(
+                    username=student_id,
+                    password_hash="!",
+                    email=email,
+                    user_type=UserTypeEnum.STUDENT,
+                    status=UserStatusEnum.PENDING_EMAIL,
+                    is_enabled=False,
+                    must_change_password=False,
+                )
+                self.s.add(user)
+                self.s.flush()
+
+                prof = StudentProfile(
+                    user_id=user.id,
+                    company_id=int(company_id),
+                    full_name=full_name,
+                    student_id=student_id,
+                    faculty_id=faculty_id,
+                    department_id=department_id,
+                    classroom_id=classroom_id,
+                    semester_id=None,
+                    is_enabled=True,
+                )
+                self.s.add(prof)
+                self.s.flush()
+
+                aff = UserAffiliation(
+                    user_id=user.id,
+                    company_id=int(company_id),
+                    is_primary=True,
+                    is_enabled=False,
+                    linked_entity_type=LinkedEntityTypeEnum.STUDENT_PROFILE,
+                    linked_entity_id=prof.id,
+                )
+                self.s.add(aff)
+
+                tok = generate_email_verify_token(ttl_minutes=ttl)
+                user.email_verify_token_hash = tok.token_hash
+                user.email_verify_expires_at = tok.expires_at
+
+                verify_link = f"{base_url}/verify-email?username={student_id}&token={tok.token}"
+
+                debug_payload = {
+                    "to_email": user.email,
+                    "subject": "Verify Your Jamhuriya University Account",
+                    "template": "verify_email",
+                    "payload": {
+                        "full_name": prof.full_name,
+                        "student_id": student_id,
+                        "verify_link": verify_link,
+                        "expires_minutes": ttl,
+                    },
+                    "ref_type": "User",
+                    "ref_id": user.id,
+                }
+
+                row = self.email_svc.enqueue(
+                    to_email=debug_payload["to_email"],
+                    subject=debug_payload["subject"],
+                    template=debug_payload["template"],
+                    payload=debug_payload["payload"],
+                    ref_type=debug_payload["ref_type"],
+                    ref_id=debug_payload["ref_id"],
+                )
+
+                # ✅ if SMTP fails -> exception -> SAVEPOINT rollback -> user/profile not saved
+                self.email_svc.send_outbox_row_now(row)
+
+            # NOTE: do NOT commit here. Route will commit (see next section).
+            return True, "Registration submitted. Please check your email to verify your address.", {
                 "student_id": student_id,
-                "verify_link": verify_link,
-                "expires_minutes": ttl,
-            },
-            # recommended references (if your EmailService supports it, otherwise remove)
-            ref_type="User",
-            ref_id=user.id,
-        )
+                "email": email,
+                "status": UserStatusEnum.PENDING_EMAIL.value,
+            }
 
-        return True, "Registration submitted. Please check your email to verify your address.", {
-            "student_id": student_id,
-            "email": email,
-            "status": user.status.value,
-        }
+        except Exception as e:
+            log.exception("register_student failed. student_id=%s email=%s", student_id, email)
 
+            # Ensure request handler will rollback outer transaction
+            try:
+                self.s.rollback()
+            except Exception:
+                pass
+
+            # Optional: store a FAILED outbox row (separate transaction) so you can see last_error
+            try:
+                if debug_payload:
+                    fail_row = self.email_svc.enqueue(
+                        to_email=debug_payload["to_email"],
+                        subject=debug_payload["subject"],
+                        template=debug_payload["template"],
+                        payload=debug_payload["payload"],
+                        ref_type=debug_payload["ref_type"],
+                        ref_id=debug_payload["ref_id"],
+                        status=EmailOutboxStatus.FAILED,
+                        last_error=str(e),
+                    )
+                    self.s.commit()
+                    log.warning("Stored FAILED outbox id=%s last_error=%s", fail_row.id, str(e)[:200])
+            except Exception:
+                log.exception("Could not store FAILED outbox debug row")
+
+            return False, f"Registration failed: could not send verification email. ({str(e)})", None
+
+            return False, f"Registration failed: could not send verification email. ({str(e)})", None
         # =========================================================
         # STEP 4: Verify email
         # =========================================================
