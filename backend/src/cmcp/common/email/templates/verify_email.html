@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+  <body>
+    <p>Hello {{ full_name }},</p>
+
+    <p>Thank you for registering with Jamhuriya University Portal!</p>
+
+    <p><b>Your Student ID:</b> {{ student_id }}</p>
+    <p><b>Registration Status:</b> Pending Email Verification</p>
+
+    <p>To verify your email, please click this link:</p>
+    <p><a href="{{ verify_link }}">{{ verify_link }}</a></p>
+
+    <p>This link expires in {{ expires_minutes }} minutes.</p>
+
+    <p>Once verified, your account will be reviewed by our admin team.</p>
+
+    <p>If you didn't request this, please ignore this email.</p>
+
+    <p>Best regards,<br/>Jamhuriya University IT Department</p>
+  </body>
+</html>

@@ -3,6 +3,9 @@
 import bcrypt
 from typing import Optional
 
+
+import secrets
+
 # No need to import legacy encryption anymore
 # from .encryption import decrypt_password as legacy_decrypt
 
@@ -40,3 +43,16 @@ def verify_password(plain: str, stored: Optional[str]) -> bool:
     except Exception:
         # Fails safely if the hash is corrupted or malformed.
         return False
+
+
+
+# NOTE: replace hash_password() with your real hashing (werkzeug/bcrypt/argon2)
+def hash_password(raw: str) -> str:
+    # TODO: implement real hashing
+    return raw
+
+
+def generate_temp_password(length: int = 6) -> str:
+    # 6 chars, avoid confusing chars
+    alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
+    return "".join(secrets.choice(alphabet) for _ in range(int(length)))

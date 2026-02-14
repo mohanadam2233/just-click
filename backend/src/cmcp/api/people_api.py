@@ -12,9 +12,8 @@ from cmcp.security.rbac_guards import require_company_and_permission
 
 from cmcp.modules.education_people.schemas import (
     BulkDeleteIn,
-    ClassroomCreate, ClassroomUpdate,
-    StudentProfileCreate, StudentProfileUpdate,
-    StaffProfileCreate, StaffProfileUpdate,
+    ClassroomCreate, ClassroomUpdate, StudentRegisterIn,
+
 )
 from cmcp.modules.education_people.service import EducationPeopleService
 
@@ -165,179 +164,21 @@ def get_classroom(company_id: int, classroom_id: int):
         return api_success(message="OK", data=rec, status_code=200) if rec else api_error("Classroom not found.", status_code=404)
     except Exception as e:
         return _handle_error(e)
-
-
-# =========================================================
-# STUDENT PROFILE
-# =========================================================
-@bp.post("/students/create")
-@require_company_and_permission(doctype="Student Profile", action="CREATE")
-def create_student(company_id: int):
+@bp.post("/students/register")
+@require_company_and_permission(doctype="Student", action="CREATE")
+def student_register(company_id: int):
+    """
+    Student self-registration (NO update/delete here).
+    Steps:
+      - checks duplicates
+      - creates User + StudentProfile (disabled)
+      - queues verification email
+    """
     try:
-        payload = StudentProfileCreate.model_validate(request.get_json(silent=True) or {})
-        ok, msg, out = svc.create_student(company_id=company_id, data=payload.model_dump())
-        _commit_ok(ok)
+        payload = StudentRegisterIn.model_validate(request.get_json(silent=True) or {})
+        ok, msg, out = svc.register_student(company_id=company_id, data=payload.model_dump())
         return api_success(message=msg, data=out, status_code=201) if ok else api_error(msg, status_code=400)
     except Exception as e:
-        return _handle_error(e)
+        return api_error(str(e), status_code=400)
 
 
-@bp.put("/students/<int:student_profile_id>/update")
-@require_company_and_permission(doctype="Student Profile", action="UPDATE")
-def update_student(company_id: int, student_profile_id: int):
-    try:
-        payload = StudentProfileUpdate.model_validate(request.get_json(silent=True) or {})
-        ok, msg, out = svc.update_student(
-            company_id=company_id,
-            student_profile_id=student_profile_id,
-            data=payload.model_dump(exclude_unset=True),
-        )
-        _commit_ok(ok)
-        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
-    except Exception as e:
-        return _handle_error(e)
-
-
-@bp.delete("/students/<int:student_profile_id>/delete")
-@require_company_and_permission(doctype="Student Profile", action="DELETE")
-def delete_student(company_id: int, student_profile_id: int):
-    try:
-        ok, msg, out = svc.delete_student(company_id=company_id, student_profile_id=student_profile_id, soft=True)
-        _commit_ok(ok)
-        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
-    except Exception as e:
-        return _handle_error(e)
-
-
-@bp.post("/students/bulk-delete")
-@require_company_and_permission(doctype="Student Profile", action="DELETE")
-def bulk_delete_students(company_id: int):
-    try:
-        payload = BulkDeleteIn.model_validate(request.get_json(silent=True) or {})
-        ok, msg, out = svc.bulk_delete_students(company_id=company_id, ids=payload.ids, soft=True)
-        _commit_ok(ok)
-        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
-    except Exception as e:
-        return _handle_error(e)
-
-
-@bp.get("/students/list")
-@require_company_and_permission(doctype="Student Profile", action="READ")
-def list_students(company_id: int):
-    try:
-        q, sort_key, sort_order, page, per_page, limit, offset, filters = _list_args()
-        mode = _list_mode(limit, offset)
-
-        args = {
-            "q": q,
-            "sort_key": sort_key,
-            "sort_order": sort_order,
-            "page": page,
-            "per_page": per_page,
-            "limit": int(limit or 20),
-            "offset": int(offset or 0),
-            "filters": filters,
-        }
-
-        data = svc.list_students(company_id=company_id, mode=mode, args=args)
-        return api_success(message="OK", data=data, status_code=200)
-    except Exception as e:
-        return _handle_error(e)
-
-
-@bp.get("/students/<int:student_profile_id>/get")
-@require_company_and_permission(doctype="Student Profile", action="READ")
-def get_student(company_id: int, student_profile_id: int):
-    try:
-        rec = svc.get_student(company_id=company_id, student_profile_id=student_profile_id)
-        return api_success(message="OK", data=rec, status_code=200) if rec else api_error("Student profile not found.", status_code=404)
-    except Exception as e:
-        return _handle_error(e)
-
-
-# =========================================================
-# STAFF PROFILE
-# =========================================================
-@bp.post("/staff/create")
-@require_company_and_permission(doctype="Staff Profile", action="CREATE")
-def create_staff(company_id: int):
-    try:
-        payload = StaffProfileCreate.model_validate(request.get_json(silent=True) or {})
-        ok, msg, out = svc.create_staff(company_id=company_id, data=payload.model_dump())
-        _commit_ok(ok)
-        return api_success(message=msg, data=out, status_code=201) if ok else api_error(msg, status_code=400)
-    except Exception as e:
-        return _handle_error(e)
-
-
-@bp.put("/staff/<int:staff_profile_id>/update")
-@require_company_and_permission(doctype="Staff Profile", action="UPDATE")
-def update_staff(company_id: int, staff_profile_id: int):
-    try:
-        payload = StaffProfileUpdate.model_validate(request.get_json(silent=True) or {})
-        ok, msg, out = svc.update_staff(
-            company_id=company_id,
-            staff_profile_id=staff_profile_id,
-            data=payload.model_dump(exclude_unset=True),
-        )
-        _commit_ok(ok)
-        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
-    except Exception as e:
-        return _handle_error(e)
-
-
-@bp.delete("/staff/<int:staff_profile_id>/delete")
-@require_company_and_permission(doctype="Staff Profile", action="DELETE")
-def delete_staff(company_id: int, staff_profile_id: int):
-    try:
-        ok, msg, out = svc.delete_staff(company_id=company_id, staff_profile_id=staff_profile_id, soft=True)
-        _commit_ok(ok)
-        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
-    except Exception as e:
-        return _handle_error(e)
-
-
-@bp.post("/staff/bulk-delete")
-@require_company_and_permission(doctype="Staff Profile", action="DELETE")
-def bulk_delete_staff(company_id: int):
-    try:
-        payload = BulkDeleteIn.model_validate(request.get_json(silent=True) or {})
-        ok, msg, out = svc.bulk_delete_staff(company_id=company_id, ids=payload.ids, soft=True)
-        _commit_ok(ok)
-        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
-    except Exception as e:
-        return _handle_error(e)
-
-
-@bp.get("/staff/list")
-@require_company_and_permission(doctype="Staff Profile", action="READ")
-def list_staff(company_id: int):
-    try:
-        q, sort_key, sort_order, page, per_page, limit, offset, filters = _list_args()
-        mode = _list_mode(limit, offset)
-
-        args = {
-            "q": q,
-            "sort_key": sort_key,
-            "sort_order": sort_order,
-            "page": page,
-            "per_page": per_page,
-            "limit": int(limit or 20),
-            "offset": int(offset or 0),
-            "filters": filters,
-        }
-
-        data = svc.list_staff(company_id=company_id, mode=mode, args=args)
-        return api_success(message="OK", data=data, status_code=200)
-    except Exception as e:
-        return _handle_error(e)
-
-
-@bp.get("/staff/<int:staff_profile_id>/get")
-@require_company_and_permission(doctype="Staff Profile", action="READ")
-def get_staff(company_id: int, staff_profile_id: int):
-    try:
-        rec = svc.get_staff(company_id=company_id, staff_profile_id=staff_profile_id)
-        return api_success(message="OK", data=rec, status_code=200) if rec else api_error("Staff profile not found.", status_code=404)
-    except Exception as e:
-        return _handle_error(e)

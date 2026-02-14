@@ -1,0 +1,30 @@
+<!doctype html>
+<html>
+  <body>
+    <p>Congratulations {{ full_name }}!</p>
+
+    <p>Your account has been approved by the administration.</p>
+
+    <p><b>Username/Student ID:</b> {{ student_id }}</p>
+    <p><b>Temporary Password:</b> {{ temp_password }}</p>
+
+    <p>Login here: <a href="{{ login_link }}">{{ login_link }}</a></p>
+
+    <p><b>IMPORTANT:</b></p>
+    <ol>
+      <li>You MUST change your password on first login</li>
+      <li>This temporary password expires in {{ expires_hours }} hours</li>
+      <li>Keep your Student ID confidential</li>
+    </ol>
+
+    <p>Access will be based on:</p>
+    <ul>
+      <li>Faculty: {{ faculty_name }}</li>
+      <li>Department: {{ department_name }}</li>
+    </ul>
+
+    <p>If you have questions, contact: it-support@jamhuriya.edu</p>
+
+    <p>Welcome to Jamhuriya University Portal!</p>
+  </body>
+</html>
