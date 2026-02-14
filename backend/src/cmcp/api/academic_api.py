@@ -18,7 +18,7 @@ from cmcp.modules.academic.schemas import (
     ChapterCreate, ChapterUpdate,
 )
 from cmcp.modules.academic.academic_service import AcademicService
-
+from cmcp.core.http.dropdown_args import dropdown_args
 bp = Blueprint("academic", __name__, url_prefix="/api/academic")
 svc = AcademicService()
 
@@ -515,3 +515,59 @@ def get_chapter(company_id: int, chapter_id: int):
         return api_success(message="OK", data=rec, status_code=200) if rec else api_error("Chapter not found.", status_code=404)
     except Exception as e:
         return api_error(str(e), status_code=400)
+@bp.get("/faculties/dropdown")
+@require_company_and_permission(doctype="Faculty", action="READ")
+def faculties_dropdown(company_id: int):
+    try:
+        search, limit, offset, active_only, filters = dropdown_args(
+            parse_filters_func=_parse_filters,
+            parse_bool_func=_as_bool,
+        )
+        data = svc.dropdown_faculties(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            filters=filters,
+        )
+        return api_success(message="OK", data=data, status_code=200)
+    except Exception as e:
+        return api_error(str(e), status_code=400)
+
+
+@bp.get("/semesters/dropdown")
+@require_company_and_permission(doctype="Academic Term", action="READ")
+def semesters_dropdown(company_id: int):
+    try:
+        search, limit, offset, active_only, filters = dropdown_args(
+            parse_filters_func=_parse_filters,
+            parse_bool_func=_as_bool,
+        )
+        data = svc.dropdown_semesters(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            filters=filters,
+        )
+        return api_success(message="OK", data=data, status_code=200)
+    except Exception as e:
+        return api_error(str(e), status_code=400)
+@bp.get("/faculties/with-departments/dropdown")
+@require_company_and_permission(doctype="Faculty", action="READ")
+def faculties_with_departments_dropdown(company_id: int):
+    search, limit, offset, active_only, filters = dropdown_args(
+        parse_filters_func=_parse_filters,
+        parse_bool_func=_as_bool,
+    )
+    data = svc.dropdown_faculties_with_departments(
+        company_id=company_id,
+        search=search,
+        limit=limit,
+        offset=offset,
+        active_only=active_only,
+        filters=filters,
+    )
+    return api_success(message="OK", data=data, status_code=200)

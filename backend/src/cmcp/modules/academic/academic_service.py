@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Tuple, List, Set
 
+from sqlalchemy import exists, select
+
 from cmcp.core.base_service import BaseService
 from cmcp.modules.academic.academic_repo import AcademicRepo
 from cmcp.modules.academic.models import Faculty, Department, AcademicYear, Semester, Course, Chapter
@@ -27,7 +29,7 @@ from cmcp.modules.academic.validation import (
     ERR_CHAPTER_EXISTS_TITLE,
     ERR_CHAPTER_EXISTS_NUMBER,
 )
-
+from cmcp.core.http.dropdown_args import dropdown_args
 
 def _safe_desc(v: Any) -> str | None:
     s = (v or "").strip()
@@ -833,3 +835,113 @@ class AcademicService:
         if rec and isinstance(rec.get("course"), dict):
             rec["course_title"] = rec["course"].get("title")
         return rec
+    # ---------- Dropdowns ----------
+    def dropdown_faculties(
+        self,
+        *,
+        company_id: int,
+        search: str | None,
+        limit: int,
+        offset: int,
+        active_only: bool,
+        filters: dict | None,
+    ):
+        allowed_filters = {"is_enabled": Faculty.is_enabled, "name": Faculty.name, "code": Faculty.code}
+        sort_fields = {"id": Faculty.id, "name": Faculty.name, "code": Faculty.code, "created_at": getattr(Faculty, "created_at", Faculty.id)}
+
+        return self.faculty_svc.dropdown(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            search_columns=[Faculty.name, Faculty.code],
+            filters=filters,
+            allowed_filters=allowed_filters,
+            sort_fields=sort_fields,
+            default_sort=[Faculty.name.asc()],
+            value_field="id",
+            label_fields=["code", "name"],
+            meta_fields=["code", "is_enabled"],
+            strict_label=True,   # <- module controls behavior
+        )
+
+    def dropdown_semesters(
+        self,
+        *,
+        company_id: int,
+        search: str | None,
+        limit: int,
+        offset: int,
+        active_only: bool,
+        filters: dict | None,
+    ):
+        allowed_filters = {
+            "is_enabled": Semester.is_enabled,
+            "academic_year_id": Semester.academic_year_id,
+            "number": Semester.number,
+            "name": Semester.name,
+        }
+        sort_fields = {"id": Semester.id, "number": Semester.number, "created_at": getattr(Semester, "created_at", Semester.id)}
+
+        def sem_label(s: Semester) -> str:
+            nm = (getattr(s, "name", None) or "").strip()
+            return nm or f"Semester {int(getattr(s, 'number', 0) or 0)}"
+
+        return self.semester_svc.dropdown(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            search_columns=[Semester.name],
+            filters=filters,
+            allowed_filters=allowed_filters,
+            sort_fields=sort_fields,
+            default_sort=[Semester.number.asc()],
+            value_field="id",
+            label_getter=sem_label,
+            meta_fields=["academic_year_id", "number", "name", "is_enabled"],
+            strict_label=True,
+        )
+
+    def dropdown_faculties_with_departments(
+            self,
+            *,
+            company_id: int,
+            search: str | None,
+            limit: int,
+            offset: int,
+            active_only: bool,
+            filters: dict | None,
+    ):
+        allowed_filters = {"is_enabled": Faculty.is_enabled, "name": Faculty.name, "code": Faculty.code}
+        sort_fields = {"id": Faculty.id, "name": Faculty.name, "code": Faculty.code}
+
+        # condition: faculty has at least one department (optionally enabled only)
+        dept_exists = exists(
+            select(1).where(
+                Department.faculty_id == Faculty.id,
+                Department.company_id == Faculty.company_id,  # tenant-safe
+                Department.is_enabled.is_(True),  # optional
+            )
+        )
+
+        return self.faculty_svc.dropdown(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            search_columns=[Faculty.name, Faculty.code],
+            filters=filters,
+            allowed_filters=allowed_filters,
+            sort_fields=sort_fields,
+            default_sort=[Faculty.name.asc()],
+            value_field="id",
+            label_fields=["code", "name"],
+            meta_fields=["code", "is_enabled"],
+            strict_label=True,
+            # ---- NEW HOOK ----
+            extra_where=[dept_exists],
+        )

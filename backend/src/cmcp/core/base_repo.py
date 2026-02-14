@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Generic, List, Optional, Sequence, Type, TypeVar
+from typing import Any, Dict, Generic, List, Optional, Sequence, Type, TypeVar, Iterable
 
 from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session, selectinload
-
+from sqlalchemy.sql import Select
 from cmcp.config.database import db
 from cmcp.core.query_utils import apply_filters, apply_search, apply_sort
 
@@ -217,51 +217,66 @@ class BaseRepository(Generic[T]):
         self.s.flush()
         return int(res.rowcount or 0)
     # ---------- dropdown ----------
+
     def dropdown(
-        self,
-        *,
-        company_id: Optional[int] = None,
-        active_only: bool = True,
-        eager_load: Optional[Sequence[str]] = None,
-        search: Optional[str] = None,
-        search_columns: Optional[Sequence[Any]] = None,
-        filters: Optional[Dict[str, Any]] = None,
-        allowed_filters: Optional[Dict[str, Any]] = None,
-        sort_key: Optional[str] = None,
-        sort_order: Optional[str] = None,
-        sort_fields: Optional[Dict[str, Any]] = None,
-        default_sort: Optional[List[Any]] = None,
-        limit: int = 20,
-        offset: int = 0,
-        max_limit: int = 100,
+            self,
+            *,
+            company_id: Optional[int] = None,
+            active_only: bool = True,  # maps to is_enabled=True if model has it
+            eager_load: Optional[Sequence[str]] = None,
+            search: Optional[str] = None,
+            search_columns: Optional[Sequence[Any]] = None,
+            filters: Optional[Dict[str, Any]] = None,
+            allowed_filters: Optional[Dict[str, Any]] = None,
+            sort_key: Optional[str] = None,
+            sort_order: Optional[str] = None,
+            sort_fields: Optional[Dict[str, Any]] = None,
+            default_sort: Optional[List[Any]] = None,
+            limit: int = 20,
+            offset: int = 0,
+            max_limit: int = 100,
+            # ✅ new flexible hooks
+            extra_where: Optional[Iterable[Any]] = None,  # extra conditions
+            base_stmt: Optional[Select] = None,  # custom select(...) (must return model rows if you want scalars())
+            count_from: Optional[Any] = None,  # explicit FROM for count (subquery/table/selectable)
     ) -> DropdownResult[T]:
-        """
-        Unified dropdown query:
-          - limit/offset pagination
-          - optional search + filters + sort (reuses query_utils)
-          - tenant-aware + active_only (is_enabled) support
-          - returns items + total for has_more calculation
-        """
         limit = int(limit or 20)
         offset = int(offset or 0)
         limit = max(1, min(limit, int(max_limit)))
         offset = max(0, offset)
 
-        # count
-        count_stmt = select(func.count()).select_from(self.model)
+        extra_where_list = list(extra_where or [])
+
+        # ---------- count ----------
+        if count_from is not None:
+            count_stmt = select(func.count()).select_from(count_from)
+        elif base_stmt is not None:
+            # count from the base query (ignoring order)
+            count_stmt = select(func.count()).select_from(base_stmt.order_by(None).subquery())
+        else:
+            count_stmt = select(func.count()).select_from(self.model)
+
         count_stmt = self._apply_tenant(count_stmt, company_id)
-        count_stmt = self._apply_enabled(count_stmt, active_only)
+        count_stmt = self._apply_enabled(count_stmt, bool(active_only))
         count_stmt = self._apply_eager(count_stmt, eager_load)
+
+        if extra_where_list:
+            count_stmt = count_stmt.where(*extra_where_list)
 
         count_stmt = apply_search(count_stmt, search_columns or [], search)
         count_stmt = apply_filters(count_stmt, filters=filters, allowed=allowed_filters)
+
         total = int(self.s.scalar(count_stmt) or 0)
 
-        # data
-        stmt = select(self.model)
+        # ---------- data ----------
+        stmt = base_stmt if base_stmt is not None else select(self.model)
+
         stmt = self._apply_tenant(stmt, company_id)
-        stmt = self._apply_enabled(stmt, active_only)
+        stmt = self._apply_enabled(stmt, bool(active_only))
         stmt = self._apply_eager(stmt, eager_load)
+
+        if extra_where_list:
+            stmt = stmt.where(*extra_where_list)
 
         stmt = apply_search(stmt, search_columns or [], search)
         stmt = apply_filters(stmt, filters=filters, allowed=allowed_filters)
@@ -274,6 +289,8 @@ class BaseRepository(Generic[T]):
         )
 
         stmt = stmt.offset(offset).limit(limit)
+
+        # NOTE: this expects stmt selects self.model (or compatible) so scalars() works.
         items = list(self.s.scalars(stmt).all())
 
         return DropdownResult(items=items, total=total, offset=offset, limit=limit)

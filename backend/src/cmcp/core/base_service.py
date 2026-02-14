@@ -389,6 +389,7 @@ class BaseService(Generic[T]):
             },
         }
 
+    # ---------------- Dropdown (limit/offset) ----------------
     def dropdown(
             self,
             *,
@@ -405,20 +406,15 @@ class BaseService(Generic[T]):
             sort_order: Optional[str] = None,
             sort_fields: Optional[Dict[str, Any]] = None,
             default_sort: Optional[List[Any]] = None,
-            # mapping config (flexible per-model)
+            # mapping config (module controls it)
             value_field: str = "id",
-            label_fields: Optional[List[str]] = None,  # e.g. ["code", "name"]
+            label_field: Optional[str] = None,  # simple single field
+            label_fields: Optional[List[str]] = None,  # join with " - "
             label_getter: Optional[Callable[[T], str]] = None,  # full override
-            meta_fields: Optional[List[str]] = None,  # e.g. ["code","academic_year_id","number","is_enabled"]
+            meta_fields: Optional[List[str]] = None,
+            strict_label: bool = False,  # if True: no fallback name/title
             max_limit: int = 100,
     ) -> Dict[str, Any]:
-        """
-        Unified dropdown response:
-          {
-            "data": [{"value":..,"label":..,"meta":{...}}],
-            "pagination": {"offset":..,"limit":..,"total":..,"has_more":..}
-          }
-        """
         res: DropdownResult[T] = self.repo.dropdown(
             company_id=int(company_id),
             active_only=bool(active_only),
@@ -436,11 +432,17 @@ class BaseService(Generic[T]):
             max_limit=max_limit,
         )
 
-        def _default_label(obj: T) -> str:
+        def _label(obj: T) -> str:
+            # 1) full override
             if label_getter:
                 return (label_getter(obj) or "").strip()
 
-            # label_fields: join non-empty with " - "
+            # 2) single field
+            if label_field:
+                v = getattr(obj, label_field, None)
+                return (str(v).strip() if v is not None else "")
+
+            # 3) multi-field join
             if label_fields:
                 parts: List[str] = []
                 for f in label_fields:
@@ -453,7 +455,11 @@ class BaseService(Generic[T]):
                 if parts:
                     return " - ".join(parts)
 
-            # fallback: name/title
+            # 4) fallback (optional)
+            if strict_label:
+                v = getattr(obj, value_field, None)
+                return str(v) if v is not None else ""
+
             nm = getattr(obj, "name", None)
             if nm:
                 return str(nm).strip()
@@ -461,23 +467,17 @@ class BaseService(Generic[T]):
             if tt:
                 return str(tt).strip()
 
-            # final fallback
             v = getattr(obj, value_field, None)
             return str(v) if v is not None else ""
 
         data_out: List[Dict[str, Any]] = []
         for obj in res.items:
             value = getattr(obj, value_field, None)
-
-            item: Dict[str, Any] = {
-                "value": value,
-                "label": _default_label(obj),
-            }
+            item: Dict[str, Any] = {"value": value, "label": _label(obj)}
 
             if meta_fields:
-                # use existing serialize() to keep your date formatting consistent
                 meta = self.serialize(obj, only=meta_fields)
-                # normalize is_active if you want (optional; keep meta flexible)
+                # normalize is_active if model uses is_enabled
                 if "is_enabled" in meta and "is_active" not in meta:
                     meta["is_active"] = bool(meta.get("is_enabled"))
                 item["meta"] = meta
