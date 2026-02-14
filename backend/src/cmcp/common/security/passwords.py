@@ -46,10 +46,6 @@ def verify_password(plain: str, stored: Optional[str]) -> bool:
 
 
 
-# NOTE: replace hash_password() with your real hashing (werkzeug/bcrypt/argon2)
-def hash_password(raw: str) -> str:
-    # TODO: implement real hashing
-    return raw
 
 
 def generate_temp_password(length: int = 6) -> str:

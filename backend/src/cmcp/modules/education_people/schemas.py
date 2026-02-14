@@ -38,3 +38,7 @@ class StudentRegisterIn(_BaseIn):
     department_id: int
     classroom_id: Optional[int] = None
     room_number: Optional[str] = None  # if you want to store separately (optional)
+
+
+class BulkApproveIn(BaseModel):
+    user_ids: List[int]

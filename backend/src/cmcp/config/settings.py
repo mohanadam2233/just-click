@@ -4,10 +4,16 @@ from typing import List, Optional, Literal
 from dotenv import load_dotenv
 import json
 from cryptography.fernet import Fernet
+from pathlib import Path
+# ✅ make sure it always finds backend/.env even if run from another cwd
+ENV_PATH = Path(__file__).resolve().parents[2] / ".env"  # adjust if your structure differs
 
 load_dotenv()
 
 SameSite = Literal["lax", "strict", "none"]
+
+# ✅ make sure it always finds backend/.env even if run from another cwd
+ENV_PATH = Path(__file__).resolve().parents[2] / ".env"  # adjust if your structure differs
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -26,6 +32,8 @@ class Settings(BaseSettings):
     DATABASE_USER: str
     DATABASE_PASSWORD: str
     DATABASE_NAME: str
+    # ✅ ADD THIS
+    DEFAULT_COMPANY_ID: Optional[int] = None
 
     @property
     def SQLALCHEMY_DATABASE_URI(self) -> str:

@@ -1,21 +1,25 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Dict, Optional, Tuple
 
 from flask import Blueprint, request
 
 from cmcp.common.api_response import api_success, api_error
 from cmcp.common.decorators import rate_limit
+from cmcp.common.email.outbox_model import EmailOutboxStatus, EmailOutbox
+from cmcp.common.email.service import EmailService
 from cmcp.config.database import db
 from cmcp.core.auth import public
 from cmcp.core.exceptions import BusinessValidationError, NotFoundError
 from cmcp.core.tenant_resolver import resolve_company_id_for_public
-from cmcp.security.rbac_guards import require_company_and_permission
+from cmcp.modules.auth.deps import get_current_user
+from cmcp.security.rbac_guards import require_company_and_permission, require_permission
 
 from cmcp.modules.education_people.schemas import (
     BulkDeleteIn,
-    ClassroomCreate, ClassroomUpdate, StudentRegisterIn,
+    ClassroomCreate, ClassroomUpdate, StudentRegisterIn, BulkApproveIn,
 
 )
 from cmcp.modules.education_people.service import EducationPeopleService
@@ -169,23 +173,12 @@ def get_classroom(company_id: int, classroom_id: int):
         return _handle_error(e)
 
 
-# @bp.post("/students/register")
-# @public
-# @rate_limit(key_prefix="student_register", limit=10, window=60)
-# def student_register(company_id: int):
-#     try:
-#         payload = StudentRegisterIn.model_validate(request.get_json(silent=True) or {})
-#         ok, msg, out = svc.register_student(company_id=company_id, data=payload.model_dump())
-#         _commit_ok(ok)  # ✅ commit if ok else rollback
-#         return api_success(message=msg, data=out, status_code=201) if ok else api_error(msg, status_code=400)
-#     except Exception as e:
-#         return _handle_error(e)  # ✅ rollback + consistent errors
 @bp.post("/public/students/register")
 @public
 @rate_limit(key_prefix="student_register", limit=10, window=60)
 def public_student_register():
     try:
-        company_id = resolve_company_id_for_public()  # ✅ MVP uses DEFAULT_COMPANY_ID
+        company_id = resolve_company_id_for_public()
 
         payload = StudentRegisterIn.model_validate(request.get_json(silent=True) or {})
         ok, msg, out = svc.register_student(company_id=company_id, data=payload.model_dump())
@@ -195,3 +188,66 @@ def public_student_register():
 
     except Exception as e:
         return _handle_error(e)
+@bp.post("/students/<int:user_id>/approve")
+@require_company_and_permission(doctype="Student", action="APPROVE")  # or doctype="User"
+def approve_student(company_id: int, user_id: int):
+    try:
+        admin = get_current_user()  # must exist for admin session
+        ok, msg = svc.admin_approve(user_id=int(user_id), admin_user_id=int(admin["user_id"]))
+
+        _commit_ok(ok)
+        return api_success(message=msg, data={"user_id": user_id}, status_code=200) if ok else api_error(msg, status_code=400)
+    except Exception as e:
+        return _handle_error(e)
+@bp.post("/students/bulk-approve")
+@require_company_and_permission(doctype="Student", action="APPROVE")
+def bulk_approve_students(company_id: int):
+    try:
+        admin = get_current_user()
+        payload = BulkApproveIn.model_validate(request.get_json(silent=True) or {})
+
+        results = []
+        ok_all = True
+
+        for uid in payload.user_ids:
+            ok, msg = svc.admin_approve(user_id=int(uid), admin_user_id=int(admin["user_id"]))
+            results.append({"user_id": int(uid), "ok": ok, "message": msg})
+            if not ok:
+                ok_all = False
+
+        # Commit once for all (better UX)
+        if ok_all:
+            db.session.commit()
+        else:
+            # optional: still commit successes, but keep consistent:
+            db.session.commit()
+
+        return api_success("Bulk approve done.", data={"results": results}, status_code=200)
+
+    except Exception as e:
+        return _handle_error(e)
+
+@bp.post("/email/outbox/<int:outbox_id>/resend")
+@require_company_and_permission("EmailOutbox", "MANAGE")
+def resend_outbox(outbox_id: int):
+    row = db.session.query(EmailOutbox).get(outbox_id)
+    if not row:
+        return api_error("Outbox not found", 404)
+
+    if row.status == EmailOutboxStatus.SENT:
+        return api_error("Already sent.", 400)
+
+    # unlock it (optional)
+    row.locked_at = None
+    row.status = EmailOutboxStatus.PENDING
+    db.session.flush()
+
+    svc = EmailService(
+        session=db.session,
+        provider=os.getenv("MAIL_PROVIDER", "smtp"),
+        from_email=os.getenv("MAIL_FROM_EMAIL", ""),
+        from_name=os.getenv("MAIL_FROM_NAME", ""),
+    )
+    svc.send_outbox_row_now(row)
+    db.session.commit()
+    return api_success("Resent", data={"outbox_id": outbox_id, "status": row.status})

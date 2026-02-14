@@ -184,7 +184,7 @@ class EducationPeopleService:
             with self.s.begin_nested():  # SAVEPOINT
                 user = User(
                     username=student_id,
-                    password_hash="!",
+                    password_hash="!DISABLED!",
                     email=email,
                     user_type=UserTypeEnum.STUDENT,
                     status=UserStatusEnum.PENDING_EMAIL,
@@ -339,49 +339,52 @@ class EducationPeopleService:
         if user.status != UserStatusEnum.PENDING_APPROVAL:
             return False, "User is not pending approval."
 
-        temp_pw = generate_temp_password(6)
-        user.password_hash = hash_password(temp_pw)
-        user.must_change_password = True
-        user.temp_password_expires_at = _utcnow() + timedelta(hours=int(os.getenv("TEMP_PASSWORD_TTL_HOURS", "24")))
+        # ✅ safe even if request already has transaction
+        with self.s.begin_nested():
+            temp_pw = generate_temp_password(6)
 
-        user.is_enabled = True
-        user.status = UserStatusEnum.ACTIVE
-        user.approved_at = _utcnow()
-        user.approved_by = int(admin_user_id)
+            user.password_hash = hash_password(temp_pw)
+            user.must_change_password = True
+            user.temp_password_expires_at = _utcnow() + timedelta(hours=int(os.getenv("TEMP_PASSWORD_TTL_HOURS", "24")))
 
-        for aff in (user.affiliations or []):
-            aff.is_enabled = True
+            user.is_enabled = True
+            user.status = UserStatusEnum.ACTIVE
+            user.approved_at = _utcnow()
+            user.approved_by = int(admin_user_id)
 
-        # load profile + names
-        prof = self.s.query(StudentProfile).filter(StudentProfile.user_id == user.id).first()
-        faculty_name = ""
-        department_name = ""
-        if prof:
-            fac = self.s.query(Faculty).filter(Faculty.id == prof.faculty_id).first()
-            dep = self.s.query(Department).filter(Department.id == prof.department_id).first()
-            faculty_name = fac.name if fac else ""
-            department_name = dep.name if dep else ""
+            for aff in (user.affiliations or []):
+                aff.is_enabled = True
 
-        self.s.commit()
+            prof = self.s.query(StudentProfile).filter(StudentProfile.user_id == user.id).first()
 
-        base_url = (os.getenv("APP_BASE_URL", "").rstrip("/")) or "http://localhost:5000"
-        login_link = f"{base_url}/login"
+            faculty_name = ""
+            department_name = ""
+            if prof:
+                fac = self.s.query(Faculty).filter(Faculty.id == prof.faculty_id).first()
+                dep = self.s.query(Department).filter(Department.id == prof.department_id).first()
+                faculty_name = fac.name if fac else ""
+                department_name = dep.name if dep else ""
 
-        self.email_svc.enqueue(
-            to_email=user.email,
-            subject="Your Jamhuriya University Portal Account is Approved!",
-            template="approved",
-            payload={
-                "full_name": (prof.full_name if prof else ""),
-                "student_id": user.username,
-                "temp_password": temp_pw,
-                "login_link": login_link,
-                "expires_hours": int(os.getenv("TEMP_PASSWORD_TTL_HOURS", "24")),
-                "faculty_name": faculty_name,
-                "department_name": department_name,
-            },
-            ref_type="User",
-            ref_id=user.id,
-        )
+            base_url = (os.getenv("APP_BASE_URL", "").rstrip("/")) or "http://localhost:3000"
+            login_link = f"{base_url}/login"
+
+            self.email_svc.enqueue(
+                to_email=user.email,
+                subject="Your Jamhuriya University Portal Account is Approved!",
+                template="approved",
+                payload={
+                    "full_name": (prof.full_name if prof else ""),
+                    "student_id": user.username,
+                    "temp_password": temp_pw,
+                    "login_link": login_link,
+                    "expires_hours": int(os.getenv("TEMP_PASSWORD_TTL_HOURS", "24")),
+                    "faculty_name": faculty_name,
+                    "department_name": department_name,
+                },
+                ref_type="User",
+                ref_id=user.id,
+            )
+
+            self.s.flush()  # ✅ ensure outbox row has id before route commit
 
         return True, "Approved and email queued."
