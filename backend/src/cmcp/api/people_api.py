@@ -228,7 +228,7 @@ def bulk_approve_students(company_id: int):
         return _handle_error(e)
 
 @bp.post("/email/outbox/<int:outbox_id>/resend")
-@require_company_and_permission("EmailOutbox", "MANAGE")
+@require_company_and_permission(doctype="EmailOutbox", action="MANAGE")
 def resend_outbox(outbox_id: int):
     row = db.session.query(EmailOutbox).get(outbox_id)
     if not row:

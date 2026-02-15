@@ -22,10 +22,10 @@ def validate_upload(filename: str, size_bytes: int) -> Tuple[bool, Optional[str]
 class MediaFolder:
     """Canonical folder names for an ERP system."""
     COMPANIES = "companies_img"
-    BRANCHES = "branches_img"
+
     EMPLOYEES = "employees_img"
-    DATA_IMPORTS = "data_imports"
-    SHAREHOLDERS = "shareholders_img"
+    # ✅ education materials
+    MATERIALS = "materials_files"
     # Add other entities like "products_img" or "vehicles_img" as needed.
 
 def ensure_local_media_folders():
@@ -36,11 +36,9 @@ def ensure_local_media_folders():
     base = settings.LOCAL_MEDIA_ROOT
     folders = [
         MediaFolder.COMPANIES,
-        MediaFolder.BRANCHES,
-        MediaFolder.EMPLOYEES,
-        MediaFolder.DATA_IMPORTS,
 
-        MediaFolder.SHAREHOLDERS,
+        MediaFolder.EMPLOYEES,
+        MediaFolder.MATERIALS,
     ]
 
     os.makedirs(base, exist_ok=True)

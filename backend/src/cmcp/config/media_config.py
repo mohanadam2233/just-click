@@ -9,9 +9,20 @@ load_dotenv()
 class MediaSettings(BaseSettings):
     MEDIA_BACKEND: str = "local"
     MEDIA_ALLOWED_EXTS: List[str] = Field(
-        default_factory=lambda: ["png", "jpg", "jpeg", "webp","csv", "xlsx", "xls"]
+        default_factory=lambda: [
+            # images
+            "png", "jpg", "jpeg", "webp",
+            # docs
+            "pdf", "doc", "docx",
+            # slides
+            "ppt", "pptx", "key",
+            # video
+            "mp4", "mkv", "mov",
+            # spreadsheets
+            "csv", "xlsx", "xls",
+        ]
     )
-    MEDIA_MAX_MB: int = 5
+    MEDIA_MAX_MB: int = 100
     S3_ENDPOINT_URL: Optional[str] = None
     S3_REGION: str = "us-east-1"
     S3_BUCKET: str = "erp-media"

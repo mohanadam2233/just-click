@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import logging
 from datetime import date, datetime
-from typing import Any, Dict, Generic, Optional, Tuple, Type, TypeVar, List, Iterable, Callable
+from typing import Any, Dict, Generic, Optional, Tuple, Type, TypeVar, List, Iterable, Callable, Literal
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import inspect as sa_inspect
 
 from cmcp.config.database import db
 from cmcp.core.base_repo import BaseRepository, PageResult, DropdownResult
@@ -15,6 +16,8 @@ from cmcp.common.date_utils import format_date_out
 
 log = logging.getLogger(__name__)
 T = TypeVar("T")
+
+TxMode = Literal["service", "external"]  # ✅ service commits; external only flushes
 
 
 class _UnsetType:
@@ -32,29 +35,52 @@ def _pick(d: Dict[str, Any], keys: Iterable[str]) -> Dict[str, Any]:
     return out
 
 
+def _safe_scalar_attr(obj: Any, key: str) -> Any:
+    """
+    Avoid triggering lazy-load on expired attributes inside tricky tx states.
+    We only read columns that are already present on the instance.
+    """
+    try:
+        state = sa_inspect(obj)
+        # if attribute is expired and not loaded, reading it can trigger DB IO
+        if key in getattr(state, "expired_attributes", set()):
+            # Return None instead of triggering IO.
+            # (You can also choose to return the PK always.)
+            return None
+    except Exception:
+        pass
+    try:
+        return getattr(obj, key)
+    except Exception:
+        return None
 class BaseService(Generic[T]):
     """
     Generic service:
-      - commit-or-flush (nested-safe)
-      - strict company scoping (decorator controls company_id)
-      - small response payload support (public_fields)
+      - Tx mode is configurable:
+          tx_mode="service"  -> commits/rollbacks here (old behavior)
+          tx_mode="external" -> only flush; caller commits/rollbacks (your blueprint style)
+      - strict company scoping
+      - small response payload support
       - date-only formatting via format_date_out
     """
 
     def __init__(
-        self,
-        model: Type[T],
-        session: Optional[Session] = None,
-        repo_cls: Type[BaseRepository] = BaseRepository,
-        *,
-        public_fields: Optional[List[str]] = None,
+            self,
+            model: Type[T],
+            session: Optional[Session] = None,
+            repo_cls: Type[BaseRepository] = BaseRepository,
+            *,
+            public_fields: Optional[List[str]] = None,
+            tx_mode: TxMode = "service",  # ✅ default keeps old behavior
+            expire_on_commit_safe: bool = True,  # we avoid lazy loads in serialization
     ):
         self.model = model
         self.s: Session = session or db.session
         self.repo: BaseRepository[T] = repo_cls(model, self.s)
         self._tenant_aware = hasattr(model, "company_id")
-        self.public_fields = public_fields or ["id", "name", "code", "title"]  # default
-
+        self.public_fields = public_fields or ["id", "name", "code", "title"]
+        self.tx_mode: TxMode = tx_mode
+        self.expire_on_commit_safe = bool(expire_on_commit_safe)
     # ---------------- Tx helpers ----------------
     @property
     def _in_nested_tx(self) -> bool:
@@ -80,15 +106,36 @@ class BaseService(Generic[T]):
         return False
 
     def _commit_or_flush(self) -> None:
+        """
+        ✅ Backwards compatible:
+        - tx_mode="service": commits at top-level, flushes in nested
+        - tx_mode="external": always flush (caller commits)
+        """
+        if self.tx_mode == "external":
+            self.s.flush()
+            return
+
+        # old behavior:
         if self._in_nested_tx:
             self.s.flush()
         else:
             self.s.commit()
 
-    def _rollback_if_top_level(self) -> None:
-        if self._in_nested_tx:
-            return
-        self.s.rollback()
+    def _rollback_if_needed(self) -> None:
+        """
+        ✅ Backwards compatible:
+        - tx_mode="service": rollback only if top-level (old behavior)
+        - tx_mode="external": rollback (caller may also rollback, but rollback is idempotent)
+        """
+        try:
+            if self.tx_mode == "external":
+                self.s.rollback()
+                return
+            if self._in_nested_tx:
+                return
+            self.s.rollback()
+        except Exception:
+            pass
 
     # ---------------- Serialization ----------------
     def _format_value(self, v: Any) -> Any:
@@ -101,35 +148,33 @@ class BaseService(Generic[T]):
         if not obj:
             return {}
 
+        # Prefer safe column-only serialization (prevents lazy-load surprises)
+        if self.expire_on_commit_safe:
+            mapper = sa_inspect(obj.__class__)
+            data: Dict[str, Any] = {}
+            # columns only
+            for col in mapper.columns:
+                name = col.key
+                val = _safe_scalar_attr(obj, name)
+                data[name] = self._format_value(val)
+            return _pick(data, only) if only else data
+
+        # fallback to your model's to_dict/as_dict
         if hasattr(obj, "to_dict"):
             d = obj.to_dict()
         elif hasattr(obj, "as_dict"):
             d = obj.as_dict()
         else:
-            d = {}
-            for k, v in getattr(obj, "__dict__", {}).items():
-                if not k.startswith("_"):
-                    d[k] = v
+            d = {k: v for k, v in getattr(obj, "__dict__", {}).items() if not k.startswith("_")}
 
-        # format all date/datetime fields
         for k in list(d.keys()):
             d[k] = self._format_value(d[k])
 
-        if only:
-            # if "name" doesn't exist but "title" exists, allow it (and vice versa)
-            return _pick(d, only)
-
-        return d
+        return _pick(d, only) if only else d
 
     def serialize_public(self, obj: T) -> Dict[str, Any]:
-        """
-        Return a small payload:
-          - always includes id
-          - includes name/title if present
-          - includes code if present
-        """
         full = self.serialize(obj)
-        # Normalize "label" fields: prefer name, else title
+
         out: Dict[str, Any] = {}
         if "id" in full:
             out["id"] = full["id"]
@@ -140,6 +185,7 @@ class BaseService(Generic[T]):
         if full.get("code") is not None:
             out["code"] = full["code"]
         return out
+
 
     # ---------------- Helpers ----------------
     def _enforce_company_payload(self, *, company_id: int, payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -165,15 +211,14 @@ class BaseService(Generic[T]):
 
     # ---------------- CRUD ----------------
     def create(
-        self,
-        *,
-        company_id: int,
-        data: Dict[str, Any],
-        return_public: bool = True,
+            self,
+            *,
+            company_id: int,
+            data: Dict[str, Any],
+            return_public: bool = True,
     ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         try:
             payload = self._enforce_company_payload(company_id=company_id, payload=dict(data))
-
             obj = self.repo.create(payload)
             self.s.flush([obj])
             self._commit_or_flush()
@@ -182,24 +227,24 @@ class BaseService(Generic[T]):
             return True, f"{self.model.__name__} created", {"record": rec}
 
         except BusinessValidationError as e:
-            self._rollback_if_top_level()
+            self._rollback_if_needed()
             return False, str(e), None
         except IntegrityError:
-            self._rollback_if_top_level()
+            self._rollback_if_needed()
             return False, "Database constraint error.", None
         except Exception as e:
-            self._rollback_if_top_level()
+            self._rollback_if_needed()
             log.exception("create failed: %s", e)
             return False, "Unexpected error.", None
 
     def update(
-        self,
-        *,
-        company_id: int,
-        id: int,
-        data: Dict[str, Any],
-        allow_nulls: bool = True,
-        return_public: bool = True,
+            self,
+            *,
+            company_id: int,
+            id: int,
+            data: Dict[str, Any],
+            allow_nulls: bool = True,
+            return_public: bool = True,
     ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         try:
             obj = self.repo.get(int(id), company_id=int(company_id))
@@ -207,8 +252,6 @@ class BaseService(Generic[T]):
                 raise NotFoundError(f"{self.model.__name__} not found.")
 
             payload = dict(data)
-
-            # prevent changing company_id by update payload
             if self._tenant_aware and "company_id" in payload:
                 payload.pop("company_id", None)
 
@@ -228,16 +271,16 @@ class BaseService(Generic[T]):
             return True, f"{self.model.__name__} updated", {"record": rec}
 
         except NotFoundError as e:
-            self._rollback_if_top_level()
+            self._rollback_if_needed()
             return False, str(e), None
         except BusinessValidationError as e:
-            self._rollback_if_top_level()
+            self._rollback_if_needed()
             return False, str(e), None
         except IntegrityError:
-            self._rollback_if_top_level()
+            self._rollback_if_needed()
             return False, "Database constraint error.", None
         except Exception as e:
-            self._rollback_if_top_level()
+            self._rollback_if_needed()
             log.exception("update failed: %s", e)
             return False, "Unexpected error.", None
 
@@ -258,10 +301,10 @@ class BaseService(Generic[T]):
             return True, f"{self.model.__name__} deleted", {"id": int(id)}
 
         except NotFoundError as e:
-            self._rollback_if_top_level()
+            self._rollback_if_needed()
             return False, str(e), None
         except Exception as e:
-            self._rollback_if_top_level()
+            self._rollback_if_needed()
             log.exception("delete failed: %s", e)
             return False, "Unexpected error.", None
 
@@ -280,9 +323,10 @@ class BaseService(Generic[T]):
             return True, f"Deleted {deleted} record(s).", {"deleted": deleted, "requested": len(ids)}
 
         except Exception as e:
-            self._rollback_if_top_level()
+            self._rollback_if_needed()
             log.exception("bulk_delete failed: %s", e)
             return False, "Bulk delete failed.", {"deleted": 0, "requested": len(ids)}
+
 
     # ---------------- Query APIs ----------------
     def get_one(

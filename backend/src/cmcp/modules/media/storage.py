@@ -1,4 +1,4 @@
-# app/common/media/storage.py
+#  src/cmcp/modules/media/storage.py
 import os
 import logging
 from typing import Optional, Protocol, Tuple

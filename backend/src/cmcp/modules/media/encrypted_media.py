@@ -1,4 +1,4 @@
-# app/common/media/encrypted_media.py
+#  src/cmcp/modules/media/encrypted_media.py
 from typing import Optional, Tuple
 import imghdr
 from cmcp.config.media_config import settings
