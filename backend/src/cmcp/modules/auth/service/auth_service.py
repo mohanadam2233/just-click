@@ -8,10 +8,9 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from cmcp.config.database import db
 from cmcp.modules.auth.repo.auth_repository import AuthRepository
-from cmcp.modules.auth.models import User
 from cmcp.common.security.passwords import verify_password
-from cmcp.common.cache.cache import get_or_build_user_profile
-from cmcp.common.cache.cache_invalidator import bump_user_profile
+
+from cmcp.common.cache import cached_user_profile, bump_user_profile
 from cmcp.common.cache.session_manager import (
     index_current_session,
     set_cached_user_status,
@@ -19,7 +18,7 @@ from cmcp.common.cache.session_manager import (
 )
 
 from cmcp.security.rbac_context import build_auth_context
-# made
+
 log = logging.getLogger(__name__)
 
 
@@ -44,23 +43,28 @@ class AuthService:
             db.session.rollback()
             return False, "A database error occurred during login.", None
 
-        # bust profile cache version
-        bump_user_profile(user.id)
+        # bust profile cache (company-aware)
+        bump_user_profile(int(user.id), company_id)
 
-        # build and cache profile (includes RBAC)
-        prof_wrap = self.get_cached_profile(user.id, company_id=company_id)
+        prof_wrap = self.get_cached_profile(int(user.id), company_id=company_id)
         if not prof_wrap.get("ok"):
             return False, prof_wrap.get("message", "Profile error."), None
 
         profile = prof_wrap["profile"]
 
-        # session set
+        # session set (cookie session is default now)
         session.clear()
         session["user_id"] = int(user.id)
         session["company_id"] = int(company_id) if company_id is not None else None
+
+        # ✅ session_version support (safe if column not yet added)
+        # if you add User.session_version later, it starts working automatically
+        sv = int(getattr(user, "session_version", 0) or 0)
+        session["sv"] = sv
+
         session.permanent = True
 
-        # best-effort session indexing
+        # best-effort session indexing (should be Redis-optional too)
         try:
             index_current_session(int(user.id))
             set_cached_user_status(int(user.id), "enabled")
@@ -86,7 +90,6 @@ class AuthService:
         if not user:
             return {"ok": False, "message": "User not found"}
 
-        # RBAC context (system owner / company owner / roles / permissions)
         ctx = build_auth_context(user_id=int(user.id), company_id=company_id)
 
         affiliations = []
@@ -120,10 +123,9 @@ class AuthService:
         }
 
     def get_cached_profile(self, user_id: int, company_id: Optional[int] = None) -> Dict[str, Any]:
-        return get_or_build_user_profile(
+        return cached_user_profile(
             user_id=int(user_id),
-            company_id=company_id,  # ✅ IMPORTANT
+            company_id=company_id,
             builder=lambda: self.build_user_profile_dict(int(user_id), company_id),
             ttl=3 * 3600,
         )
-

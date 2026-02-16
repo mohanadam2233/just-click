@@ -5,6 +5,8 @@ import base64
 import json
 import os
 from typing import Any, Dict, Optional, Tuple, List
+
+from flask import g
 from werkzeug.datastructures import FileStorage
 
 from sqlalchemy.orm import Session
@@ -40,6 +42,7 @@ from .constants import (
     ALLOWED_EXTENSIONS_BY_TYPE,
 )
 
+from cmcp.common.cache import cached_list, cached_detail
 def _calc_size_mb(b: bytes) -> float:
     return round(len(b) / (1024 * 1024), 4)
 
@@ -339,7 +342,6 @@ class MaterialsService:
     # =========================================================
     # LIST (CURSOR)
     # =========================================================
-
     def list_materials_cursor(
             self,
             *,
@@ -352,7 +354,6 @@ class MaterialsService:
     ) -> Tuple[bool, str, Dict[str, Any]]:
         limit = max(1, min(int(limit or 20), 100))
 
-        # cursor uses "last_id" for stable paging (descending by id)
         cur = _decode_cursor(cursor or "")
         last_id = cur.get("last_id")
         try:
@@ -360,30 +361,53 @@ class MaterialsService:
         except Exception:
             last_id = None
 
-        rows, total_count, has_more = self.repo.list_materials_cursor(
-            company_id=company_id,
-            limit=limit,
-            last_id=last_id,
-            filters=filters,
-            is_enabled=is_enabled,
-        )
+        user_id = getattr(getattr(g, "auth", None), "user_id", None)
 
-        data = [self.repo.shape_material_list_row(r, external_base=external_base) for r in rows]
-
-        next_cursor = None
-        if has_more and rows:
-            next_cursor = _encode_cursor({"last_id": int(rows[-1].material_id)})
-
-        return True, "OK", {
-            "data": data,
-            "pagination": {
-                "limit": limit,
-                "next_cursor": next_cursor,
-                "has_more": bool(has_more),
-            },
-            "meta": {"total_count": int(total_count)},
+        params = {
+            "mode": "cursor",
+            "limit": limit,
+            "last_id": last_id,
+            "filters": filters,
+            "is_enabled": is_enabled,
+            "external_base": external_base,
+            "user_id": int(user_id) if user_id is not None else None,
         }
 
+        def builder():
+            rows, total_count, has_more = self.repo.list_materials_cursor(
+                company_id=company_id,
+                limit=limit,
+                last_id=last_id,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_material_list_row(r, external_base=external_base) for r in rows]
+
+            next_cursor = None
+            if has_more and rows:
+                next_cursor = _encode_cursor({"last_id": int(rows[-1].material_id)})
+
+            return {
+                "data": data,
+                "pagination": {
+                    "limit": limit,
+                    "next_cursor": next_cursor,
+                    "has_more": bool(has_more),
+                },
+                "meta": {"total_count": int(total_count)},
+            }
+
+        out = cached_list(
+            entity="materials:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,  # ✅ short (analytics/favorites later)
+            builder=builder,
+        )
+
+        return True, "OK", out
     # =========================================================
     # LIST (PAGE)
     # =========================================================
@@ -398,45 +422,85 @@ class MaterialsService:
             is_enabled: Optional[bool],
             external_base: str,
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        # keep your rule: 10/20/50/500
         allowed = {10, 20, 50, 500}
         per_page = per_page if int(per_page or 20) in allowed else 20
         page = max(int(page or 1), 1)
 
-        rows, total_count, pages = self.repo.list_materials_page(
+        user_id = getattr(getattr(g, "auth", None), "user_id", None)
+
+        params = {
+            "mode": "page",
+            "page": page,
+            "per_page": per_page,
+            "filters": filters,
+            "is_enabled": is_enabled,
+            "external_base": external_base,
+            "user_id": int(user_id) if user_id is not None else None,
+        }
+
+        def builder():
+            rows, total_count, pages = self.repo.list_materials_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_material_list_row(r, external_base=external_base) for r in rows]
+
+            return {
+                "data": data,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "pages": int(pages),
+                    "total_count": int(total_count),
+                },
+            }
+
+        out = cached_list(
+            entity="materials:list",
             company_id=company_id,
-            page=page,
-            per_page=per_page,
-            filters=filters,
-            is_enabled=is_enabled,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
         )
 
-        data = [self.repo.shape_material_list_row(r, external_base=external_base) for r in rows]
-
-        return True, "OK", {
-            "data": data,
-            "pagination": {
-                "page": page,
-                "per_page": per_page,
-                "pages": int(pages),
-                "total_count": int(total_count),
-            },
-        }
+        return True, "OK", out
 
     # =========================================================
     # DETAIL
     # =========================================================
 
     def get_material_detail(
-            self,
-            *,
-            company_id: int,
-            material_id: int,
-            external_base: str,
+        self,
+        *,
+        company_id: int,
+        material_id: int,
+        external_base: str,
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        row = self.repo.get_material_detail(company_id=company_id, material_id=material_id)
-        if not row:
+
+        def builder():
+            row = self.repo.get_material_detail(company_id=company_id, material_id=material_id)
+            if not row:
+                return None
+            return self.repo.shape_material_detail_row(
+                row,
+                external_base=external_base,
+                company_id=company_id,
+            )
+
+        data = cached_detail(
+            entity="materials:detail",
+            company_id=company_id,
+            record_id=material_id,
+            ttl=30,
+            builder=builder,
+        )
+
+        if data is None:
             return False, "Material not found.", {}
 
-        data = self.repo.shape_material_detail_row(row, external_base=external_base)
         return True, "OK", {"data": data}

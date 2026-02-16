@@ -416,14 +416,11 @@ class MaterialsRepo:
             "updated_at": r.updated_at.isoformat() if r.updated_at else None,
         }
 
-    def shape_material_detail_row(self, r: MaterialDetailRow, *, external_base: str) -> Dict[str, Any]:
+    def shape_material_detail_row(self, r: MaterialDetailRow, *, external_base: str, company_id: int) -> Dict[str, Any]:
         out = self.shape_material_list_row(r, external_base=external_base)
 
-        # detail should include learning_objectives if Material has it; if not, keep None
-        # We don’t have it in row dataclass, so pull from DB quickly (still company scoped).
-        # (You can optimize later by including it in the SELECT if you want.)
         mat = self.s.query(Material).filter(
-            Material.company_id == int(getattr(g, "auth").active_company_id),
+            Material.company_id == int(company_id),
             Material.id == int(r.material_id),
         ).first()
 
