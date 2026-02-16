@@ -1,8 +1,5 @@
 "use client";
-import TabButtonPrimary from "@/components/shared/buttons/TabButtonPrimary";
-import LoginForm from "@/components/shared/login/LoginForm";
 import SignUpForm from "@/components/shared/login/SignUpForm";
-import TabContentWrapper from "@/components/shared/wrappers/TabContentWrapper";
 import Image from "next/image";
 import shapImage2 from "@/assets/images/education/hero_shape2.png";
 import shapImage3 from "@/assets/images/education/hero_shape3.png";
@@ -10,13 +7,13 @@ import shapImage4 from "@/assets/images/education/hero_shape4.png";
 import shapImage5 from "@/assets/images/education/hero_shape5.png";
 import useTab from "@/hooks/useTab";
 
-const LoginTab = () => {
+const SignupTab = () => {
   return (
     <section className="relative">
       <div className="container py-16 md:py-100px">
         <div className="tab md:w-2/3 mx-auto">
           <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-6 md:p-10 border border-gray-100 dark:border-gray-700">
-            <LoginForm />
+            <SignUpForm />
           </div>
         </div>
       </div>
@@ -50,4 +47,4 @@ const LoginTab = () => {
   );
 };
 
-export default LoginTab;
+export default SignupTab;
