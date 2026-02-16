@@ -57,7 +57,7 @@ const SidebarDashboard = () => {
             { name: "Departments", path: "#" },
             { name: "Semesters", path: "#" },
             { name: "Courses", path: "#" },
-            { name: "Materials", path: "#" },
+            { name: "Materials", path: "/dashboards/admin-academic/materials" },
           ],
         },
         {
