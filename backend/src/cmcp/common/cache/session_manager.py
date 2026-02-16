@@ -1,75 +1,194 @@
-# app/common/cache/session_manager.py
+# from __future__ import annotations
+#
+# import logging
+# from typing import Optional
+#
+# from cmcp.common.cache.redis_client import redis_kv
+#
+# log = logging.getLogger(__name__)
+#
+# # Keys
+# def _user_sessions_key(user_id: int) -> str:
+#     return f"sessions:u{int(user_id)}"
+#
+# def _user_status_key(user_id: int) -> str:
+#     return f"user_status:u{int(user_id)}"
+#
+#
+# def index_current_session(user_id: int, session_id: Optional[str] = None, ttl_seconds: int = 60 * 60 * 24) -> None:
+#     """
+#     Optional helper for Redis-backed "session indexing".
+#     With cookie sessions you may not have a server session_id; you can pass None.
+#     This is BEST-EFFORT (fail-open).
+#     """
+#     try:
+#         r = redis_kv.raw_client()
+#         if not r:
+#             return
+#
+#         sid = session_id or "cookie"  # we don't rely on it, just a marker
+#         key = _user_sessions_key(user_id)
+#
+#         # Use a set so multiple sessions/devices can exist
+#         r.sadd(key, sid)
+#         r.expire(key, int(ttl_seconds))
+#     except Exception:
+#         log.warning("index_current_session failed (ignored)", exc_info=True)
+#
+#
+# def remove_session(user_id: int, session_id: Optional[str] = None) -> None:
+#     """
+#     Optional: remove a user's sessions from Redis index.
+#     With cookie sessions, you can't truly kill browser cookies server-side,
+#     so this is only useful if later you switch to Redis sessions or add other tracking.
+#     """
+#     try:
+#         r = redis_kv.raw_client()
+#         if not r:
+#             return
+#
+#         key = _user_sessions_key(user_id)
+#         if session_id:
+#             r.srem(key, session_id)
+#         else:
+#             # remove all tracked sessions for that user
+#             r.delete(key)
+#     except Exception:
+#         log.warning("remove_session failed (ignored)", exc_info=True)
+#
+#
+# def set_cached_user_status(user_id: int, status: str, ttl_seconds: int = 60 * 60) -> None:
+#     """
+#     Optional: cache user status (enabled/disabled).
+#     BEST-EFFORT. Safe if Redis is down.
+#     """
+#     try:
+#         r = redis_kv.raw_client()
+#         if not r:
+#             return
+#
+#         key = _user_status_key(user_id)
+#         r.setex(key, int(ttl_seconds), str(status))
+#     except Exception:
+#         log.warning("set_cached_user_status failed (ignored)", exc_info=True)
+#
+#
+# def get_cached_user_status(user_id: int) -> Optional[str]:
+#     try:
+#         r = redis_kv.raw_client()
+#         if not r:
+#             return None
+#         v = r.get(_user_status_key(user_id))
+#         return str(v) if v is not None else None
+#     except Exception:
+#         return None
 from __future__ import annotations
-from typing import Optional, List
-from flask import session, request, current_app
-from cmcp.config.redis_config import get_redis_kv
 
-r = get_redis_kv()
+import logging
+from typing import Optional
 
-SESSION_INDEX_NS = "user_sessions"   # set of sids per user
-USER_STATUS_NS   = "user_status"     # cached account status
+from cmcp.common.cache.redis_client import redis_kv
 
-def _k_index(user_id: int) -> str:
-    return f"{SESSION_INDEX_NS}:{user_id}"
+log = logging.getLogger(__name__)
 
-def _k_status(user_id: int) -> str:
-    return f"{USER_STATUS_NS}:{user_id}"
+# Keys
+def _user_sessions_key(user_id: int) -> str:
+    return f"sessions:u{int(user_id)}"
 
-def current_session_id() -> Optional[str]:
-    # Flask-Session provides `session.sid` when server-side sessions are used
-    sid = getattr(session, "sid", None)
-    if sid:
-        return sid
-    cookie_name = current_app.config.get("SESSION_COOKIE_NAME", "session")
-    return request.cookies.get(cookie_name)
+def _user_status_key(user_id: int) -> str:
+    return f"user_status:u{int(user_id)}"
 
-def index_current_session(user_id: int) -> None:
-    sid = current_session_id()
-    if sid:
-        r.sadd(_k_index(user_id), sid)
 
-def deindex_current_session(user_id: int) -> None:
-    sid = current_session_id()
-    if sid:
-        r.srem(_k_index(user_id), sid)
-
-def list_user_session_ids(user_id: int) -> List[str]:
-    vals = r.smembers(_k_index(user_id)) or set()
-    return [v.decode("utf-8") if isinstance(v, (bytes, bytearray)) else str(v) for v in vals]
-
-def revoke_all_user_sessions(user_id: int) -> int:
+def index_current_session(
+    user_id: int,
+    session_id: Optional[str] = None,
+    ttl_seconds: int = 60 * 60 * 24,
+) -> None:
     """
-    Deletes all Flask-Session payloads for the user and clears the index.
-    Uses SESSION_KEY_PREFIX from your config (e.g., 'erp_session:').
+    BEST-EFFORT Redis index of "active sessions" for the user.
+    With cookie sessions, there is no real server-side session id, so we use a marker.
+    If Redis is down -> no-op.
     """
-    prefix = current_app.config.get("SESSION_KEY_PREFIX", "")
-    deleted = 0
-    for sid in list_user_session_ids(user_id):
-        payload_key = f"{prefix}{sid}" if prefix else sid
-        deleted += int(r.delete(payload_key) or 0)
-    r.delete(_k_index(user_id))
-    return deleted
+    try:
+        r = redis_kv.raw_client()
+        if not r:
+            return
 
-def set_cached_user_status(user_id: int, status_value: str) -> None:
-    r.set(_k_status(user_id), status_value)
+        sid = session_id or "cookie"
+        key = _user_sessions_key(user_id)
+
+        r.sadd(key, sid)
+        r.expire(key, int(ttl_seconds))
+    except Exception:
+        log.warning("index_current_session failed (ignored)", exc_info=True)
+
+
+def is_session_indexed(user_id: int, session_id: Optional[str] = None) -> bool:
+    """
+    IMPORTANT: Redis is optional, so this must be FAIL-OPEN.
+
+    - If Redis is down: return True (do not block logins)
+    - If Redis is up:
+        - if key doesn't exist yet: return True (don't lock out users)
+        - else: verify session marker exists
+    """
+    try:
+        r = redis_kv.raw_client()
+        if not r:
+            return True  # ✅ fail-open
+
+        key = _user_sessions_key(user_id)
+        if not r.exists(key):
+            return True  # ✅ fail-open (no lockouts)
+
+        sid = session_id or "cookie"
+        return bool(r.sismember(key, sid))
+    except Exception:
+        return True  # ✅ fail-open
+
+
+def remove_session(user_id: int, session_id: Optional[str] = None) -> None:
+    """
+    BEST-EFFORT cleanup. With cookie sessions you cannot kill browser cookies server-side.
+    So this is optional and safe to ignore when Redis is down.
+    """
+    try:
+        r = redis_kv.raw_client()
+        if not r:
+            return
+
+        key = _user_sessions_key(user_id)
+        if session_id:
+            r.srem(key, session_id)
+        else:
+            r.delete(key)
+    except Exception:
+        log.warning("remove_session failed (ignored)", exc_info=True)
+
+
+def set_cached_user_status(user_id: int, status: str, ttl_seconds: int = 60 * 60) -> None:
+    """
+    BEST-EFFORT user enabled/disabled cache.
+    """
+    try:
+        r = redis_kv.raw_client()
+        if not r:
+            return
+
+        r.setex(_user_status_key(user_id), int(ttl_seconds), str(status))
+    except Exception:
+        log.warning("set_cached_user_status failed (ignored)", exc_info=True)
+
 
 def get_cached_user_status(user_id: int) -> Optional[str]:
-    v = r.get(_k_status(user_id))
-    if v is None:
+    """
+    BEST-EFFORT read. Return None if Redis is down.
+    """
+    try:
+        r = redis_kv.raw_client()
+        if not r:
+            return None
+        v = r.get(_user_status_key(user_id))
+        return str(v) if v is not None else None
+    except Exception:
         return None
-    return v.decode("utf-8") if isinstance(v, (bytes, bytearray)) else str(v)
-def is_session_indexed(user_id: int) -> bool:
-    """Checks if the current session ID is in the user's index set."""
-    sid = current_session_id()
-    if not sid:
-        return False
-    return r.sismember(_k_index(user_id), sid)
-
-
-def remove_session(user_id: int) -> None:
-    sid = current_session_id()
-    if sid:
-        prefix = current_app.config.get("SESSION_KEY_PREFIX", "")
-        payload_key = f"{prefix}{sid}" if prefix else sid
-        r.delete(payload_key)
-        r.srem(_k_index(user_id), sid)

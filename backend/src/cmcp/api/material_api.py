@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from flask import Blueprint, request
 
 from cmcp.common.api_response import api_success, api_error
+from cmcp.common.cache import bump_detail, bump_list
 from cmcp.config.database import db
 from cmcp.core.exceptions import BusinessValidationError, NotFoundError
 from cmcp.modules.materials.schemas import MaterialCreateIn, MaterialUpdateIn
@@ -59,7 +60,16 @@ def create_material(company_id: int):
             external_base=_external_base(),
         )
         _commit_ok(ok)
+        # ✅ invalidate AFTER commit
+        if ok:
+            bump_list("materials:list", company_id)
+            # if create returns id, bump detail too
+            mid = (out or {}).get("data", {}).get("material_id") or (out or {}).get("material_id")
+            if mid:
+                bump_detail("materials:detail", company_id, int(mid))
+
         return api_success(message=msg, data=out, status_code=201) if ok else api_error(msg, status_code=400)
+
 
     except Exception as e:
         return _handle_error(e)
@@ -91,7 +101,12 @@ def update_material(company_id: int, material_id: int):
             external_base=_external_base(),
         )
         _commit_ok(ok)
+        if ok:
+            bump_detail("materials:detail", company_id, int(material_id))
+            bump_list("materials:list", company_id)
+
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
 
     except Exception as e:
         return _handle_error(e)
@@ -102,6 +117,10 @@ def delete_material(company_id: int, material_id: int):
     try:
         ok, msg, out = svc.delete_material(company_id=company_id, material_id=material_id)
         _commit_ok(ok)
+        if ok:
+            bump_detail("materials:detail", company_id, int(material_id))
+            bump_list("materials:list", company_id)
+
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
     except Exception as e:
         return _handle_error(e)
@@ -120,32 +139,29 @@ def bulk_delete_materials(company_id: int):
 
         ok, msg, out = svc.bulk_delete_materials(company_id=company_id, ids=ids)
         _commit_ok(ok)
+        if ok:
+            bump_list("materials:list", company_id)
+            # optional: bump each detail
+            for mid in ids[:1000]:
+                bump_detail("materials:detail", company_id, int(mid))
+
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
 
     except Exception as e:
         return _handle_error(e)
 
-
 # ------------------------------
 # LIST
 # ------------------------------
-@bp.get("")
+@bp.get("/list")
 @require_company_and_permission(doctype="Material", action="READ")
 def list_materials(company_id: int):
-    """
-    GET /api/materials?course_id=&semester_id=&department_id=&academic_year_id=&chapter_id=&material_type=
-                    &search=&is_enabled=&limit=&cursor=&page=&per_page=&mode=
-    mode:
-      - cursor (default) => cursor pagination
-      - page             => page/per_page pagination (10/20/50/500)
-    """
     try:
         q = request.args
 
         mode = (q.get("mode") or "cursor").strip().lower()  # cursor|page
         external_base = _external_base()
 
-        # filters
         filters: Dict[str, Any] = {
             "course_id": q.get("course_id", type=int),
             "semester_id": q.get("semester_id", type=int),
@@ -156,7 +172,6 @@ def list_materials(company_id: int):
             "search": (q.get("search") or "").strip() or None,
         }
 
-        # enabled filter (optional)
         is_enabled_raw = q.get("is_enabled")
         is_enabled: Optional[bool] = None
         if is_enabled_raw is not None:
@@ -180,7 +195,6 @@ def list_materials(company_id: int):
             )
             return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
 
-        # default cursor
         limit = q.get("limit", type=int) or 20
         cursor = (q.get("cursor") or "").strip() or None
 
@@ -197,15 +211,13 @@ def list_materials(company_id: int):
     except Exception as e:
         return _handle_error(e)
 
+
 # ------------------------------
 # DETAIL
 # ------------------------------
-@bp.get("/<int:material_id>")
+@bp.get("/get/<int:material_id>")
 @require_company_and_permission(doctype="Material", action="READ")
 def get_material_detail(company_id: int, material_id: int):
-    """
-    GET /api/materials/{material_id}
-    """
     try:
         ok, msg, out = svc.get_material_detail(
             company_id=company_id,

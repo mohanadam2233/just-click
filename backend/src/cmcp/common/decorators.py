@@ -1,9 +1,9 @@
-# app/common/decorators.py
 from __future__ import annotations
 
 from functools import wraps
-from typing import Callable, Optional
+from typing import Callable
 import logging
+import time
 
 from flask import request, jsonify
 from cmcp.config.redis_config import get_redis_kv
@@ -21,6 +21,19 @@ local ttl = redis.call('TTL', KEYS[1])
 return {count, ttl}
 """
 
+# ---------------------------
+# Circuit breaker (log + retry control)
+# ---------------------------
+_CB_OPEN_UNTIL = 0.0
+_CB_SECONDS = 3.0  # how long we pause after a Redis failure
+
+def _cb_open() -> bool:
+    return time.time() < _CB_OPEN_UNTIL
+
+def _cb_trip() -> None:
+    global _CB_OPEN_UNTIL
+    _CB_OPEN_UNTIL = time.time() + _CB_SECONDS
+
 
 def _client_ip() -> str:
     """
@@ -29,7 +42,6 @@ def _client_ip() -> str:
     """
     hdr = request.headers.get("X-Forwarded-For", "")
     if hdr:
-        # take first IP in the chain
         ip = hdr.split(",")[0].strip()
         if ip:
             return ip
@@ -49,18 +61,16 @@ def rate_limit(
     """
     Simple fixed-window rate limiter.
 
-    - Uses Redis key: rl:{key_prefix}:{client_id}[:{username}]
+    - Uses Redis key: rl:{key_prefix}:{client_id}[:u:{username}]
     - `limit` requests per `window` seconds (fixed window).
-    - Adds `Retry-After` header when blocked (HTTP 429).
+    - Adds Retry-After header when blocked (HTTP 429).
 
-    Recommended defaults:
-      - login: limit=10, window=60
-      - other write endpoints: limit=60, window=60
+    FAIL-OPEN RULE:
+      If Redis is down/unreachable, allow the request (do not crash).
     """
     def decorator(view_func: Callable):
         @wraps(view_func)
         def wrapper(*args, **kwargs):
-            r = get_redis_kv()
             cid = _client_ip()
 
             # Optionally fold in a username to reduce username spraying from a single IP.
@@ -76,7 +86,16 @@ def rate_limit(
 
             key = f"rl:{key_prefix}:{cid}{uname_part}"
 
+            # ✅ Circuit breaker: if Redis recently failed, skip checks briefly
+            if _cb_open():
+                return view_func(*args, **kwargs)
+
             try:
+                # ✅ Move client creation inside try so it can't crash request
+                r = get_redis_kv()
+                if r is None:
+                    return view_func(*args, **kwargs)
+
                 res = r.eval(_LUA_INCR_WITH_TTL, 1, key, str(int(window)))
                 count, ttl = int(res[0]), int(res[1])
 
@@ -85,14 +104,16 @@ def rate_limit(
                         "ok": False,
                         "message": "Too many requests. Please try again later."
                     })
-                    # helpful for clients
                     if ttl > 0:
                         resp.headers["Retry-After"] = str(ttl)
                     return resp, 429
-            except Exception:
-                # Fail-open: if Redis is down, don’t block the request.
-                log.exception("Rate limit check failed (key=%s). Allowing request.", key)
+
+            except Exception as e:
+                # ✅ Fail-open, but don’t spam huge traces every request
+                log.warning("Rate limit check failed (key=%s). Allowing request. err=%s", key, e)
+                _cb_trip()
 
             return view_func(*args, **kwargs)
+
         return wrapper
     return decorator

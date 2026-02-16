@@ -11,7 +11,7 @@ ERR_STUDENT_NOT_FOUND = "Student profile not found."
 ERR_STAFF_NOT_FOUND = "Staff profile not found."
 ERR_FACULTY_NOT_FOUND = "Faculty not found."
 ERR_DEPARTMENT_NOT_FOUND = "Department not found."
-
+ERR_USER_NOT_FOUND = "Base user account not found."
 
 # ----------------------------
 # Exists / uniqueness messages
@@ -30,6 +30,12 @@ ERR_INVALID_EMAIL = "Please enter a valid email address."
 ERR_VERIFY_EXPIRED = "Verification link expired. Please request a new verification email."
 ERR_ADMIN_REJECTED = "Your registration was rejected. Please contact admin@jamhuriya.edu for more information."
 ERR_PENDING_APPROVAL = "Your account is pending admin approval. You will receive an email when approved."
+# ----------------------------
+# Staff creation specifics
+# ----------------------------
+ERR_STAFF_ID_REQUIRED = "staff_id is required for staff creation."
+ERR_INVALID_PASSWORD = "Password must be at least 6 characters."
+ERR_EMAIL_REQUIRED = "Email is required for staff creation."
 
 # ----------------------------
 # Required helpers

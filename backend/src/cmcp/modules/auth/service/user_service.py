@@ -10,7 +10,8 @@ from cmcp.config.database import db
 from cmcp.modules.auth.repo.auth_repository import AuthRepository
 from cmcp.common.security.passwords import hash_password, verify_password
 from cmcp.common.security.password_rules import ensure_password_ok
-from cmcp.common.cache.cache_invalidator import bump_user_profile
+
+from cmcp.common.cache import bump_user_profile
 from cmcp.common.cache.session_manager import remove_session, set_cached_user_status
 
 from cmcp.security.rbac_context import AuthContext
@@ -44,6 +45,9 @@ class UserService:
 
         try:
             user.password_hash = hash_password(new_password)
+            # ✅ if you add User.session_version later, bump it here too:
+            if hasattr(user, "session_version"):
+                user.session_version = int(getattr(user, "session_version", 0) or 0) + 1
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
@@ -51,7 +55,8 @@ class UserService:
             raise BadRequest("Failed to change password due to a server error.")
 
         try:
-            bump_user_profile(int(user.id))
+            # company-aware bump (use session company if you have it; here we bump "global" by passing None)
+            bump_user_profile(int(user.id), None)
             remove_session(int(user.id))
         except Exception:
             log.exception("Post-change hooks failed for user_id=%s", user.id)
@@ -63,16 +68,17 @@ class UserService:
         if not target:
             raise NotFound("User not found.")
 
-        # scope: admin must be in same company as target (unless system owner)
         target_company_id = _pick_target_primary_company_id(target)
         if target_company_id is None:
             raise BadRequest("Target user has no active company affiliation.")
-        ensure_company_scope(company_id=int(target_company_id))  # uses g.auth inside guards (see deps)
+        ensure_company_scope(company_id=int(target_company_id))
 
         ensure_password_ok(new_password)
 
         try:
             target.password_hash = hash_password(new_password)
+            if hasattr(target, "session_version"):
+                target.session_version = int(getattr(target, "session_version", 0) or 0) + 1
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
@@ -80,7 +86,7 @@ class UserService:
             raise BadRequest("Failed to reset password due to a server error.")
 
         try:
-            bump_user_profile(int(target.id))
+            bump_user_profile(int(target.id), int(target_company_id))
             remove_session(int(target.id))
         except Exception:
             log.exception("Post-reset hooks failed for user_id=%s", target.id)
@@ -99,6 +105,8 @@ class UserService:
 
         try:
             target.is_enabled = bool(is_enabled)
+            if not is_enabled and hasattr(target, "session_version"):
+                target.session_version = int(getattr(target, "session_version", 0) or 0) + 1
             db.session.commit()
         except SQLAlchemyError as e:
             db.session.rollback()
@@ -106,7 +114,7 @@ class UserService:
             raise BadRequest("Failed to update user due to a server error.")
 
         try:
-            bump_user_profile(int(target.id))
+            bump_user_profile(int(target.id), int(target_company_id))
             set_cached_user_status(int(target.id), "enabled" if is_enabled else "disabled")
             if not is_enabled:
                 remove_session(int(target.id))
