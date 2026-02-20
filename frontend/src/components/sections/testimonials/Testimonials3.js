@@ -2,7 +2,7 @@ import TiltWrapper from "@/components/shared/wrappers/TiltWrapper";
 import Image from "next/image";
 import Link from "next/link";
 import aboutImage4 from "@/assets/images/about/about_4.png";
-import FeaturedSlider from "@/components/shared/featured-courses/FeaturedSlider";
+
 import getAllInstructors from "@/libs/getAllInstructors";
 const Testimonials3 = ({ isInsTructorDetails, id: cidx }) => {
   const instructor = getAllInstructors()?.find(({ id }) => id == cidx);
@@ -140,7 +140,7 @@ const Testimonials3 = ({ isInsTructorDetails, id: cidx }) => {
                     </h4>
                   </div>
                   <div className="-mx-15px">
-                    <FeaturedSlider />
+                  
                   </div>
                 </>
               ) : (

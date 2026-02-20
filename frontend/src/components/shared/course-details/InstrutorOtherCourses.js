@@ -1,5 +1,5 @@
 import Link from "next/link";
-import FeaturedSlider from "../featured-courses/FeaturedSlider";
+
 
 const InstrutorOtherCourses = () => {
   return (
@@ -17,7 +17,7 @@ const InstrutorOtherCourses = () => {
         </Link>
       </div>
       <div data-aos="fade-up" className="sm:-mx-15px">
-        <FeaturedSlider />
+    
       </div>
     </div>
   );

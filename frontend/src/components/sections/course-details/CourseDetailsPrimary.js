@@ -1,18 +1,43 @@
 import CourseDetailsSidebar from "@/components/shared/courses/CourseDetailsSidebar";
 import Image from "next/image";
-import blogImag8 from "@/assets/images/blog/blog_8.png";
-import BlogTagsAndSocila from "@/components/shared/blog-details/BlogTagsAndSocila";
-import ClientComment from "@/components/shared/blog-details/ClientComment";
+
 import CommentFome from "@/components/shared/forms/CommentFome";
 import CourseDetailsTab from "@/components/shared/course-details/CourseDetailsTab";
 import InstrutorOtherCourses from "@/components/shared/course-details/InstrutorOtherCourses";
 import getAllCourses from "@/libs/getAllCourses";
+
+// ✅ ADD THIS (update the path to where your image is)
+import blogImag8 from "@/assets/images/blog/blog_8.png";
+
 let cid = 0;
+
 const CourseDetailsPrimary = ({ id: currentId, type }) => {
   const allCourses = getAllCourses();
   const course = allCourses?.find(({ id }) => parseInt(currentId) === id);
-  const { title, price, lesson, insName, categories, id } = course || {};
-  cid = id;
+
+  if (!course) {
+    return (
+      <section>
+        <div className="container py-10 md:py-50px lg:py-60px 2xl:py-100px">
+          <div className="max-w-xl mx-auto text-center">
+            <h4 className="text-2xl font-bold text-blackColor dark:text-blackColor-dark mb-3">
+              Course not found
+            </h4>
+            <p className="text-contentColor dark:text-contentColor-dark">
+              The course you’re trying to open doesn’t exist or the ID is invalid.
+            </p>
+          </div>
+        </div>
+      </section>
+    );
+  }
+
+  const { title, price, lesson, insName, categories, id } = course;
+
+  const safeId =
+    typeof id === "number" && !Number.isNaN(id) ? id : parseInt(currentId) || 1;
+
+  cid = safeId;
   cid = cid % 6 ? cid % 6 : 6;
 
   return (
@@ -20,22 +45,15 @@ const CourseDetailsPrimary = ({ id: currentId, type }) => {
       <div className="container py-10 md:py-50px lg:py-60px 2xl:py-100px">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-30px">
           <div className="lg:col-start-1 lg:col-span-8 space-y-[35px]">
-            {/* course 1  */}
             <div data-aos="fade-up">
-              {/* course thumbnail  */}
               {type === 2 || type === 3 ? (
                 ""
               ) : (
                 <div className="overflow-hidden relative mb-5">
-                  <Image
-                    src={blogImag8}
-                    alt=""
-                    className="w-full"
-                    placeholder="blur"
-                  />
+                  <Image src={blogImag8} alt="" className="w-full" placeholder="blur" />
                 </div>
               )}
-              {/* course content  */}
+
               <div>
                 {type === 2 || type === 3 ? (
                   ""
@@ -63,14 +81,13 @@ const CourseDetailsPrimary = ({ id: currentId, type }) => {
                       </div>
                     </div>
 
-                    {/* titile  */}
                     <h4
                       className="text-size-32 md:text-4xl font-bold text-blackColor dark:text-blackColor-dark mb-15px leading-43px md:leading-14.5"
                       data-aos="fade-up"
                     >
                       {title || "Making Music with Other People"}
                     </h4>
-                    {/* price and rating  */}
+
                     <div
                       className="flex gap-5 flex-wrap items-center mb-30px"
                       data-aos="fade-up"
@@ -102,6 +119,7 @@ const CourseDetailsPrimary = ({ id: currentId, type }) => {
                         </span>
                       </div>
                     </div>
+
                     <p
                       className="text-sm md:text-lg text-contentColor dark:contentColor-dark mb-25px !leading-30px"
                       data-aos="fade-up"
@@ -115,7 +133,7 @@ const CourseDetailsPrimary = ({ id: currentId, type }) => {
                       elementum. Mauris et bibendum dui. Aenean consequat
                       pulvinar luctus. Suspendisse consectetur tristique
                     </p>
-                    {/* details  */}
+
                     <div>
                       <h4
                         className="text-size-22 text-blackColor dark:text-blackColor-dark font-bold pl-2 before:w-0.5 relative before:h-[21px] before:bg-primaryColor before:absolute before:bottom-[5px] before:left-0 leading-30px mb-25px"
@@ -216,8 +234,9 @@ const CourseDetailsPrimary = ({ id: currentId, type }) => {
                     </div>
                   </>
                 )}
-                {/* course tab  */}
+
                 <CourseDetailsTab id={cid} type={type} />
+
                 <div className="md:col-start-5 md:col-span-8 mb-5">
                   <h4
                     className="text-2xl font-bold text-blackColor dark:text-blackColor-dark mb-15px !leading-38px"
@@ -229,46 +248,36 @@ const CourseDetailsPrimary = ({ id: currentId, type }) => {
                     <li className="flex items-center group" data-aos="fade-up">
                       <i className="icofont-check px-2 py-2 text-primaryColor bg-whitegrey3 bg-opacity-40 group-hover:bg-primaryColor group-hover:text-white group-hover:opacity-100 mr-15px dark:bg-whitegrey1-dark"></i>
                       <p className="text-sm lg:text-xs 2xl:text-sm font-medium leading-25px lg:leading-21px 2xl:leading-25px text-contentColor dark:text-contentColor-dark">
-                        Lorem Ipsum is simply dummying text of the printing
-                        andtypesetting industry most of the standard.
+                        Lorem Ipsum is simply dummying text of the printing andtypesetting industry most of the standard.
                       </p>
                     </li>
                     <li className="flex items-center group" data-aos="fade-up">
                       <i className="icofont-check px-2 py-2 text-primaryColor bg-whitegrey3 bg-opacity-40 group-hover:bg-primaryColor group-hover:text-white group-hover:opacity-100 mr-15px dark:bg-whitegrey1-dark"></i>
                       <p className="text-sm lg:text-xs 2xl:text-sm font-medium leading-25px lg:leading-21px 2xl:leading-25px text-contentColor dark:text-contentColor-dark">
-                        Lorem Ipsum is simply dummying text of the printing
-                        andtypesetting industry most of the standard.
+                        Lorem Ipsum is simply dummying text of the printing andtypesetting industry most of the standard.
                       </p>
                     </li>
                     <li className="flex items-center group" data-aos="fade-up">
                       <i className="icofont-check px-2 py-2 text-primaryColor bg-whitegrey3 bg-opacity-40 group-hover:bg-primaryColor group-hover:text-white group-hover:opacity-100 mr-15px dark:bg-whitegrey1-dark"></i>
                       <p className="text-sm lg:text-xs 2xl:text-sm font-medium leading-25px lg:leading-21px 2xl:leading-25px text-contentColor dark:text-contentColor-dark">
-                        Lorem Ipsum is simply dummying text of the printing
-                        andtypesetting industry most of the standard.
+                        Lorem Ipsum is simply dummying text of the printing andtypesetting industry most of the standard.
                       </p>
                     </li>
                     <li className="flex items-center group" data-aos="fade-up">
                       <i className="icofont-check px-2 py-2 text-primaryColor bg-whitegrey3 bg-opacity-40 group-hover:bg-primaryColor group-hover:text-white group-hover:opacity-100 mr-15px dark:bg-whitegrey1-dark"></i>
                       <p className="text-sm lg:text-xs 2xl:text-sm font-medium leading-25px lg:leading-21px 2xl:leading-25px text-contentColor dark:text-contentColor-dark">
-                        Lorem Ipsum is simply dummying text of the printing
-                        andtypesetting industry most of the standard.
+                        Lorem Ipsum is simply dummying text of the printing andtypesetting industry most of the standard.
                       </p>
                     </li>
                   </ul>
                 </div>
-                {/* tag and share   */}
 
-                <BlogTagsAndSocila />
-                {/* other courses  */}
                 <InstrutorOtherCourses />
-                {/* previous comment area  */}
-                <ClientComment />
-                {/* write comment area  */}
                 <CommentFome />
               </div>
             </div>
           </div>
-          {/* course sidebar  */}
+
           <div
             className={`lg:col-start-9 lg:col-span-4 ${
               type === 2 || type === 3 ? "relative lg:top-[-340px]" : ""

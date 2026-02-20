@@ -1,204 +1,263 @@
-
 "use client";
-import React, { useState } from "react";
+
+import React, { useMemo, useState } from "react";
+import { FiUser, FiMail, FiInfo } from "react-icons/fi";
+import { HiOutlineIdentification } from "react-icons/hi";
+import { MdOutlineMeetingRoom } from "react-icons/md";
+import Link from "next/link";
 
 const SignUpForm = () => {
-  // Sample faculty options (only IT in this case)
-  const faculties = [
-    { id: 1, name: "Information Technology" }
-  ];
+  const faculties = [{ id: 1, name: "Information Technology" }];
 
-  // Department options mapped by faculty ID
   const departmentsByFaculty = {
     1: [
       { id: 101, name: "Computer Applications" },
       { id: 102, name: "Networks" },
       { id: 103, name: "Multimedia" },
-    ]
+    ],
   };
 
-  const [selectedFaculty, setSelectedFaculty] = useState(1); // default IT
-  const [departments, setDepartments] = useState(departmentsByFaculty[1]);
+  const [selectedFaculty, setSelectedFaculty] = useState(1);
+
+  const departments = useMemo(() => {
+    return departmentsByFaculty[selectedFaculty] || [];
+  }, [selectedFaculty]);
+
+  const [form, setForm] = useState({
+    student_id: "",
+    full_name: "",
+    student_email: "",
+    department_id: String(departmentsByFaculty[1][0].id),
+    class_room: "",
+    accept_terms: false,
+  });
+
+  const onChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setForm((p) => ({
+      ...p,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  };
 
   const handleFacultyChange = (e) => {
-    const facultyId = parseInt(e.target.value);
+    const facultyId = parseInt(e.target.value, 10);
     setSelectedFaculty(facultyId);
-    setDepartments(departmentsByFaculty[facultyId] || []);
+
+    const firstDept = (departmentsByFaculty[facultyId] || [])[0];
+    setForm((p) => ({
+      ...p,
+      department_id: firstDept ? String(firstDept.id) : "",
+    }));
   };
 
+  const onSubmit = (e) => {
+    e.preventDefault();
+    // TODO: connect API
+    console.log("Signup payload:", {
+      ...form,
+      faculty_id: selectedFaculty,
+      department_id: Number(form.department_id),
+    });
+  };
+
+  // --- Professional "portal" UI (soft, not too rounded) ---
+  const labelCls =
+    "block text-[13px] font-medium text-gray-700 dark:text-gray-300 mb-2";
+
+  const fieldWrap =
+    "relative rounded-xl border border-gray-200 dark:border-gray-700 " +
+    "bg-white dark:bg-gray-900/30 " +
+    "transition " +
+    "focus-within:border-primaryColor/40 focus-within:ring-4 focus-within:ring-primaryColor/10";
+
+  const inputCls =
+    "w-full h-11 pl-11 pr-4 text-sm bg-transparent outline-none " +
+    "text-gray-900 dark:text-white " +
+    "placeholder:text-gray-400 dark:placeholder:text-gray-500";
+
+  const iconCls =
+    "absolute left-3.5 top-1/2 -translate-y-1/2 text-[18px] text-gray-400 " +
+    "transition duration-150";
+
+  const selectCls =
+    "w-full h-11 px-4 text-sm rounded-xl border border-gray-200 dark:border-gray-700 " +
+    "bg-white dark:bg-gray-900/30 text-gray-900 dark:text-white " +
+    "focus:outline-none focus:border-primaryColor/40 focus:ring-4 focus:ring-primaryColor/10 transition appearance-none";
+
   return (
-    <div className="transition-opacity duration-150 ease-linear">
-      {/* Heading */}
-      <div className="text-center mb-8">
-        <h3 className="text-3xl md:text-4xl font-bold text-blackColor dark:text-white mb-2">
-          Create Account
-        </h3>
-        <p className="text-gray-500 dark:text-gray-400">
-          Already have an account?{" "}
-          <a
-            href="#"
-            className="text-primaryColor font-semibold hover:underline transition"
+    <div className="transition-all duration-150 ease-linear">
+      {/* Header */}
+      <div className="text-center mb-6">
+        <h2 className="text-2xl md:text-3xl font-semibold text-gray-900 dark:text-white tracking-tight">
+          Create account
+        </h2>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          Already registered?{" "}
+          <Link
+            href="/login"
+            className="text-primaryColor font-semibold hover:underline"
           >
-            Log in
-          </a>
+            Sign in
+          </Link>
         </p>
       </div>
 
-      <form className="space-y-5" data-aos="fade-up">
-        {/* Row: Student ID + Full Name */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Student ID <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              placeholder="e.g., CA2023001"
-              className="w-full px-5 py-3 bg-transparent border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primaryColor/50 text-gray-900 dark:text-white"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Full Name <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="text"
-              placeholder="John Doe"
-              className="w-full px-5 py-3 bg-transparent border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primaryColor/50 text-gray-900 dark:text-white"
-            />
-          </div>
-        </div>
+      {/* Passwordless info */}
+      <div className="mb-6 rounded-xl border border-primaryColor/15 bg-primaryColor/5 px-4 py-3 flex gap-3">
+        <FiInfo className="text-primaryColor text-lg mt-0.5 flex-shrink-0" />
+        <p className="text-sm text-gray-700 dark:text-gray-200">
+          No password needed – we&apos;ll email you a secure link to activate your
+          account.
+        </p>
+      </div>
 
-        {/* Row: University Email */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            University Email <span className="text-red-500">*</span>
-          </label>
-          <input
-            type="email"
-            placeholder="student@university.edu"
-            className="w-full px-5 py-3 bg-transparent border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primaryColor/50 text-gray-900 dark:text-white"
-          />
-        </div>
-
-        {/* Row: Faculty + Department */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+      {/* Form */}
+      <form onSubmit={onSubmit} className="space-y-4">
+        {/* Grid: clean + consistent */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Student ID */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Faculty <span className="text-red-500">*</span>
+            <label className={labelCls}>
+              Student ID <span className="text-red-400">*</span>
+            </label>
+            <div className={fieldWrap}>
+              <HiOutlineIdentification className={iconCls} />
+              <input
+                name="student_id"
+                value={form.student_id}
+                onChange={onChange}
+                type="text"
+                placeholder="CA2023001"
+                className={inputCls}
+              />
+            </div>
+          </div>
+
+          {/* Full Name */}
+          <div>
+            <label className={labelCls}>
+              Full name <span className="text-red-400">*</span>
+            </label>
+            <div className={fieldWrap}>
+              <FiUser className={iconCls} />
+              <input
+                name="full_name"
+                value={form.full_name}
+                onChange={onChange}
+                type="text"
+                placeholder="John Doe"
+                className={inputCls}
+              />
+            </div>
+          </div>
+
+          {/* Email (full width) */}
+          <div className="md:col-span-2">
+            <label className={labelCls}>
+              Student email <span className="text-red-400">*</span>
+            </label>
+            <div className={fieldWrap}>
+              <FiMail className={iconCls} />
+              <input
+                name="student_email"
+                value={form.student_email}
+                onChange={onChange}
+                type="email"
+                placeholder="student@university.edu"
+                className={inputCls}
+              />
+            </div>
+          </div>
+
+          {/* Faculty */}
+          <div>
+            <label className={labelCls}>
+              Faculty <span className="text-red-400">*</span>
             </label>
             <select
               value={selectedFaculty}
               onChange={handleFacultyChange}
-              className="w-full px-5 py-3 bg-transparent border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primaryColor/50 text-gray-900 dark:text-white appearance-none"
+              className={selectCls}
             >
-              {faculties.map(f => (
+              {faculties.map((f) => (
                 <option key={f.id} value={f.id} className="dark:bg-gray-800">
                   {f.name}
                 </option>
               ))}
             </select>
           </div>
+
+          {/* Department */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Department <span className="text-red-500">*</span>
+            <label className={labelCls}>
+              Department <span className="text-red-400">*</span>
             </label>
             <select
-              className="w-full px-5 py-3 bg-transparent border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primaryColor/50 text-gray-900 dark:text-white appearance-none"
+              name="department_id"
+              value={form.department_id}
+              onChange={onChange}
+              className={selectCls}
             >
-              {departments.map(d => (
+              {departments.map((d) => (
                 <option key={d.id} value={d.id} className="dark:bg-gray-800">
                   {d.name}
                 </option>
               ))}
             </select>
           </div>
-        </div>
 
-        {/* Row: Class & Room Number */}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-            Class & Room Number
-          </label>
-          <input
-            type="text"
-            placeholder="e.g., CA222 7"
-            className="w-full px-5 py-3 bg-transparent border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primaryColor/50 text-gray-900 dark:text-white"
-          />
-        </div>
-
-        {/* Row: Password + Confirm */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Password <span className="text-red-500">*</span>
+          {/* Class & Room (now inside grid, not alone) */}
+          <div className="md:col-span-2">
+            <label className={labelCls}>
+              Class & room number{" "}
+              <span className="text-gray-400 font-normal">(optional)</span>
             </label>
-            <input
-              type="password"
-              placeholder="••••••••"
-              className="w-full px-5 py-3 bg-transparent border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primaryColor/50 text-gray-900 dark:text-white"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Re-enter Password <span className="text-red-500">*</span>
-            </label>
-            <input
-              type="password"
-              placeholder="••••••••"
-              className="w-full px-5 py-3 bg-transparent border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-primaryColor/50 text-gray-900 dark:text-white"
-            />
+            <div className={fieldWrap}>
+              <MdOutlineMeetingRoom className={iconCls} />
+              <input
+                name="class_room"
+                value={form.class_room}
+                onChange={onChange}
+                type="text"
+                placeholder="CA222 7"
+                className={inputCls}
+              />
+            </div>
           </div>
         </div>
 
-        {/* Terms & Privacy */}
-        <div className="flex items-start">
+        {/* Terms */}
+        <div className="flex items-start gap-3 pt-1">
           <input
             type="checkbox"
             id="terms"
-            className="w-4 h-4 mt-1 mr-3 rounded border-gray-300"
+            name="accept_terms"
+            checked={form.accept_terms}
+            onChange={onChange}
+            className="w-5 h-5 mt-0.5 rounded-md border-gray-300 text-primaryColor focus:ring-primaryColor/20"
           />
           <label htmlFor="terms" className="text-sm text-gray-600 dark:text-gray-400">
-            I accept the{" "}
-            <a href="#" className="text-primaryColor hover:underline">Terms of Service</a>{" "}
+            I agree to the{" "}
+            <a href="#" className="text-primaryColor font-semibold hover:underline">
+              Terms
+            </a>{" "}
             and{" "}
-            <a href="#" className="text-primaryColor hover:underline">Privacy Policy</a>
+            <a href="#" className="text-primaryColor font-semibold hover:underline">
+              Privacy Policy
+            </a>
+            .
           </label>
         </div>
 
-        {/* Submit Button */}
+        {/* Submit */}
         <button
           type="submit"
-          className="w-full bg-primaryColor hover:bg-primaryColor/90 text-white font-semibold py-3 px-6 rounded-lg transition duration-300 transform hover:scale-[1.02] shadow-md"
+          className="w-full h-11 rounded-xl bg-primaryColor hover:bg-primaryColor/90 text-white text-sm font-semibold
+                     transition shadow-sm focus:outline-none focus:ring-4 focus:ring-primaryColor/20"
         >
-          Sign Up
+          Create account
         </button>
-
-        {/* Social Signup Option (optional) */}
-        <div className="relative my-6">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-gray-300 dark:border-gray-600"></div>
-          </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="px-4 bg-white dark:bg-gray-800 text-gray-500">or sign up with</span>
-          </div>
-        </div>
-        <div className="grid grid-cols-2 gap-4">
-          <button
-            type="button"
-            className="flex items-center justify-center gap-2 py-2 px-4 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition"
-          >
-            <i className="icofont-facebook text-blue-600"></i>
-            <span className="text-sm">Facebook</span>
-          </button>
-          <button
-            type="button"
-            className="flex items-center justify-center gap-2 py-2 px-4 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition"
-          >
-            <i className="icofont-google-plus text-red-500"></i>
-            <span className="text-sm">Google</span>
-          </button>
-        </div>
       </form>
     </div>
   );

@@ -1,93 +1,126 @@
-import React from "react";
+"use client";
+
+import React, { useState } from "react";
+import Link from "next/link";
 
 const LoginForm = () => {
+  const [form, setForm] = useState({
+    username: "",
+    password: "",
+    remember: false,
+  });
+  const [showPassword, setShowPassword] = useState(false);
+
+  const onChange = (e) => {
+    const { name, value, type, checked } = e.target;
+    setForm((p) => ({ ...p, [name]: type === "checkbox" ? checked : value }));
+  };
+
+  const onSubmit = (e) => {
+    e.preventDefault();
+    // TODO: connect API
+    console.log("Login payload:", form);
+  };
+
+  const labelCls =
+    "block text-[12.5px] font-medium text-gray-700 dark:text-gray-300 mb-1.5";
+
+  const inputCls =
+    "w-full h-10 rounded-lg border border-gray-200 dark:border-gray-700 " +
+    "bg-white dark:bg-gray-900/30 px-3.5 text-sm text-gray-900 dark:text-white " +
+    "placeholder:text-gray-400 dark:placeholder:text-gray-500 " +
+    "focus:outline-none focus:border-primaryColor/40 focus:ring-4 focus:ring-primaryColor/10 transition";
+
   return (
-    <div className=" opacity-100 transition-opacity duration-150 ease-linear">
-      {/* heading   */}
-      <div className="text-center">
-        <h3 className="text-size-32 font-bold text-blackColor dark:text-blackColor-dark mb-2 leading-normal">
-          Login
-        </h3>
-        <p className="text-contentColor dark:text-contentColor-dark mb-15px">
-          {" Don't"} have an account yet?
-          <a
-            href="login.html"
-            className="hover:text-primaryColor relative after:absolute after:left-0 after:bottom-0.5 after:w-0 after:h-0.5 after:bg-primaryColor after:transition-all after:duration-300 hover:after:w-full"
-          >
-            Sign up for free
-          </a>
+    <div className="w-full">
+      {/* Header (compact like Google) */}
+      <div className="mb-5">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+          Sign in
+        </h2>
+        <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+          New here?{" "}
+          <Link href="/signup" className="text-primaryColor font-semibold hover:underline">
+            Create account
+          </Link>
         </p>
       </div>
 
-      <form className="pt-25px" data-aos="fade-up">
-        <div className="mb-25px">
-          <label className="text-contentColor dark:text-contentColor-dark mb-10px block">
-            Username or email
+      <form onSubmit={onSubmit} className="space-y-3.5">
+        {/* Username */}
+        <div>
+          <label className={labelCls} htmlFor="username">
+            Username <span className="text-red-400">*</span>
           </label>
           <input
+            id="username"
+            name="username"
+            value={form.username}
+            onChange={onChange}
             type="text"
-            placeholder="Your username or email"
-            className="w-full h-52px leading-52px pl-5 bg-transparent text-sm focus:outline-none text-contentColor dark:text-contentColor-dark border border-borderColor dark:border-borderColor-dark placeholder:text-placeholder placeholder:opacity-80 font-medium rounded"
+            placeholder="Enter username"
+            className={inputCls}
+            autoComplete="username"
           />
         </div>
 
-        <div className="mb-25px">
-          <label className="text-contentColor dark:text-contentColor-dark mb-10px block">
-            Password
-          </label>
+        {/* Password */}
+        <div>
+          <div className="flex items-center justify-between">
+            <label className={labelCls} htmlFor="password">
+              Password <span className="text-red-400">*</span>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => setShowPassword((v) => !v)}
+              className="text-xs font-semibold text-primaryColor hover:underline"
+            >
+              {showPassword ? "Hide" : "Show"}
+            </button>
+          </div>
+
           <input
-            type="password"
-            placeholder="Password"
-            className="w-full h-52px leading-52px pl-5 bg-transparent text-sm focus:outline-none text-contentColor dark:text-contentColor-dark border border-borderColor dark:border-borderColor-dark placeholder:text-placeholder placeholder:opacity-80 font-medium rounded"
+            id="password"
+            name="password"
+            value={form.password}
+            onChange={onChange}
+            type={showPassword ? "text" : "password"}
+            placeholder="Enter password"
+            className={inputCls}
+            autoComplete="current-password"
           />
         </div>
 
-        <div className="text-contentColor dark:text-contentColor-dark flex items-center justify-between">
-          <div className="flex items-center">
+        {/* Row: remember + forgot */}
+        <div className="flex items-center justify-between pt-1">
+          <label className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
             <input
               type="checkbox"
-              id="remember"
-              className="w-18px h-18px mr-2 block box-content"
+              name="remember"
+              checked={form.remember}
+              onChange={onChange}
+              className="h-4 w-4 rounded border-gray-300 text-primaryColor focus:ring-primaryColor/20"
             />
-            <label htmlFor="remember"> Remember me</label>
-          </div>
-          <div>
-            <a
-              href="#"
-              className="hover:text-primaryColor relative after:absolute after:left-0 after:bottom-0.5 after:w-0 after:h-0.5 after:bg-primaryColor after:transition-all after:duration-300 hover:after:w-full"
-            >
-              Forgot your password?
-            </a>
-          </div>
-        </div>
-        <div className="my-25px text-center">
-          <button
-            type="submit"
-            className="text-size-15 text-whiteColor bg-primaryColor px-25px py-10px w-full border border-primaryColor hover:text-primaryColor hover:bg-whiteColor inline-block rounded group dark:hover:text-whiteColor dark:hover:bg-whiteColor-dark"
+            Remember me
+          </label>
+
+          <Link
+            href="/forgot-password"
+            className="text-sm text-primaryColor font-semibold hover:underline"
           >
-            Log in
-          </button>
+            Forgot password?
+          </Link>
         </div>
-        {/* other login */}
-        <div>
-          <p className="text-contentColor dark:text-contentColor-dark text-center relative mb-15px before:w-2/5 before:h-1px before:bg-borderColor4 dark:before:bg-borderColor2-dark before:absolute before:left-0 before:top-4 after:w-2/5 after:h-1px after:bg-borderColor4 dark:after:bg-borderColor2-dark after:absolute after:right-0 after:top-4">
-            or Log-in with
-          </p>
-        </div>
-        <div className="text-center flex gap-x-1 md:gap-x-15px lg:gap-x-25px gap-y-5 items-center justify-center flex-wrap">
-          <button
-            type="submit"
-            className="text-size-15 text-whiteColor bg-primaryColor px-11 py-10px border border-primaryColor hover:text-primaryColor hover:bg-whiteColor inline-block rounded group dark:hover:text-whiteColor dark:hover:bg-whiteColor-dark"
-          >
-            <i className="icofont-facebook"></i> Facebook
-          </button>
-          <button
-            type="submit"
-            className="text-size-15 text-whiteColor bg-primaryColor px-11 py-10px border border-primaryColor hover:text-primaryColor hover:bg-whiteColor inline-block rounded group dark:hover:text-whiteColor dark:hover:bg-whiteColor-dark"
-          >
-            <i className="icofont-google-plus"></i> Google
-          </button>
-        </div>
+
+        {/* Submit (compact) */}
+        <button
+          type="submit"
+          className="w-full h-10 rounded-lg bg-primaryColor hover:bg-primaryColor/90 text-white text-sm font-semibold
+                     transition focus:outline-none focus:ring-4 focus:ring-primaryColor/15"
+        >
+          Sign in
+        </button>
       </form>
     </div>
   );
