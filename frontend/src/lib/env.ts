@@ -1,1 +1,1 @@
-export const FLASK_ORIGIN = process.env.FLASK_ORIGIN || "http://localhost:9000";
+export const FLASK_ORIGIN = process.env.FLASK_ORIGIN || "http://localhost:7000";

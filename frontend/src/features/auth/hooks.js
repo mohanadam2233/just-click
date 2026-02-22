@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authApi } from "./api";
 import { authKeys } from "./keys";
 
@@ -15,13 +15,21 @@ export function useMe(opts = {}) {
 }
 
 export function useLogin() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: authApi.login,
+    onSuccess: async () => {
+      await qc.invalidateQueries({ queryKey: authKeys.me() });
+    },
   });
 }
 
 export function useLogout() {
+  const qc = useQueryClient();
   return useMutation({
     mutationFn: authApi.logout,
+    onSuccess: async () => {
+      await qc.removeQueries({ queryKey: authKeys.root });
+    },
   });
 }

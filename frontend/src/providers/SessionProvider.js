@@ -1,9 +1,7 @@
 "use client";
 
 import React from "react";
-import { authApi } from "@/features/auth/api";
-import { useQuery } from "@tanstack/react-query";
-import { authKeys } from "@/features/auth/keys";
+import { useMe } from "@/features/auth/hooks";
 
 const SessionCtx = React.createContext(null);
 
@@ -12,12 +10,7 @@ export function useSession() {
 }
 
 export default function SessionProvider({ children }) {
-  const q = useQuery({
-    queryKey: authKeys.me(),
-    queryFn: authApi.me,
-    staleTime: 5 * 60 * 1000,
-  });
-
+  const q = useMe();
   const user = q.data?.data?.user || null;
 
   const value = React.useMemo(() => {
@@ -26,6 +19,8 @@ export default function SessionProvider({ children }) {
       user,
       roles: user?.roles || [],
       permissions: user?.permissions || [],
+      userType: user?.user_type || null,
+      isAdmin: (user?.user_type || "").toLowerCase() === "admin",
     };
   }, [q, user]);
 

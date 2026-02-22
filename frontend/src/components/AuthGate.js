@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useSession } from "@/providers/SessionProvider";
 
 export default function AuthGate({ children }) {
@@ -12,11 +12,13 @@ export default function AuthGate({ children }) {
   useEffect(() => {
     if (isLoading) return;
 
+    // not logged in (no session cookie)
     if (!user) {
       if (!pathname.startsWith("/login")) router.replace("/login");
       return;
     }
 
+    // session invalid/disabled/etc
     if (error?.status === 401 || error?.status === 403) {
       router.replace("/login");
     }

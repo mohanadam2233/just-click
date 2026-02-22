@@ -9,7 +9,4 @@ export const authApi = {
 
   me: () =>
     fetchJSON("/auth/me"),
-
-  profileMe: () =>
-    fetchJSON("/auth/me/profile"),
 };
