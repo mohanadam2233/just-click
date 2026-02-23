@@ -9,4 +9,8 @@ export const authApi = {
 
   me: () =>
     fetchJSON("/auth/me"),
+  verifyEmail: ({ username, token }) =>
+    fetchJSON(
+      `/auth/verify-email?username=${encodeURIComponent(username)}&token=${encodeURIComponent(token)}`
+    ),
 };

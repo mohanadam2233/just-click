@@ -33,3 +33,9 @@ export function useLogout() {
     },
   });
 }
+
+export function useVerifyEmail() {
+  return useMutation({
+    mutationFn: authApi.verifyEmail,
+  });
+}

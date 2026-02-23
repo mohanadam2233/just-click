@@ -45,7 +45,7 @@ const LoginForm = () => {
       });
 
       toast.success("Login successful.");
-      router.replace("/dashboard");
+   router.replace("/materials");
     } catch (e2) {
       toast.error(e2?.message || "Login failed");
     }
