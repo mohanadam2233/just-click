@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@floating-ui/react": "^0.27.18",
+    "@heroicons/react": "^2.2.0",
     "@tanstack/react-query": "^5.90.21",
     "aos": "^3.0.0-beta.6",
     "chart.js": "^4.4.2",

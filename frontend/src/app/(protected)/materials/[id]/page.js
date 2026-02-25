@@ -1,6 +1,6 @@
 import CourseDetailsMain from "@/components/layout/main/CourseDetailsMain";
 import ThemeController from "@/components/shared/others/ThemeController";
-import PageWrapper from "@/components/shared/wrappers/PageWrapper";
+
 import courses from "@/../public/fakedata/courses.json";
 import { notFound } from "next/navigation";
 export const metadata = {
@@ -15,12 +15,12 @@ const Course_Details = async ({ params }) => {
     notFound();
   }
   return (
-    <PageWrapper>
+
       <main>
         <CourseDetailsMain id={id} />
         <ThemeController />
       </main>
-    </PageWrapper>
+   
   );
 };
 export async function generateStaticParams() {
