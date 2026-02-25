@@ -32,7 +32,7 @@ import CoreFeatures from "@/components/sections/features/CoreFeatures";
 import UserRoles from "@/components/sections/user-roles/UserRoles";
 import HowItWorks from "@/components/sections/how-it-works/HowItWorks";
 import Faq from "@/components/sections/faq/Faq";
-import Testimonials2 from "@/components/sections/testimonials/Testimonials2";
+
 
 
 const Home3 = () => {
@@ -44,7 +44,7 @@ const Home3 = () => {
       <UserRoles />
       <HowItWorks />
       <Faq />
-      <Testimonials2 />
+
 
     </>
   );
