@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Index
+from sqlalchemy import Index, BigInteger, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
 from cmcp.config.database import db
@@ -52,6 +52,12 @@ class EmailOutbox(BaseModel):
     from_email: Mapped[Optional[str]] = mapped_column(db.String(255), nullable=True)
     from_name: Mapped[Optional[str]] = mapped_column(db.String(255), nullable=True)
 
+    company_id: Mapped[Optional[int]] = mapped_column(
+        BigInteger,
+        ForeignKey("companies.id", ondelete="CASCADE"),
+        nullable=True,          # ✅ important
+        index=True,
+    )
     __table_args__ = (
         Index("ix_email_outbox_status_created", "status", "created_at"),
         Index("ix_email_outbox_template_status", "template", "status"),

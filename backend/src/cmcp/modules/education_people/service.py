@@ -5,8 +5,10 @@ import os
 from datetime import timedelta
 from typing import Any, Dict, Optional, Tuple, List
 
+from flask import g
 from sqlalchemy.orm import Session
 
+from cmcp.common.cache import cached_list
 from cmcp.common.email.outbox_model import EmailOutboxStatus
 from cmcp.config.database import db
 from cmcp.core.base_service import BaseService
@@ -33,7 +35,7 @@ from cmcp.modules.education_people.validation import (
     ERR_VERIFY_EXPIRED,
     normalize_email,
 )
-
+from cmcp.modules.materials.service import _encode_cursor, _decode_cursor
 
 log = logging.getLogger(__name__)
 
@@ -388,3 +390,136 @@ class EducationPeopleService:
             self.s.flush()  # ✅ ensure outbox row has id before route commit
 
         return True, "Approved and email queued."
+
+    # =========================================================
+    # LIST (CURSOR)
+    # =========================================================
+
+    def list_students_cursor(
+            self,
+            *,
+            company_id: int,
+            limit: int,
+            cursor: Optional[str],
+            filters: Dict[str, Any],
+            is_enabled: Optional[bool],
+            external_base: str,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        limit = max(1, min(int(limit or 20), 100))
+
+        cur = _decode_cursor(cursor or "")
+        last_id = cur.get("last_id")
+        try:
+            last_id = int(last_id) if last_id is not None else None
+        except Exception:
+            last_id = None
+
+        user_id = getattr(getattr(g, "auth", None), "user_id", None)
+
+        params = {
+            "mode": "cursor",
+            "limit": limit,
+            "last_id": last_id,
+            "filters": filters,
+            "is_enabled": is_enabled,
+            "external_base": external_base,
+            "user_id": int(user_id) if user_id is not None else None,
+        }
+
+        def builder():
+            rows, total_count, has_more = self.repo.list_students_cursor(
+                company_id=company_id,
+                limit=limit,
+                last_id=last_id,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_student_list_row(r, external_base=external_base) for r in rows]
+
+            next_cursor = None
+            if has_more and rows:
+                next_cursor = _encode_cursor({"last_id": int(rows[-1].id)})
+
+            return {
+                "data": data,
+                "pagination": {
+                    "limit": limit,
+                    "next_cursor": next_cursor,
+                    "has_more": bool(has_more),
+                },
+                "meta": {"total_count": int(total_count)},
+            }
+
+        out = cached_list(
+            entity="students:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        return True, "OK", out
+
+        # =========================================================
+        # LIST (PAGE)
+        # =========================================================
+
+    def list_students_page(
+            self,
+            *,
+            company_id: int,
+            page: int,
+            per_page: int,
+            filters: Dict[str, Any],
+            is_enabled: Optional[bool],
+            external_base: str,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        allowed = {10, 20, 50, 500}
+        per_page = per_page if int(per_page or 20) in allowed else 20
+        page = max(int(page or 1), 1)
+
+        user_id = getattr(getattr(g, "auth", None), "user_id", None)
+
+        params = {
+            "mode": "page",
+            "page": page,
+            "per_page": per_page,
+            "filters": filters,
+            "is_enabled": is_enabled,
+            "external_base": external_base,
+            "user_id": int(user_id) if user_id is not None else None,
+        }
+
+        def builder():
+            rows, total_count, pages = self.repo.list_students_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_student_list_row(r, external_base=external_base) for r in rows]
+
+            return {
+                "data": data,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "pages": int(pages),
+                    "total_count": int(total_count),
+                },
+            }
+
+        out = cached_list(
+            entity="students:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        return True, "OK", out

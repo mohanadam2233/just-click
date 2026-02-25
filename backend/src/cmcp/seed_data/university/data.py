@@ -20,6 +20,24 @@ UNIVERSITIES: List[Dict[str, Any]] = [
             # user_type is in your enum: ADMIN makes sense for Super Admin
             "user_type": "ADMIN",
         },
+        "student_user": {
+            "username": "jc_student1",
+            "password": "ChangeMe!123",
+            "user_type": "STUDENT",
+
+            # StudentProfile fields you requested
+            "profile": {
+                "full_name": "Zahra Student",
+                "student_id": "C12291",
+
+                "faculty_code": "FCS",
+                "department_code": "IS",
+                "semester_number": 1,
+
+                "classroom_id": None,
+                "is_enabled": True,
+            }
+        },
         "academic": {
             "faculty": {"name": "Faculty of Computer Science", "code": "FCS"},
             "departments": [

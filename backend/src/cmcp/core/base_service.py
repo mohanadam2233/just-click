@@ -7,7 +7,7 @@ from typing import Any, Dict, Generic, Optional, Tuple, Type, TypeVar, List, Ite
 
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import inspect as sa_inspect
+from sqlalchemy import inspect as sa_inspect, Select
 
 from cmcp.config.database import db
 from cmcp.core.base_repo import BaseRepository, PageResult, DropdownResult
@@ -458,6 +458,10 @@ class BaseService(Generic[T]):
             meta_fields: Optional[List[str]] = None,
             strict_label: bool = False,  # if True: no fallback name/title
             max_limit: int = 100,
+            # ✅ NEW: pass-through hooks to BaseRepository.dropdown
+            extra_where: Optional[Iterable[Any]] = None,
+            base_stmt: Optional[Select] = None,
+            count_from: Optional[Any] = None,
     ) -> Dict[str, Any]:
         res: DropdownResult[T] = self.repo.dropdown(
             company_id=int(company_id),
@@ -474,6 +478,10 @@ class BaseService(Generic[T]):
             limit=limit,
             offset=offset,
             max_limit=max_limit,
+            # ✅ pass-through
+            extra_where=extra_where,
+            base_stmt=base_stmt,
+            count_from=count_from,
         )
 
         def _label(obj: T) -> str:

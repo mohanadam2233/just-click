@@ -571,3 +571,27 @@ def faculties_with_departments_dropdown(company_id: int):
         filters=filters,
     )
     return api_success(message="OK", data=data, status_code=200)
+
+@bp.get("/departments/dropdown")
+@require_company_and_permission(doctype="Department", action="READ")
+def departments_dropdown(company_id: int):
+    try:
+        search, limit, offset, active_only, filters = dropdown_args(
+            parse_filters_func=_parse_filters,
+            parse_bool_func=_as_bool,
+        )
+
+        faculty_id = request.args.get("faculty_id", type=int)  # ✅ dependent param
+
+        data = svc.dropdown_departments(
+            company_id=company_id,
+            faculty_id=faculty_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            filters=filters,
+        )
+        return api_success(message="OK", data=data, status_code=200)
+    except Exception as e:
+        return api_error(str(e), status_code=400)

@@ -30,7 +30,6 @@ def compute_permissions_for_role_ids(*, role_ids: List[int]) -> Set[str]:
         .join(Action, Action.id == Permission.action_id)
         .where(
             RolePermission.role_id.in_(role_ids),
-            RolePermission.is_enabled.is_(True),
             RolePermission.is_allowed.is_(True),
             Permission.is_enabled.is_(True),
             DocType.is_enabled.is_(True),

@@ -4,6 +4,7 @@ from typing import Any, Dict, Optional, Tuple, List, Set
 
 from sqlalchemy import exists, select
 
+from cmcp.common.cache import cached_dropdown
 from cmcp.core.base_service import BaseService
 from cmcp.modules.academic.academic_repo import AcademicRepo
 from cmcp.modules.academic.models import Faculty, Department, AcademicYear, Semester, Course, Chapter
@@ -905,6 +906,73 @@ class AcademicService:
             strict_label=True,
         )
 
+    def dropdown_departments(
+            self,
+            *,
+            company_id: int,
+            faculty_id: int | None,  # ✅ dependent filter
+            search: str | None,
+            limit: int,
+            offset: int,
+            active_only: bool,
+            filters: dict | None,
+    ):
+        allowed_filters = {
+            "is_enabled": Department.is_enabled,
+            "name": Department.name,
+            "code": Department.code,
+            "faculty_id": Department.faculty_id,  # optional (but we already accept faculty_id param)
+        }
+
+        sort_fields = {
+            "id": Department.id,
+            "name": Department.name,
+            "code": Department.code,
+            "created_at": getattr(Department, "created_at", Department.id),
+        }
+
+        # ✅ enforce faculty_id when provided (strong, explicit)
+        extra_where = []
+        if faculty_id is not None:
+            extra_where.append(Department.faculty_id == int(faculty_id))
+
+        # ---------------- caching ----------------
+        params = {
+            "search": search,
+            "limit": int(limit),
+            "offset": int(offset),
+            "active_only": bool(active_only),
+            "filters": filters or {},
+            "faculty_id": int(faculty_id) if faculty_id is not None else None,
+        }
+
+        def builder():
+            return self.department_svc.dropdown(
+                company_id=company_id,
+                search=search,
+                limit=limit,
+                offset=offset,
+                active_only=active_only,
+                search_columns=[Department.name, Department.code],
+                filters=filters,
+                allowed_filters=allowed_filters,
+                sort_fields=sort_fields,
+                default_sort=[Department.name.asc()],
+                value_field="id",
+                label_fields=["code", "name"],
+                meta_fields=["faculty_id", "code", "is_enabled"],
+                strict_label=True,
+                # ✅ use your NEW HOOK
+                extra_where=extra_where,
+            )
+
+        return cached_dropdown(
+            name="departments",
+            company_id=company_id,
+            params=params,
+            ttl=600,
+            builder=builder,
+        )
     def dropdown_faculties_with_departments(
             self,
             *,

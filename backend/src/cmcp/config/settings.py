@@ -197,7 +197,7 @@ class Settings(BaseSettings):
     # -------------------------
     # CORS
     # -------------------------
-    CORS_ALLOWED_ORIGINS: List[str] = Field(default_factory=lambda: ["http://localhost:5173"])
+    CORS_ALLOWED_ORIGINS: List[str] = Field(default_factory=lambda: ["http://localhost:3000"])
     CORS_ALLOW_ORIGIN_REGEX: Optional[str] = None
 
     @field_validator("CORS_ALLOWED_ORIGINS", mode="before")
@@ -215,7 +215,7 @@ class Settings(BaseSettings):
                 except Exception:
                     pass
             return [p.strip() for p in s.split(",") if p.strip()]
-        return ["http://localhost:5173"]
+        return ["http://localhost:3000"]
 
 
 settings = Settings()
