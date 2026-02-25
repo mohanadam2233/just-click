@@ -1,14 +1,10 @@
-"use client";
-import TabButtonPrimary from "@/components/shared/buttons/TabButtonPrimary";
+import React from "react";
 import LoginForm from "@/components/shared/login/LoginForm";
-import SignUpForm from "@/components/shared/login/SignUpForm";
-import TabContentWrapper from "@/components/shared/wrappers/TabContentWrapper";
 import Image from "next/image";
 import shapImage2 from "@/assets/images/education/hero_shape2.png";
 import shapImage3 from "@/assets/images/education/hero_shape3.png";
 import shapImage4 from "@/assets/images/education/hero_shape4.png";
 import shapImage5 from "@/assets/images/education/hero_shape5.png";
-import useTab from "@/hooks/useTab";
 
 const LoginTab = () => {
   return (
