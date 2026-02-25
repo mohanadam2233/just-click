@@ -10,12 +10,12 @@ export const metadata = {
 
 const Signup = () => {
   return (
-    <PageWrapper>
+
       <main>
         <SignupMain />
         <ThemeController />
       </main>
-    </PageWrapper>
+ 
   );
 };
 
