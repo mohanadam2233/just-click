@@ -10,12 +10,12 @@ export const metadata = {
 
 const Courses = async () => {
   return (
-    <PageWrapper>
+
       <main>
         <CoursesMain />
         <ThemeController />
       </main>
-    </PageWrapper>
+
   );
 };
 

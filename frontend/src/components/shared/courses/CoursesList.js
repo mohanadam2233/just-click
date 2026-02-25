@@ -1,28 +1,4 @@
 
-// // components/shared/courses/CoursesList.jsx
-// import MaterialListItem from "./MaterialListItem";
-
-// const CoursesList = ({ materials, card, isList, isNotSidebar }) => {
-//   return (
-//     <div className="flex flex-col gap-30px">
-//       {materials?.length ? (
-//         materials?.map((material, idx) => (
-//           <MaterialListItem
-//             key={idx}
-//             material={material}
-//             isList={isList}
-//             card={card}
-//             isNotSidebar={isNotSidebar}
-//           />
-//         ))
-//       ) : (
-//         <span></span>
-//       )}
-//     </div>
-//   );
-// };
-
-// export default CoursesList;
 // components/shared/courses/CoursesList.jsx
 import MaterialListItem from "./MaterialListItem";
 

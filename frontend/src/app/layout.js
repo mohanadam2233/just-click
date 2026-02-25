@@ -9,13 +9,14 @@ import "swiper/css/navigation";
 import "swiper/css/pagination";
 import "swiper/css/effect-cards";
 import "./globals.css";
-
+import AppEffects from "@/components/shared/AppEffects";
 import FixedShadow from "@/components/shared/others/FixedShadow";
 import PreloaderPrimary from "@/components/shared/others/PreloaderPrimary";
 
 import ReactQueryProvider from "@/providers/ReactQueryProvider";
 import SessionProvider from "@/providers/SessionProvider";
-
+import CartContextProvider from "@/contexts/CartContext";
+import WishlistContextProvider from "@/contexts/WshlistContext";
 export const inter = Inter({
   subsets: ["latin"],
   weight: ["300", "400", "500", "600", "700"],
@@ -39,14 +40,19 @@ export default function RootLayout({ children }) {
   return (
     <html lang="en" className={`${hind.variable}`}>
       <body className={`relative leading-[1.8] bg-bodyBg dark:bg-bodyBg-dark z-0 ${inter.className}`}>
-        <ReactQueryProvider>
+             <ReactQueryProvider>
           <SessionProvider>
-            <PreloaderPrimary />
-            {children}
-            <div>
-              <FixedShadow />
-              <FixedShadow align={"right"} />
-            </div>
+            <CartContextProvider>
+              <WishlistContextProvider>
+                 <AppEffects />  
+                <PreloaderPrimary />
+                {children}
+                <div>
+                  <FixedShadow />
+                  <FixedShadow align={"right"} />
+                </div>
+              </WishlistContextProvider>
+            </CartContextProvider>
           </SessionProvider>
         </ReactQueryProvider>
       </body>
