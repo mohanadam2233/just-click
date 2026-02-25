@@ -1,12 +1,11 @@
 import CourseDetailsPrimary from "@/components/sections/course-details/CourseDetailsPrimary";
-import HeroPrimary from "@/components/sections/hero-banners/HeroPrimary";
-import React from "react";
+import HeroPrimary2 from "@/components/sections/hero-banners/HeroPrimary2";
 
-const CourseDetailsMain = ({ id }) => {
+const CourseDetailsMain = () => {
   return (
     <>
-      <HeroPrimary path={"Course-Details"} title={"Course Details"} />
-      <CourseDetailsPrimary id={id} />
+      {/* <HeroPrimary2 /> */}
+      <CourseDetailsPrimary type={2} />
     </>
   );
 };

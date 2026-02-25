@@ -1,3 +1,4 @@
+import React from "react";
 import HeroPrimary from "@/components/sections/hero-banners/HeroPrimary";
 import LoginTab from "@/components/sections/login/LoginTab";
 
