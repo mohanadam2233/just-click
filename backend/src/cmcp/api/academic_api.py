@@ -5,7 +5,9 @@ from typing import Any, Dict, Optional, Tuple
 
 from flask import Blueprint, request
 
+from cmcp import db
 from cmcp.common.api_response import api_success, api_error
+from cmcp.core.exceptions import NotFoundError, BusinessValidationError
 from cmcp.security.rbac_guards import require_company_and_permission
 
 from cmcp.modules.academic.schemas import (
@@ -19,6 +21,15 @@ from cmcp.modules.academic.schemas import (
 )
 from cmcp.modules.academic.academic_service import AcademicService
 from cmcp.core.http.dropdown_args import dropdown_args
+
+def _handle_error(e: Exception):
+    db.session.rollback()
+    # your validation layer now throws these (like academic)
+    if isinstance(e, NotFoundError):
+        return api_error(str(e), status_code=404)
+    if isinstance(e, BusinessValidationError):
+        return api_error(str(e), status_code=400)
+    return api_error(str(e), status_code=400)
 bp = Blueprint("academic", __name__, url_prefix="/api/academic")
 svc = AcademicService()
 
@@ -83,6 +94,56 @@ def create_faculty(company_id: int):
     except Exception as e:
         return api_error(str(e), status_code=400)
 
+@bp.get("/faculties/list")
+@require_company_and_permission(doctype="Faculty", action="READ")
+def list_faculties(company_id: int):
+    try:
+        q = request.args
+        mode = (q.get("mode") or "cursor").strip().lower()  # cursor|page
+
+        filters: Dict[str, Any] = {
+            "search": (q.get("search") or "").strip() or None,
+        }
+
+        is_enabled_raw = q.get("is_enabled")
+        is_enabled: Optional[bool] = None
+        if is_enabled_raw is not None:
+            s = str(is_enabled_raw).strip().lower()
+            if s in {"1", "true", "yes"}:
+                is_enabled = True
+            elif s in {"0", "false", "no"}:
+                is_enabled = False
+
+        if mode == "page":
+            page = q.get("page", type=int) or 1
+            per_page = q.get("per_page", type=int) or 20
+
+            ok, msg, out = svc.list_faculties_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+            return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
+        limit = q.get("limit", type=int) or 20
+        cursor = (q.get("cursor") or "").strip() or None
+
+        ok, msg, out = svc.list_faculties_cursor(
+            company_id=company_id,
+            limit=limit,
+            cursor=cursor,
+            filters=filters,
+            is_enabled=is_enabled,
+        )
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
+    except Exception as e:
+        return _handle_error(e)
+
+
+
 
 @bp.put("/faculties/<int:faculty_id>/update")
 @require_company_and_permission(doctype="Faculty", action="UPDATE")
@@ -112,29 +173,6 @@ def bulk_delete_faculties(company_id: int):
         payload = BulkDeleteIn.model_validate(request.get_json(silent=True) or {})
         ok, msg, out = svc.bulk_delete_faculties(company_id=company_id, ids=payload.ids, soft=True)
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
-    except Exception as e:
-        return api_error(str(e), status_code=400)
-
-
-@bp.get("/faculties/list")
-@require_company_and_permission(doctype="Faculty", action="READ")
-def list_faculties(company_id: int):
-    try:
-        q, sort_key, sort_order, page, per_page, limit, offset, filters = _list_args()
-        mode = _list_mode(limit, offset)
-
-        args = {
-            "q": q,
-            "sort_key": sort_key,
-            "sort_order": sort_order,
-            "page": page,
-            "per_page": per_page,
-            "limit": int(limit or 20),
-            "offset": int(offset or 0),
-            "filters": filters,
-        }
-        data = svc.list_faculties(company_id=company_id, mode=mode, args=args)
-        return api_success(message="OK", data=data, status_code=200)
     except Exception as e:
         return api_error(str(e), status_code=400)
 
@@ -194,31 +232,54 @@ def bulk_delete_departments(company_id: int):
     except Exception as e:
         return api_error(str(e), status_code=400)
 
-
 @bp.get("/departments/list")
 @require_company_and_permission(doctype="Department", action="READ")
 def list_departments(company_id: int):
     try:
-        q, sort_key, sort_order, page, per_page, limit, offset, filters = _list_args()
-        mode = _list_mode(limit, offset)
+        q = request.args
+        mode = (q.get("mode") or "cursor").strip().lower()  # cursor|page
 
-        include_faculty = _as_bool(request.args.get("include_faculty", "0"))
-
-        args = {
-            "q": q,
-            "sort_key": sort_key,
-            "sort_order": sort_order,
-            "page": page,
-            "per_page": per_page,
-            "limit": int(limit or 20),
-            "offset": int(offset or 0),
-            "filters": filters,
+        filters: Dict[str, Any] = {
+            "faculty_id": q.get("faculty_id", type=int),
+            "search": (q.get("search") or "").strip() or None,
         }
-        data = svc.list_departments(company_id=company_id, mode=mode, args=args, include_faculty=include_faculty)
-        return api_success(message="OK", data=data, status_code=200)
-    except Exception as e:
-        return api_error(str(e), status_code=400)
 
+        is_enabled_raw = q.get("is_enabled")
+        is_enabled: Optional[bool] = None
+        if is_enabled_raw is not None:
+            s = str(is_enabled_raw).strip().lower()
+            if s in {"1", "true", "yes"}:
+                is_enabled = True
+            elif s in {"0", "false", "no"}:
+                is_enabled = False
+
+        if mode == "page":
+            page = q.get("page", type=int) or 1
+            per_page = q.get("per_page", type=int) or 20
+
+            ok, msg, out = svc.list_departments_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+            return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
+        limit = q.get("limit", type=int) or 20
+        cursor = (q.get("cursor") or "").strip() or None
+
+        ok, msg, out = svc.list_departments_cursor(
+            company_id=company_id,
+            limit=limit,
+            cursor=cursor,
+            filters=filters,
+            is_enabled=is_enabled,
+        )
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
+    except Exception as e:
+        return _handle_error(e)
 
 @bp.get("/departments/<int:department_id>/get")
 @require_company_and_permission(doctype="Department", action="READ")
@@ -276,18 +337,54 @@ def bulk_delete_years(company_id: int):
         return api_error(str(e), status_code=400)
 
 
-@bp.get("/years/list")
-@require_company_and_permission(doctype="Academic Year", action="READ")
-def list_years(company_id: int):
+@bp.get("/academic-years/list")
+@require_company_and_permission(doctype="AcademicYear", action="READ")
+def list_academic_years(company_id: int):
     try:
-        q, sort_key, sort_order, page, per_page, limit, offset, filters = _list_args()
-        mode = _list_mode(limit, offset)
+        q = request.args
+        mode = (q.get("mode") or "cursor").strip().lower()
 
-        args = {"q": q, "sort_key": sort_key, "sort_order": sort_order, "page": page, "per_page": per_page, "limit": int(limit or 20), "offset": int(offset or 0), "filters": filters}
-        data = svc.list_years(company_id=company_id, mode=mode, args=args)
-        return api_success(message="OK", data=data, status_code=200)
+        filters = {
+            "search": (q.get("search") or "").strip() or None,
+        }
+
+        is_enabled_raw = q.get("is_enabled")
+        is_enabled = None
+        if is_enabled_raw is not None:
+            s = str(is_enabled_raw).strip().lower()
+            if s in {"1", "true", "yes"}:
+                is_enabled = True
+            elif s in {"0", "false", "no"}:
+                is_enabled = False
+
+        if mode == "page":
+            page = q.get("page", type=int) or 1
+            per_page = q.get("per_page", type=int) or 20
+
+            ok, msg, out = svc.list_academic_years_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+            return api_success(message=msg, data=out)
+
+        limit = q.get("limit", type=int) or 20
+        cursor = (q.get("cursor") or "").strip() or None
+
+        ok, msg, out = svc.list_academic_years_cursor(
+            company_id=company_id,
+            limit=limit,
+            cursor=cursor,
+            filters=filters,
+            is_enabled=is_enabled,
+        )
+
+        return api_success(message=msg, data=out)
+
     except Exception as e:
-        return api_error(str(e), status_code=400)
+        return _handle_error(e)
 
 
 @bp.get("/years/<int:year_id>/get")
@@ -312,6 +409,55 @@ def create_semester(company_id: int):
         return api_success(message=msg, data=out, status_code=201) if ok else api_error(msg, status_code=400)
     except Exception as e:
         return api_error(str(e), status_code=400)
+
+@bp.get("/semesters/list")
+@require_company_and_permission(doctype="Semester", action="READ")
+def list_semesters(company_id: int):
+    try:
+        q = request.args
+        mode = (q.get("mode") or "cursor").strip().lower()
+
+        filters: Dict[str, Any] = {
+            "academic_year_id": q.get("academic_year_id", type=int),
+            "search": (q.get("search") or "").strip() or None,
+        }
+
+        is_enabled_raw = q.get("is_enabled")
+        is_enabled: Optional[bool] = None
+        if is_enabled_raw is not None:
+            s = str(is_enabled_raw).strip().lower()
+            if s in {"1", "true", "yes"}:
+                is_enabled = True
+            elif s in {"0", "false", "no"}:
+                is_enabled = False
+
+        if mode == "page":
+            page = q.get("page", type=int) or 1
+            per_page = q.get("per_page", type=int) or 20
+
+            ok, msg, out = svc.list_semesters_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+            return api_success(message=msg, data=out)
+
+        limit = q.get("limit", type=int) or 20
+        cursor = (q.get("cursor") or "").strip() or None
+
+        ok, msg, out = svc.list_semesters_cursor(
+            company_id=company_id,
+            limit=limit,
+            cursor=cursor,
+            filters=filters,
+            is_enabled=is_enabled,
+        )
+        return api_success(message=msg, data=out)
+
+    except Exception as e:
+        return _handle_error(e)
 
 
 @bp.put("/semesters/<int:semester_id>/update")
@@ -344,23 +490,6 @@ def bulk_delete_semesters(company_id: int):
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
     except Exception as e:
         return api_error(str(e), status_code=400)
-
-
-@bp.get("/semesters/list")
-@require_company_and_permission(doctype="Academic Term", action="READ")
-def list_semesters(company_id: int):
-    try:
-        q, sort_key, sort_order, page, per_page, limit, offset, filters = _list_args()
-        mode = _list_mode(limit, offset)
-
-        include_year = _as_bool(request.args.get("include_year", "0"))
-
-        args = {"q": q, "sort_key": sort_key, "sort_order": sort_order, "page": page, "per_page": per_page, "limit": int(limit or 20), "offset": int(offset or 0), "filters": filters}
-        data = svc.list_semesters(company_id=company_id, mode=mode, args=args, include_year=include_year)
-        return api_success(message="OK", data=data, status_code=200)
-    except Exception as e:
-        return api_error(str(e), status_code=400)
-
 
 @bp.get("/semesters/<int:semester_id>/get")
 @require_company_and_permission(doctype="Academic Term", action="READ")
@@ -422,17 +551,51 @@ def bulk_delete_courses(company_id: int):
 @require_company_and_permission(doctype="Course", action="READ")
 def list_courses(company_id: int):
     try:
-        q, sort_key, sort_order, page, per_page, limit, offset, filters = _list_args()
-        mode = _list_mode(limit, offset)
+        q = request.args
+        mode = (q.get("mode") or "cursor").strip().lower()
 
-        include_department = _as_bool(request.args.get("include_department", "0"))
-        include_semester = _as_bool(request.args.get("include_semester", "0"))
+        filters: Dict[str, Any] = {
+            "department_id": q.get("department_id", type=int),
+            "semester_id": q.get("semester_id", type=int),
+            "search": (q.get("search") or "").strip() or None,
+        }
 
-        args = {"q": q, "sort_key": sort_key, "sort_order": sort_order, "page": page, "per_page": per_page, "limit": int(limit or 20), "offset": int(offset or 0), "filters": filters}
-        data = svc.list_courses(company_id=company_id, mode=mode, args=args, include_department=include_department, include_semester=include_semester)
-        return api_success(message="OK", data=data, status_code=200)
+        is_enabled_raw = q.get("is_enabled")
+        is_enabled: Optional[bool] = None
+        if is_enabled_raw is not None:
+            s = str(is_enabled_raw).strip().lower()
+            if s in {"1", "true", "yes"}:
+                is_enabled = True
+            elif s in {"0", "false", "no"}:
+                is_enabled = False
+
+        if mode == "page":
+            page = q.get("page", type=int) or 1
+            per_page = q.get("per_page", type=int) or 20
+
+            ok, msg, out = svc.list_courses_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+            return api_success(message=msg, data=out)
+
+        limit = q.get("limit", type=int) or 20
+        cursor = (q.get("cursor") or "").strip() or None
+
+        ok, msg, out = svc.list_courses_cursor(
+            company_id=company_id,
+            limit=limit,
+            cursor=cursor,
+            filters=filters,
+            is_enabled=is_enabled,
+        )
+        return api_success(message=msg, data=out)
+
     except Exception as e:
-        return api_error(str(e), status_code=400)
+        return _handle_error(e)
 
 
 @bp.get("/courses/<int:course_id>/get")
@@ -495,16 +658,50 @@ def bulk_delete_chapters(company_id: int):
 @require_company_and_permission(doctype="Chapter", action="READ")
 def list_chapters(company_id: int):
     try:
-        q, sort_key, sort_order, page, per_page, limit, offset, filters = _list_args()
-        mode = _list_mode(limit, offset)
+        q = request.args
+        mode = (q.get("mode") or "cursor").strip().lower()
 
-        include_course = _as_bool(request.args.get("include_course", "0"))
+        filters: Dict[str, Any] = {
+            "course_id": q.get("course_id", type=int),
+            "search": (q.get("search") or "").strip() or None,
+        }
 
-        args = {"q": q, "sort_key": sort_key, "sort_order": sort_order, "page": page, "per_page": per_page, "limit": int(limit or 20), "offset": int(offset or 0), "filters": filters}
-        data = svc.list_chapters(company_id=company_id, mode=mode, args=args, include_course=include_course)
-        return api_success(message="OK", data=data, status_code=200)
+        is_enabled_raw = q.get("is_enabled")
+        is_enabled: Optional[bool] = None
+        if is_enabled_raw is not None:
+            s = str(is_enabled_raw).strip().lower()
+            if s in {"1", "true", "yes"}:
+                is_enabled = True
+            elif s in {"0", "false", "no"}:
+                is_enabled = False
+
+        if mode == "page":
+            page = q.get("page", type=int) or 1
+            per_page = q.get("per_page", type=int) or 20
+
+            ok, msg, out = svc.list_chapters_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+            return api_success(message=msg, data=out)
+
+        limit = q.get("limit", type=int) or 20
+        cursor = (q.get("cursor") or "").strip() or None
+
+        ok, msg, out = svc.list_chapters_cursor(
+            company_id=company_id,
+            limit=limit,
+            cursor=cursor,
+            filters=filters,
+            is_enabled=is_enabled,
+        )
+        return api_success(message=msg, data=out)
+
     except Exception as e:
-        return api_error(str(e), status_code=400)
+        return _handle_error(e)
 
 
 @bp.get("/chapters/<int:chapter_id>/get")
@@ -595,3 +792,11 @@ def departments_dropdown(company_id: int):
         return api_success(message="OK", data=data, status_code=200)
     except Exception as e:
         return api_error(str(e), status_code=400)
+
+
+
+
+
+
+
+

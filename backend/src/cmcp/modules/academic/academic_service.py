@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional, Tuple, List, Set
 
+from flask import g
 from sqlalchemy import exists, select
 
-from cmcp.common.cache import cached_dropdown
+from cmcp.common.cache import cached_dropdown, cached_list
 from cmcp.core.base_service import BaseService
 from cmcp.modules.academic.academic_repo import AcademicRepo
 from cmcp.modules.academic.models import Faculty, Department, AcademicYear, Semester, Course, Chapter
@@ -31,6 +32,8 @@ from cmcp.modules.academic.validation import (
     ERR_CHAPTER_EXISTS_NUMBER,
 )
 from cmcp.core.http.dropdown_args import dropdown_args
+from cmcp.modules.materials.service import _encode_cursor, _decode_cursor
+
 
 def _safe_desc(v: Any) -> str | None:
     s = (v or "").strip()
@@ -159,42 +162,6 @@ class AcademicService:
             linked_msg=cannot_delete_linked("Faculty", "Departments"),
             soft=soft,
         )
-
-    def list_faculties(self, *, company_id: int, mode: str, args: Dict[str, Any]) -> Dict[str, Any]:
-        allowed_filters = {"is_enabled": Faculty.is_enabled, "name": Faculty.name, "code": Faculty.code}
-        sort_fields = {"id": Faculty.id, "name": Faculty.name, "code": Faculty.code, "created_at": getattr(Faculty, "created_at", Faculty.id)}
-
-        if mode == "scroll":
-            return self.faculty_svc.list_scroll(
-                company_id=company_id,
-                limit=args["limit"],
-                offset=args["offset"],
-                search=args.get("q"),
-                search_columns=[Faculty.name, Faculty.code],
-                filters=args.get("filters"),
-                allowed_filters=allowed_filters,
-                sort_key=args.get("sort_key"),
-                sort_order=args.get("sort_order"),
-                sort_fields=sort_fields,
-                default_sort=[Faculty.name.asc()],
-                only_enabled=False,
-            )
-
-        return self.faculty_svc.list_page(
-            company_id=company_id,
-            page=args["page"],
-            per_page=args["per_page"],
-            search=args.get("q"),
-            search_columns=[Faculty.name, Faculty.code],
-            filters=args.get("filters"),
-            allowed_filters=allowed_filters,
-            sort_key=args.get("sort_key"),
-            sort_order=args.get("sort_order"),
-            sort_fields=sort_fields,
-            default_sort=[Faculty.name.asc()],
-            only_enabled=False,
-        )
-
     def get_faculty(self, *, company_id: int, faculty_id: int) -> Optional[Dict[str, Any]]:
         return self.faculty_svc.get_one(company_id=company_id, id=faculty_id)
 
@@ -272,57 +239,6 @@ class AcademicService:
             soft=soft,
         )
 
-    def list_departments(self, *, company_id: int, mode: str, args: Dict[str, Any], include_faculty: bool) -> Dict[str, Any]:
-        allowed_filters = {
-            "is_enabled": Department.is_enabled,
-            "faculty_id": Department.faculty_id,
-            "name": Department.name,
-            "code": Department.code,
-        }
-        sort_fields = {"id": Department.id, "name": Department.name, "created_at": getattr(Department, "created_at", Department.id)}
-        eager = ["faculty"] if include_faculty else None
-
-        data = (
-            self.department_svc.list_scroll(
-                company_id=company_id,
-                limit=args["limit"],
-                offset=args["offset"],
-                eager_load=eager,
-                search=args.get("q"),
-                search_columns=[Department.name, Department.code],
-                filters=args.get("filters"),
-                allowed_filters=allowed_filters,
-                sort_key=args.get("sort_key"),
-                sort_order=args.get("sort_order"),
-                sort_fields=sort_fields,
-                default_sort=[Department.name.asc()],
-                only_enabled=False,
-            )
-            if mode == "scroll"
-            else self.department_svc.list_page(
-                company_id=company_id,
-                page=args["page"],
-                per_page=args["per_page"],
-                eager_load=eager,
-                search=args.get("q"),
-                search_columns=[Department.name, Department.code],
-                filters=args.get("filters"),
-                allowed_filters=allowed_filters,
-                sort_key=args.get("sort_key"),
-                sort_order=args.get("sort_order"),
-                sort_fields=sort_fields,
-                default_sort=[Department.name.asc()],
-                only_enabled=False,
-            )
-        )
-
-        if include_faculty:
-            for it in data["items"]:
-                fac = it.get("faculty")
-                if isinstance(fac, dict):
-                    it["faculty_name"] = fac.get("name")
-        return data
-
     def get_department(self, *, company_id: int, department_id: int) -> Optional[Dict[str, Any]]:
         rec = self.department_svc.get_one(company_id=company_id, id=department_id, eager_load=["faculty"])
         if rec and isinstance(rec.get("faculty"), dict):
@@ -377,40 +293,126 @@ class AcademicService:
             soft=soft,
         )
 
-    def list_years(self, *, company_id: int, mode: str, args: Dict[str, Any]) -> Dict[str, Any]:
-        allowed_filters = {"is_enabled": AcademicYear.is_enabled, "name": AcademicYear.name}
-        sort_fields = {"id": AcademicYear.id, "name": AcademicYear.name, "created_at": getattr(AcademicYear, "created_at", AcademicYear.id)}
 
-        if mode == "scroll":
-            return self.year_svc.list_scroll(
+
+    def list_academic_years_cursor(
+        self,
+        *,
+        company_id: int,
+        limit: int,
+        cursor: Optional[str],
+        filters: Dict[str, Any],
+        is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+
+        limit = max(1, min(int(limit or 20), 100))
+
+        cur = _decode_cursor(cursor or "")
+        last_id = cur.get("last_id")
+        try:
+            last_id = int(last_id) if last_id is not None else None
+        except Exception:
+            last_id = None
+
+        params = {
+            "mode": "cursor",
+            "limit": limit,
+            "last_id": last_id,
+            "filters": filters,
+            "is_enabled": is_enabled,
+        }
+
+        def builder():
+            rows, total_count, has_more = self.repo.list_academic_years_cursor(
                 company_id=company_id,
-                limit=args["limit"],
-                offset=args["offset"],
-                search=args.get("q"),
-                search_columns=[AcademicYear.name],
-                filters=args.get("filters"),
-                allowed_filters=allowed_filters,
-                sort_key=args.get("sort_key"),
-                sort_order=args.get("sort_order"),
-                sort_fields=sort_fields,
-                default_sort=[AcademicYear.name.asc()],
-                only_enabled=False,
+                limit=limit,
+                last_id=last_id,
+                filters=filters,
+                is_enabled=is_enabled,
             )
 
-        return self.year_svc.list_page(
+            data = [self.repo.shape_academic_year_list_row(r) for r in rows]
+
+            next_cursor = None
+            if has_more and rows:
+                next_cursor = _encode_cursor({"last_id": int(rows[-1].id)})
+
+            return {
+                "data": data,
+                "pagination": {
+                    "limit": limit,
+                    "next_cursor": next_cursor,
+                    "has_more": bool(has_more),
+                },
+                "meta": {"total_count": int(total_count)},
+            }
+
+        out = cached_list(
+            entity="academic_years:list",
             company_id=company_id,
-            page=args["page"],
-            per_page=args["per_page"],
-            search=args.get("q"),
-            search_columns=[AcademicYear.name],
-            filters=args.get("filters"),
-            allowed_filters=allowed_filters,
-            sort_key=args.get("sort_key"),
-            sort_order=args.get("sort_order"),
-            sort_fields=sort_fields,
-            default_sort=[AcademicYear.name.asc()],
-            only_enabled=False,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
         )
+
+        return True, "OK", out
+
+
+    def list_academic_years_page(
+        self,
+        *,
+        company_id: int,
+        page: int,
+        per_page: int,
+        filters: Dict[str, Any],
+        is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+
+        allowed = {10, 20, 50, 500}
+        per_page = per_page if int(per_page or 20) in allowed else 20
+        page = max(int(page or 1), 1)
+
+        params = {
+            "mode": "page",
+            "page": page,
+            "per_page": per_page,
+            "filters": filters,
+            "is_enabled": is_enabled,
+        }
+
+        def builder():
+            rows, total_count, pages = self.repo.list_academic_years_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_academic_year_list_row(r) for r in rows]
+
+            return {
+                "data": data,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "pages": int(pages),
+                    "total_count": int(total_count),
+                },
+            }
+
+        out = cached_list(
+            entity="academic_years:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        return True, "OK", out
+
 
     def get_year(self, *, company_id: int, year_id: int) -> Optional[Dict[str, Any]]:
         return self.year_svc.get_one(company_id=company_id, id=year_id)
@@ -436,6 +438,124 @@ class AcademicService:
             company_id=company_id,
             data={"academic_year_id": academic_year_id, "number": number, "name": name, "is_enabled": True},
         )
+
+
+    def list_semesters_cursor(
+        self,
+        *,
+        company_id: int,
+        limit: int,
+        cursor: Optional[str],
+        filters: Dict[str, Any],
+        is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        limit = max(1, min(int(limit or 20), 100))
+
+        cur = _decode_cursor(cursor or "")
+        last_no = cur.get("last_no")
+        try:
+            last_no = int(last_no) if last_no is not None else None
+        except Exception:
+            last_no = None
+
+        params = {
+            "mode": "cursor",
+            "limit": limit,
+            "last_no": last_no,
+            "filters": filters,
+            "is_enabled": is_enabled,
+        }
+
+        def builder():
+            rows, total_count, has_more = self.repo.list_semesters_cursor(
+                company_id=company_id,
+                limit=limit,
+                last_no=last_no,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_semester_list_row(r) for r in rows]
+
+            next_cursor = None
+            if has_more and rows:
+                next_cursor = _encode_cursor({"last_no": int(rows[-1].number)})
+
+            return {
+                "data": data,
+                "pagination": {
+                    "limit": limit,
+                    "next_cursor": next_cursor,
+                    "has_more": bool(has_more),
+                },
+                "meta": {"total_count": int(total_count)},
+            }
+
+        out = cached_list(
+            entity="semesters:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        return True, "OK", out
+
+
+
+    def list_semesters_page(
+        self,
+        *,
+        company_id: int,
+        page: int,
+        per_page: int,
+        filters: Dict[str, Any],
+        is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        allowed = {10, 20, 50, 500}
+        per_page = per_page if int(per_page or 20) in allowed else 20
+        page = max(int(page or 1), 1)
+
+        params = {
+            "mode": "page",
+            "page": page,
+            "per_page": per_page,
+            "filters": filters,
+            "is_enabled": is_enabled,
+        }
+
+        def builder():
+            rows, total_count, pages = self.repo.list_semesters_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_semester_list_row(r) for r in rows]
+
+            return {
+                "data": data,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "pages": int(pages),
+                    "total_count": int(total_count),
+                },
+            }
+
+        out = cached_list(
+            entity="semesters:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        return True, "OK", out
 
     def update_semester(self, *, company_id: int, semester_id: int, data: Dict[str, Any]):
         obj = self.repo.semesters.get(semester_id, company_id=company_id)
@@ -492,58 +612,6 @@ class AcademicService:
             soft=soft,
         )
 
-    def list_semesters(self, *, company_id: int, mode: str, args: Dict[str, Any], include_year: bool) -> Dict[str, Any]:
-        allowed_filters = {
-            "is_enabled": Semester.is_enabled,
-            "academic_year_id": Semester.academic_year_id,
-            "number": Semester.number,
-            "name": Semester.name,
-        }
-        sort_fields = {"id": Semester.id, "number": Semester.number, "created_at": getattr(Semester, "created_at", Semester.id)}
-        eager = ["academic_year"] if include_year else None
-
-        data = (
-            self.semester_svc.list_scroll(
-                company_id=company_id,
-                limit=args["limit"],
-                offset=args["offset"],
-                eager_load=eager,
-                search=args.get("q"),
-                search_columns=[Semester.name],
-                filters=args.get("filters"),
-                allowed_filters=allowed_filters,
-                sort_key=args.get("sort_key"),
-                sort_order=args.get("sort_order"),
-                sort_fields=sort_fields,
-                default_sort=[Semester.number.asc()],
-                only_enabled=False,
-            )
-            if mode == "scroll"
-            else self.semester_svc.list_page(
-                company_id=company_id,
-                page=args["page"],
-                per_page=args["per_page"],
-                eager_load=eager,
-                search=args.get("q"),
-                search_columns=[Semester.name],
-                filters=args.get("filters"),
-                allowed_filters=allowed_filters,
-                sort_key=args.get("sort_key"),
-                sort_order=args.get("sort_order"),
-                sort_fields=sort_fields,
-                default_sort=[Semester.number.asc()],
-                only_enabled=False,
-            )
-        )
-
-        # normalize display fields
-        for it in data["items"]:
-            if "name" not in it or not it.get("name"):
-                if it.get("number") is not None:
-                    it["name"] = f"Semester {it['number']}"
-            if include_year and isinstance(it.get("academic_year"), dict):
-                it["academic_year_name"] = it["academic_year"].get("name")
-        return data
 
     def get_semester(self, *, company_id: int, semester_id: int) -> Optional[Dict[str, Any]]:
         rec = self.semester_svc.get_one(company_id=company_id, id=semester_id, eager_load=["academic_year"])
@@ -640,64 +708,6 @@ class AcademicService:
             soft=soft,
         )
 
-    def list_courses(self, *, company_id: int, mode: str, args: Dict[str, Any], include_department: bool, include_semester: bool) -> Dict[str, Any]:
-        allowed_filters = {
-            "is_enabled": Course.is_enabled,
-            "department_id": Course.department_id,
-            "semester_id": Course.semester_id,
-            "title": Course.title,
-            "code": Course.code,
-        }
-        sort_fields = {"id": Course.id, "title": Course.title, "created_at": getattr(Course, "created_at", Course.id)}
-
-        eager: List[str] = []
-        if include_department:
-            eager.append("department")
-        if include_semester:
-            eager.append("semester")
-        eager = eager or None
-
-        data = (
-            self.course_svc.list_scroll(
-                company_id=company_id,
-                limit=args["limit"],
-                offset=args["offset"],
-                eager_load=eager,
-                search=args.get("q"),
-                search_columns=[Course.title, Course.code, Course.description],
-                filters=args.get("filters"),
-                allowed_filters=allowed_filters,
-                sort_key=args.get("sort_key"),
-                sort_order=args.get("sort_order"),
-                sort_fields=sort_fields,
-                default_sort=[Course.title.asc()],
-                only_enabled=False,
-            )
-            if mode == "scroll"
-            else self.course_svc.list_page(
-                company_id=company_id,
-                page=args["page"],
-                per_page=args["per_page"],
-                eager_load=eager,
-                search=args.get("q"),
-                search_columns=[Course.title, Course.code, Course.description],
-                filters=args.get("filters"),
-                allowed_filters=allowed_filters,
-                sort_key=args.get("sort_key"),
-                sort_order=args.get("sort_order"),
-                sort_fields=sort_fields,
-                default_sort=[Course.title.asc()],
-                only_enabled=False,
-            )
-        )
-
-        for it in data["items"]:
-            if include_department and isinstance(it.get("department"), dict):
-                it["department_name"] = it["department"].get("name")
-            if include_semester and isinstance(it.get("semester"), dict):
-                sem = it["semester"]
-                it["semester_name"] = (sem.get("name") or f"Semester {sem.get('number')}")
-        return data
 
     def get_course(self, *, company_id: int, course_id: int) -> Optional[Dict[str, Any]]:
         rec = self.course_svc.get_one(company_id=company_id, id=course_id, eager_load=["department", "semester", "chapters"])
@@ -781,55 +791,6 @@ class AcademicService:
     def bulk_delete_chapters(self, *, company_id: int, ids: List[int], soft: bool = True):
         return self.chapter_svc.bulk_delete(company_id=company_id, ids=ids, soft=soft)
 
-    def list_chapters(self, *, company_id: int, mode: str, args: Dict[str, Any], include_course: bool) -> Dict[str, Any]:
-        allowed_filters = {
-            "is_enabled": Chapter.is_enabled,
-            "course_id": Chapter.course_id,
-            "number": Chapter.number,
-            "title": Chapter.title,
-        }
-        sort_fields = {"id": Chapter.id, "number": Chapter.number, "created_at": getattr(Chapter, "created_at", Chapter.id)}
-        eager = ["course"] if include_course else None
-
-        data = (
-            self.chapter_svc.list_scroll(
-                company_id=company_id,
-                limit=args["limit"],
-                offset=args["offset"],
-                eager_load=eager,
-                search=args.get("q"),
-                search_columns=[Chapter.title, Chapter.description],
-                filters=args.get("filters"),
-                allowed_filters=allowed_filters,
-                sort_key=args.get("sort_key"),
-                sort_order=args.get("sort_order"),
-                sort_fields=sort_fields,
-                default_sort=[Chapter.number.asc()],
-                only_enabled=False,
-            )
-            if mode == "scroll"
-            else self.chapter_svc.list_page(
-                company_id=company_id,
-                page=args["page"],
-                per_page=args["per_page"],
-                eager_load=eager,
-                search=args.get("q"),
-                search_columns=[Chapter.title, Chapter.description],
-                filters=args.get("filters"),
-                allowed_filters=allowed_filters,
-                sort_key=args.get("sort_key"),
-                sort_order=args.get("sort_order"),
-                sort_fields=sort_fields,
-                default_sort=[Chapter.number.asc()],
-                only_enabled=False,
-            )
-        )
-
-        if include_course:
-            for it in data["items"]:
-                if isinstance(it.get("course"), dict):
-                    it["course_title"] = it["course"].get("title")
-        return data
 
     def get_chapter(self, *, company_id: int, chapter_id: int) -> Optional[Dict[str, Any]]:
         rec = self.chapter_svc.get_one(company_id=company_id, id=chapter_id, eager_load=["course"])
@@ -1013,3 +974,607 @@ class AcademicService:
             # ---- NEW HOOK ----
             extra_where=[dept_exists],
         )
+
+    def list_faculties_cursor(
+            self,
+            *,
+            company_id: int,
+            limit: int,
+            cursor: Optional[str],
+            filters: Dict[str, Any],
+            is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        limit = max(1, min(int(limit or 20), 100))
+
+        cur = _decode_cursor(cursor or "")
+        last_id = cur.get("last_id")
+        try:
+            last_id = int(last_id) if last_id is not None else None
+        except Exception:
+            last_id = None
+
+        user_id = getattr(getattr(g, "auth", None), "user_id", None)
+
+        params = {
+            "mode": "cursor",
+            "limit": limit,
+            "last_id": last_id,
+            "filters": filters,
+            "is_enabled": is_enabled,
+            "user_id": int(user_id) if user_id is not None else None,
+        }
+
+        def builder():
+            rows, total_count, has_more = self.repo.list_faculties_cursor(
+                company_id=company_id,
+                limit=limit,
+                last_id=last_id,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_faculty_list_row(r) for r in rows]
+
+            next_cursor = None
+            if has_more and rows:
+                next_cursor = _encode_cursor({"last_id": int(rows[-1].id)})
+
+            return {
+                "data": data,
+                "pagination": {
+                    "limit": limit,
+                    "next_cursor": next_cursor,
+                    "has_more": bool(has_more),
+                },
+                "meta": {"total_count": int(total_count)},
+            }
+
+        out = cached_list(
+            entity="faculties:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        return True, "OK", out
+
+    def list_faculties_page(
+            self,
+            *,
+            company_id: int,
+            page: int,
+            per_page: int,
+            filters: Dict[str, Any],
+            is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        allowed = {10, 20, 50, 500}
+        per_page = per_page if int(per_page or 20) in allowed else 20
+        page = max(int(page or 1), 1)
+
+        user_id = getattr(getattr(g, "auth", None), "user_id", None)
+
+        params = {
+            "mode": "page",
+            "page": page,
+            "per_page": per_page,
+            "filters": filters,
+            "is_enabled": is_enabled,
+            "user_id": int(user_id) if user_id is not None else None,
+        }
+
+        def builder():
+            rows, total_count, pages = self.repo.list_faculties_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_faculty_list_row(r) for r in rows]
+
+            return {
+                "data": data,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "pages": int(pages),
+                    "total_count": int(total_count),
+                },
+            }
+
+        out = cached_list(
+            entity="faculties:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        return True, "OK", out
+
+    def list_departments_cursor(
+            self,
+            *,
+            company_id: int,
+            limit: int,
+            cursor: Optional[str],
+            filters: Dict[str, Any],
+            is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        limit = max(1, min(int(limit or 20), 100))
+
+        cur = _decode_cursor(cursor or "")
+        last_id = cur.get("last_id")
+        try:
+            last_id = int(last_id) if last_id is not None else None
+        except Exception:
+            last_id = None
+
+        user_id = getattr(getattr(g, "auth", None), "user_id", None)
+
+        params = {
+            "mode": "cursor",
+            "limit": limit,
+            "last_id": last_id,
+            "filters": filters,
+            "is_enabled": is_enabled,
+            "user_id": int(user_id) if user_id is not None else None,
+        }
+
+        def builder():
+            rows, total_count, has_more = self.repo.list_departments_cursor(
+                company_id=company_id,
+                limit=limit,
+                last_id=last_id,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_department_list_row(r) for r in rows]
+
+            next_cursor = None
+            if has_more and rows:
+                next_cursor = _encode_cursor({"last_id": int(rows[-1].id)})
+
+            return {
+                "data": data,
+                "pagination": {
+                    "limit": limit,
+                    "next_cursor": next_cursor,
+                    "has_more": bool(has_more),
+                },
+                "meta": {"total_count": int(total_count)},
+            }
+
+        out = cached_list(
+            entity="departments:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        return True, "OK", out
+
+    # =========================================================
+    # DEPARTMENT: LIST page (Service)
+    # =========================================================
+    def list_departments_page(
+            self,
+            *,
+            company_id: int,
+            page: int,
+            per_page: int,
+            filters: Dict[str, Any],
+            is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        allowed = {10, 20, 50, 500}
+        per_page = per_page if int(per_page or 20) in allowed else 20
+        page = max(int(page or 1), 1)
+
+        user_id = getattr(getattr(g, "auth", None), "user_id", None)
+
+        params = {
+            "mode": "page",
+            "page": page,
+            "per_page": per_page,
+            "filters": filters,
+            "is_enabled": is_enabled,
+            "user_id": int(user_id) if user_id is not None else None,
+        }
+
+        def builder():
+            rows, total_count, pages = self.repo.list_departments_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_department_list_row(r) for r in rows]
+
+            return {
+                "data": data,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "pages": int(pages),
+                    "total_count": int(total_count),
+                },
+            }
+
+        out = cached_list(
+            entity="departments:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        return True, "OK", out
+
+
+
+
+
+
+    def list_courses_cursor(
+        self,
+        *,
+        company_id: int,
+        limit: int,
+        cursor: Optional[str],
+        filters: Dict[str, Any],
+        is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        limit = max(1, min(int(limit or 20), 100))
+
+        cur = _decode_cursor(cursor or "")
+        last_id = cur.get("last_id")
+        try:
+            last_id = int(last_id) if last_id is not None else None
+        except Exception:
+            last_id = None
+
+        params = {
+            "mode": "cursor",
+            "limit": limit,
+            "last_id": last_id,
+            "filters": filters,
+            "is_enabled": is_enabled,
+        }
+
+        def builder():
+            rows, total_count, has_more = self.repo.list_courses_cursor(
+                company_id=company_id,
+                limit=limit,
+                last_id=last_id,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_course_list_row(r) for r in rows]
+
+            next_cursor = None
+            if has_more and rows:
+                next_cursor = _encode_cursor({"last_id": int(rows[-1].id)})
+
+            return {
+                "data": data,
+                "pagination": {
+                    "limit": limit,
+                    "next_cursor": next_cursor,
+                    "has_more": bool(has_more),
+                },
+                "meta": {"total_count": int(total_count)},
+            }
+
+        out = cached_list(
+            entity="courses:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        return True, "OK", out
+
+
+
+    def list_courses_page(
+        self,
+        *,
+        company_id: int,
+        page: int,
+        per_page: int,
+        filters: Dict[str, Any],
+        is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        allowed = {10, 20, 50, 500}
+        per_page = per_page if int(per_page or 20) in allowed else 20
+        page = max(int(page or 1), 1)
+
+        params = {
+            "mode": "page",
+            "page": page,
+            "per_page": per_page,
+            "filters": filters,
+            "is_enabled": is_enabled,
+        }
+
+        def builder():
+            rows, total_count, pages = self.repo.list_courses_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_course_list_row(r) for r in rows]
+
+            return {
+                "data": data,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "pages": int(pages),
+                    "total_count": int(total_count),
+                },
+            }
+
+        out = cached_list(
+            entity="courses:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        def list_chapters_cursor(
+                self,
+                *,
+                company_id: int,
+                limit: int,
+                cursor: Optional[str],
+                filters: Dict[str, Any],
+                is_enabled: Optional[bool],
+        ) -> Tuple[bool, str, Dict[str, Any]]:
+            limit = max(1, min(int(limit or 20), 100))
+
+            cur = _decode_cursor(cursor or "")
+            last_no = cur.get("last_no")
+            try:
+                last_no = int(last_no) if last_no is not None else None
+            except Exception:
+                last_no = None
+
+            params = {
+                "mode": "cursor",
+                "limit": limit,
+                "last_no": last_no,
+                "filters": filters,
+                "is_enabled": is_enabled,
+            }
+
+            def builder():
+                rows, total_count, has_more = self.repo.list_chapters_cursor(
+                    company_id=company_id,
+                    limit=limit,
+                    last_no=last_no,
+                    filters=filters,
+                    is_enabled=is_enabled,
+                )
+
+                data = [self.repo.shape_chapter_list_row(r) for r in rows]
+
+                next_cursor = None
+                if has_more and rows:
+                    next_cursor = _encode_cursor({"last_no": int(rows[-1].number)})
+
+                return {
+                    "data": data,
+                    "pagination": {
+                        "limit": limit,
+                        "next_cursor": next_cursor,
+                        "has_more": bool(has_more),
+                    },
+                    "meta": {"total_count": int(total_count)},
+                }
+
+            out = cached_list(
+                entity="chapters:list",
+                company_id=company_id,
+                params=params,
+                scope="default",
+                ttl=20,
+                builder=builder,
+            )
+
+            return True, "OK", out
+
+        def list_chapters_page(
+                self,
+                *,
+                company_id: int,
+                page: int,
+                per_page: int,
+                filters: Dict[str, Any],
+                is_enabled: Optional[bool],
+        ) -> Tuple[bool, str, Dict[str, Any]]:
+            allowed = {10, 20, 50, 500}
+            per_page = per_page if int(per_page or 20) in allowed else 20
+            page = max(int(page or 1), 1)
+
+            params = {
+                "mode": "page",
+                "page": page,
+                "per_page": per_page,
+                "filters": filters,
+                "is_enabled": is_enabled,
+            }
+
+            def builder():
+                rows, total_count, pages = self.repo.list_chapters_page(
+                    company_id=company_id,
+                    page=page,
+                    per_page=per_page,
+                    filters=filters,
+                    is_enabled=is_enabled,
+                )
+
+                data = [self.repo.shape_chapter_list_row(r) for r in rows]
+
+                return {
+                    "data": data,
+                    "pagination": {
+                        "page": page,
+                        "per_page": per_page,
+                        "pages": int(pages),
+                        "total_count": int(total_count),
+                    },
+                }
+
+            out = cached_list(
+                entity="chapters:list",
+                company_id=company_id,
+                params=params,
+                scope="default",
+                ttl=20,
+                builder=builder,
+            )
+
+            return True, "OK", out
+
+        return True, "OK", out
+
+
+
+    def list_chapters_cursor(
+        self,
+        *,
+        company_id: int,
+        limit: int,
+        cursor: Optional[str],
+        filters: Dict[str, Any],
+        is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        limit = max(1, min(int(limit or 20), 100))
+
+        cur = _decode_cursor(cursor or "")
+        last_no = cur.get("last_no")
+        try:
+            last_no = int(last_no) if last_no is not None else None
+        except Exception:
+            last_no = None
+
+        params = {
+            "mode": "cursor",
+            "limit": limit,
+            "last_no": last_no,
+            "filters": filters,
+            "is_enabled": is_enabled,
+        }
+
+        def builder():
+            rows, total_count, has_more = self.repo.list_chapters_cursor(
+                company_id=company_id,
+                limit=limit,
+                last_no=last_no,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_chapter_list_row(r) for r in rows]
+
+            next_cursor = None
+            if has_more and rows:
+                next_cursor = _encode_cursor({"last_no": int(rows[-1].number)})
+
+            return {
+                "data": data,
+                "pagination": {
+                    "limit": limit,
+                    "next_cursor": next_cursor,
+                    "has_more": bool(has_more),
+                },
+                "meta": {"total_count": int(total_count)},
+            }
+
+        out = cached_list(
+            entity="chapters:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        return True, "OK", out
+
+
+    def list_chapters_page(
+        self,
+        *,
+        company_id: int,
+        page: int,
+        per_page: int,
+        filters: Dict[str, Any],
+        is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        allowed = {10, 20, 50, 500}
+        per_page = per_page if int(per_page or 20) in allowed else 20
+        page = max(int(page or 1), 1)
+
+        params = {
+            "mode": "page",
+            "page": page,
+            "per_page": per_page,
+            "filters": filters,
+            "is_enabled": is_enabled,
+        }
+
+        def builder():
+            rows, total_count, pages = self.repo.list_chapters_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_chapter_list_row(r) for r in rows]
+
+            return {
+                "data": data,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "pages": int(pages),
+                    "total_count": int(total_count),
+                },
+            }
+
+        out = cached_list(
+            entity="chapters:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        return True, "OK", out
+
+
+
+

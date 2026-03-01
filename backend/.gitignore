@@ -68,7 +68,7 @@ storage/
 # SECRETS / ENVIRONMENT
 # -------------------------
 # Environment variables (Crucial to IGNORE)
-.env
+src/.env
 .env.*
 !.env.example          # Keep this template in Git for collaborators
 !.env.schema           # Keep this optional schema in Git

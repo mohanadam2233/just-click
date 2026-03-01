@@ -117,7 +117,7 @@ SameSite = Literal["lax", "strict", "none"]
 SessionBackend = Literal["cookie", "filesystem", "redis"]
 
 # ✅ FIX: settings.py is in backend/src/cmcp/config/ -> .env is in backend/.env
-ENV_PATH = Path(__file__).resolve().parents[3] / ".env"
+ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 
 # ✅ load into os.environ for any libs that need it
 load_dotenv(dotenv_path=ENV_PATH, override=False)
