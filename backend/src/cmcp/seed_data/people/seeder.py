@@ -208,6 +208,7 @@ def seed_people(db: Session) -> None:
                 User,
                 username=username,
                 defaults={
+                    "email": u["email"].strip().lower(),
                     "password_hash": _safe_hash(u["password"]),
                     "user_type": _user_type_from_str(u.get("user_type", "STAFF")),
                     "is_system_owner": False,
@@ -288,6 +289,7 @@ def seed_people(db: Session) -> None:
                 User,
                 username=username,
                 defaults={
+                    "email": u["email"].strip().lower(),
                     "password_hash": _safe_hash(u["password"]),
                     "user_type": _user_type_from_str(u.get("user_type", "STUDENT")),
                     "is_system_owner": False,

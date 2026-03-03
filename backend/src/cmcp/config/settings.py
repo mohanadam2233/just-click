@@ -104,6 +104,7 @@
 #     raise ValueError("Invalid ENCRYPTION_KEY") from e
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import List, Optional, Literal
 import json
@@ -116,12 +117,21 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 SameSite = Literal["lax", "strict", "none"]
 SessionBackend = Literal["cookie", "filesystem", "redis"]
 
-# ✅ FIX: settings.py is in backend/src/cmcp/config/ -> .env is in backend/.env
-ENV_PATH = Path(__file__).resolve().parents[2] / ".env"
 
-# ✅ load into os.environ for any libs that need it
+def _backend_root() -> Path:
+    # backend/src/cmcp/config/settings.py -> backend/
+    return Path(__file__).resolve().parents[3]
+
+ENV_PATH = Path(os.getenv("CMCP_ENV_FILE", _backend_root() / ".env")).resolve()
+
+# 🔥 Hard fail early if missing (so you don't get mysterious "Field required")
+if not ENV_PATH.exists():
+    raise FileNotFoundError(
+        f"Could not find .env file at: {ENV_PATH}\n"
+        f"Create backend/.env (copy from .env.example) or set CMCP_ENV_FILE."
+    )
+
 load_dotenv(dotenv_path=ENV_PATH, override=False)
-
 
 class Settings(BaseSettings):
     # ✅ pydantic will also read this exact file

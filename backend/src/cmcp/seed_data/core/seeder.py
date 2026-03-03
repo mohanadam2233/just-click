@@ -57,12 +57,13 @@ def _seed_system_owner_users(db: Session) -> None:
 
     for spec in SYSTEM_OWNER_USERS:
         username = spec["username"].strip()
-
+        email = spec["email"].strip().lower()
         user, created = _get_or_create(
             db,
             User,
             username=username,
             defaults={
+                "email": email,  # ✅ REQUIRED
                 "password_hash": _safe_hash(spec["password"]),
                 "user_type": UserTypeEnum.ADMIN,   # sensible default for sys owner
                 "is_system_owner": True,

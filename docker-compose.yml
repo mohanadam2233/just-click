@@ -2,16 +2,14 @@ services:
   db:
     image: postgres:16-alpine
     container_name: justclick-db
-    environment:
-      POSTGRES_DB: cmcp
-      POSTGRES_USER: cmcp
-      POSTGRES_PASSWORD: cmcp
+    env_file:
+      - ./backend/.env
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U cmcp -d cmcp"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -35,33 +33,17 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: justclick-backend
+    env_file:
+      - ./backend/.env
     environment:
-      ENV: development
-      LOG_LEVEL: INFO
-      # Flask / app
-      SECRET_KEY: "dev-change-me-please-123456"
-      SECURITY_PASSWORD_SALT: "dev-salt-123456"
-      ENCRYPTION_KEY: "0-kGSQPBxD5GYLzQZMhChw2MyG8CeQwH_PIJGfCpNSo="  # see note below
-
-      # DB (your Settings expects host/port/user/pass/name)
+      # override hostnames so docker networking always works
       DATABASE_HOST: db
       DATABASE_PORT: "5432"
-      DATABASE_USER: cmcp
-      DATABASE_PASSWORD: cmcp
-      DATABASE_NAME: cmcp
-
-      # Redis
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      REDIS_DB: "0"
 
-      # CORS
-      CORS_ALLOWED_ORIGINS: '["http://localhost:3000"]'
-
-      # Media (optional)
-      MEDIA_BACKEND: local
-      LOCAL_MEDIA_ROOT: /app/media
-      LOCAL_PUBLIC_BASE: /media
+      PYTHONPATH: /app/src
+      FLASK_APP: cmcp.wsgi:app
     ports:
       - "7000:7000"
     depends_on:
@@ -78,6 +60,10 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: justclick-frontend
+    env_file:
+      - ./frontend/.env.local
+    environment:
+      FLASK_ORIGIN: http://backend:7000
     ports:
       - "3000:3000"
     depends_on:

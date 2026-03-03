@@ -9,7 +9,15 @@ from typing import Dict, List
 # - no affiliations
 # - no company roles (UserRole requires company_id)
 SYSTEM_OWNER_USERS: List[Dict[str, str]] = [
-    {"username": "sys_owner1", "password": "ChangeMe!123"},
-    {"username": "sys_owner2", "password": "ChangeMe!123"},
+    {
+        "username": "sys_owner1",
+        "email": "sys_owner1@justclick.local",
+        "password": "ChangeMe!123",
+    },
+    {
+        "username": "sys_owner2",
+        "email": "sys_owner2@justclick.local",
+        "password": "ChangeMe!123",
+    },
 ]
 
