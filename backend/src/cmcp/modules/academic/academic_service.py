@@ -7,6 +7,7 @@ from sqlalchemy import exists, select
 
 from cmcp.common.cache import cached_dropdown, cached_list
 from cmcp.core.base_service import BaseService
+from cmcp.core.exceptions import NotFoundError
 from cmcp.modules.academic.academic_repo import AcademicRepo
 from cmcp.modules.academic.models import Faculty, Department, AcademicYear, Semester, Course, Chapter
 from cmcp.modules.academic.validation import (
@@ -417,6 +418,37 @@ class AcademicService:
     def get_year(self, *, company_id: int, year_id: int) -> Optional[Dict[str, Any]]:
         return self.year_svc.get_one(company_id=company_id, id=year_id)
 
+
+    # =========================================================
+    # ACADEMIC YEAR: DETAIL
+    # =========================================================
+    def get_academic_year_detail(
+        self,
+        *,
+        company_id: int,
+        academic_year_id: int,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        row = self.repo.get_academic_year_detail(
+            company_id=company_id,
+            academic_year_id=academic_year_id,
+        )
+
+        if not row:
+            raise NotFoundError("Academic year not found")
+
+        semesters_preview = self.repo.academic_year_semesters_preview(
+            company_id=company_id,
+            academic_year_id=academic_year_id,
+            limit=5,
+        )
+
+        data = self.repo.shape_academic_year_detail_row(
+            row,
+            semesters_preview=semesters_preview,
+        )
+
+        return True, "OK", data
+
     # ----- Semester -----
     def create_semester(self, *, company_id: int, data: Dict[str, Any]):
         academic_year_id = int(data.get("academic_year_id") or 0)
@@ -556,6 +588,33 @@ class AcademicService:
         )
 
         return True, "OK", out
+
+    def get_semester_detail(
+            self,
+            *,
+            company_id: int,
+            semester_id: int,
+    ):
+
+        row = self.repo.get_semester_detail(
+            company_id=company_id,
+            semester_id=semester_id,
+        )
+
+        if not row:
+            raise NotFoundError("Semester not found")
+
+        courses_preview = self.repo.semester_courses_preview(
+            company_id=company_id,
+            semester_id=semester_id,
+        )
+
+        data = self.repo.shape_semester_detail_row(
+            row,
+            courses_preview=courses_preview,
+        )
+
+        return True, "OK", data
 
     def update_semester(self, *, company_id: int, semester_id: int, data: Dict[str, Any]):
         obj = self.repo.semesters.get(semester_id, company_id=company_id)
@@ -721,6 +780,37 @@ class AcademicService:
         if isinstance(rec.get("chapters"), list):
             rec["chapters"] = sorted(rec["chapters"], key=lambda x: int(x.get("number") or 0))
         return rec
+
+
+    # =========================================================
+    # COURSE: DETAIL
+    # =========================================================
+    def get_course_detail(
+        self,
+        *,
+        company_id: int,
+        course_id: int,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        row = self.repo.get_course_detail(
+            company_id=company_id,
+            course_id=course_id,
+        )
+
+        if not row:
+            raise NotFoundError("Course not found")
+
+        chapters_preview = self.repo.course_chapters_preview(
+            company_id=company_id,
+            course_id=course_id,
+            limit=5,
+        )
+
+        data = self.repo.shape_course_detail_row(
+            row,
+            chapters_preview=chapters_preview,
+        )
+
+        return True, "OK", data
 
     # ----- Chapter -----
     def create_chapter(self, *, company_id: int, data: Dict[str, Any]):
@@ -1096,6 +1186,36 @@ class AcademicService:
 
         return True, "OK", out
 
+    # =========================================================
+    # FACULTY: DETAIL
+    # =========================================================
+    def get_faculty_detail(
+        self,
+        *,
+        company_id: int,
+        faculty_id: int,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        row = self.repo.get_faculty_detail(
+            company_id=company_id,
+            faculty_id=faculty_id,
+        )
+
+        if not row:
+            raise NotFoundError("Faculty not found")
+
+        departments_preview = self.repo.faculty_departments_preview(
+            company_id=company_id,
+            faculty_id=faculty_id,
+            limit=5,
+        )
+
+        data = self.repo.shape_faculty_detail_row(
+            row,
+            departments_preview=departments_preview,
+        )
+        return True, "OK", data
+
+
     def list_departments_cursor(
             self,
             *,
@@ -1221,6 +1341,35 @@ class AcademicService:
         return True, "OK", out
 
 
+    # =========================================================
+    # DEPARTMENT: DETAIL
+    # =========================================================
+    def get_department_detail(
+        self,
+        *,
+        company_id: int,
+        department_id: int,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        row = self.repo.get_department_detail(
+            company_id=company_id,
+            department_id=department_id,
+        )
+
+        if not row:
+            raise NotFoundError("Department not found")
+
+        courses_preview = self.repo.department_courses_preview(
+            company_id=company_id,
+            department_id=department_id,
+            limit=5,
+        )
+
+        data = self.repo.shape_department_detail_row(
+            row,
+            courses_preview=courses_preview,
+        )
+
+        return True, "OK", data
 
 
 
@@ -1574,6 +1723,28 @@ class AcademicService:
         )
 
         return True, "OK", out
+
+
+
+    # =========================================================
+    # CHAPTER: DETAIL
+    # =========================================================
+    def get_chapter_detail(
+        self,
+        *,
+        company_id: int,
+        chapter_id: int,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        row = self.repo.get_chapter_detail(
+            company_id=company_id,
+            chapter_id=chapter_id,
+        )
+
+        if not row:
+            raise NotFoundError("Chapter not found")
+
+        data = self.repo.shape_chapter_detail_row(row)
+        return True, "OK", data
 
 
 

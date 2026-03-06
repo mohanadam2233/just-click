@@ -19,6 +19,17 @@ class FacultyListRow:
     department_count: int
 
 @dataclass
+class FacultyDetailRow:
+    id: int
+    company_id: int
+    name: str
+    code: Optional[str]
+    is_enabled: bool
+    department_count: int
+    created_at: Any
+    updated_at: Any
+
+@dataclass
 class DepartmentListRow:
     id: int
     company_id: int
@@ -28,12 +39,34 @@ class DepartmentListRow:
     is_enabled: bool
     parent_faculty_name: Optional[str]
 
+@dataclass
+class DepartmentDetailRow:
+    id: int
+    company_id: int
+    faculty_id: int
+    parent_faculty_name: Optional[str]
+    name: str
+    code: Optional[str]
+    is_enabled: bool
+    course_count: int
+    created_at: Any
+    updated_at: Any
+
 
 @dataclass
 class AcademicYearListRow:
     id: int
     name: str
     is_enabled: bool
+
+@dataclass
+class AcademicYearDetailRow:
+    id: int
+    name: str
+    is_enabled: bool
+    semester_count: int
+    created_at: Any
+    updated_at: Any
 
 
 @dataclass
@@ -42,6 +75,20 @@ class SemesterListRow:
     name: Optional[str]
     is_enabled: bool
 
+@dataclass
+class SemesterDetailRow:
+    id: int
+    number: int
+    name: Optional[str]
+    is_enabled: bool
+    academic_year_id: int
+    academic_year_name: Optional[str]
+    course_count: int
+    created_at: Any
+    updated_at: Any
+
+
+
 
 @dataclass
 class CourseListRow:
@@ -49,13 +96,39 @@ class CourseListRow:
     title: str
     code: Optional[str]
     is_enabled: bool
-
+@dataclass
+class CourseDetailRow:
+    id: int
+    department_id: int
+    department_name: Optional[str]
+    semester_id: int
+    semester_name: Optional[str]
+    semester_no: int
+    title: str
+    code: Optional[str]
+    description: Optional[str]
+    is_enabled: bool
+    chapter_count: int
+    created_at: Any
+    updated_at: Any
 
 @dataclass
 class ChapterListRow:
     number: int
     title: str
     is_enabled: bool
+
+@dataclass
+class ChapterDetailRow:
+    id: int
+    course_id: int
+    course_title: Optional[str]
+    number: int
+    title: str
+    description: Optional[str]
+    is_enabled: bool
+    created_at: Any
+    updated_at: Any
 
 class AcademicRepo:
     def __init__(self, session: Optional[Session] = None):
@@ -107,6 +180,95 @@ class AcademicRepo:
         if exclude_id:
             conds.append(AcademicYear.id != int(exclude_id))
         return bool(self.s.scalar(select(exists().where(*conds))))
+    # =========================================================
+    # ACADEMIC YEAR: DETAIL
+    # =========================================================
+    def get_academic_year_detail(
+        self,
+        *,
+        company_id: int,
+        academic_year_id: int,
+    ) -> Optional[AcademicYearDetailRow]:
+        stmt = (
+            select(
+                AcademicYear.id.label("id"),
+                AcademicYear.name.label("name"),
+                AcademicYear.is_enabled.label("is_enabled"),
+                func.count(Semester.id).label("semester_count"),
+                AcademicYear.created_at.label("created_at"),
+                AcademicYear.updated_at.label("updated_at"),
+            )
+            .select_from(AcademicYear)
+            .outerjoin(
+                Semester,
+                and_(
+                    Semester.academic_year_id == AcademicYear.id,
+                    Semester.company_id == int(company_id),
+                ),
+            )
+            .where(
+                AcademicYear.company_id == int(company_id),
+                AcademicYear.id == int(academic_year_id),
+            )
+            .group_by(
+                AcademicYear.id,
+                AcademicYear.name,
+                AcademicYear.is_enabled,
+                AcademicYear.created_at,
+                AcademicYear.updated_at,
+            )
+        )
+
+        row = self.s.execute(stmt).first()
+        return AcademicYearDetailRow(**row._asdict()) if row else None
+
+    def academic_year_semesters_preview(
+        self,
+        *,
+        company_id: int,
+        academic_year_id: int,
+        limit: int = 5,
+    ) -> List[Dict[str, Any]]:
+        stmt = (
+            select(
+                Semester.number.label("number"),
+                Semester.name.label("name"),
+                Semester.is_enabled.label("is_enabled"),
+            )
+            .where(
+                Semester.company_id == int(company_id),
+                Semester.academic_year_id == int(academic_year_id),
+            )
+            .order_by(Semester.number.asc())
+            .limit(int(limit))
+        )
+
+        rows = self.s.execute(stmt).all()
+
+        return [
+            {
+                "no": int(r.number),
+                "name": r.name,
+                "active": bool(r.is_enabled),
+            }
+            for r in rows
+        ]
+
+    def shape_academic_year_detail_row(
+        self,
+        r: AcademicYearDetailRow,
+        *,
+        semesters_preview: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        return {
+            "id": int(r.id),
+            "name": r.name,
+            "active": bool(r.is_enabled),
+            "semester_count": int(r.semester_count or 0),
+            "semesters_preview": semesters_preview,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        }
 
     def semester_name_exists(self, *, company_id: int, name: str, exclude_id: Optional[int] = None) -> bool:
         if not name:
@@ -332,6 +494,104 @@ class AcademicRepo:
             "department_count": int(r.department_count or 0),
         }
 
+    def faculty_departments_preview(
+        self,
+        *,
+        company_id: int,
+        faculty_id: int,
+        limit: int = 5,
+    ) -> List[Dict[str, Any]]:
+        stmt = (
+            select(
+                Department.id.label("id"),
+                Department.name.label("name"),
+                Department.code.label("code"),
+                Department.is_enabled.label("is_enabled"),
+            )
+            .where(
+                Department.company_id == int(company_id),
+                Department.faculty_id == int(faculty_id),
+            )
+            .order_by(Department.id.asc())
+            .limit(int(limit))
+        )
+
+        rows = self.s.execute(stmt).all()
+
+        return [
+            {
+                "id": int(r.id),
+                "name": r.name,
+                "code": r.code,
+                "is_enabled": bool(r.is_enabled),
+            }
+            for r in rows
+        ]
+    # =========================================================
+    # FACULTY: DETAIL
+    # =========================================================
+    def get_faculty_detail(
+        self,
+        *,
+        company_id: int,
+        faculty_id: int,
+    ) -> Optional[FacultyDetailRow]:
+        stmt = (
+            select(
+                Faculty.id.label("id"),
+                Faculty.company_id.label("company_id"),
+                Faculty.name.label("name"),
+                Faculty.code.label("code"),
+                Faculty.is_enabled.label("is_enabled"),
+                func.count(Department.id).label("department_count"),
+                Faculty.created_at.label("created_at"),
+                Faculty.updated_at.label("updated_at"),
+            )
+            .select_from(Faculty)
+            .outerjoin(
+                Department,
+                and_(
+                    Department.faculty_id == Faculty.id,
+                    Department.company_id == int(company_id),
+                ),
+            )
+            .where(
+                Faculty.company_id == int(company_id),
+                Faculty.id == int(faculty_id),
+            )
+            .group_by(
+                Faculty.id,
+                Faculty.company_id,
+                Faculty.name,
+                Faculty.code,
+                Faculty.is_enabled,
+                Faculty.created_at,
+                Faculty.updated_at,
+            )
+        )
+
+        row = self.s.execute(stmt).first()
+        return FacultyDetailRow(**row._asdict()) if row else None
+
+
+    def shape_faculty_detail_row(
+        self,
+        r: FacultyDetailRow,
+        *,
+        departments_preview: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        return {
+            "id": int(r.id),
+            "company_id": int(r.company_id),
+            "name": r.name,
+            "code": r.code,
+            "is_enabled": bool(r.is_enabled),
+            "department_count": int(r.department_count or 0),
+            "departments_preview": departments_preview,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        }
+
     def _department_base_stmt(
             self,
             *,
@@ -471,6 +731,120 @@ class AcademicRepo:
             "code": r.code,
             "is_enabled": bool(r.is_enabled),
             "parent_faculty_name": r.parent_faculty_name,
+        }
+
+
+    # =========================================================
+    # DEPARTMENT: DETAIL
+    # =========================================================
+    def get_department_detail(
+        self,
+        *,
+        company_id: int,
+        department_id: int,
+    ) -> Optional[DepartmentDetailRow]:
+        stmt = (
+            select(
+                Department.id.label("id"),
+                Department.company_id.label("company_id"),
+                Department.faculty_id.label("faculty_id"),
+                Faculty.name.label("parent_faculty_name"),
+                Department.name.label("name"),
+                Department.code.label("code"),
+                Department.is_enabled.label("is_enabled"),
+                func.count(Course.id).label("course_count"),
+                Department.created_at.label("created_at"),
+                Department.updated_at.label("updated_at"),
+            )
+            .select_from(Department)
+            .outerjoin(
+                Faculty,
+                and_(
+                    Faculty.id == Department.faculty_id,
+                    Faculty.company_id == int(company_id),
+                ),
+            )
+            .outerjoin(
+                Course,
+                and_(
+                    Course.department_id == Department.id,
+                    Course.company_id == int(company_id),
+                ),
+            )
+            .where(
+                Department.company_id == int(company_id),
+                Department.id == int(department_id),
+            )
+            .group_by(
+                Department.id,
+                Department.company_id,
+                Department.faculty_id,
+                Faculty.name,
+                Department.name,
+                Department.code,
+                Department.is_enabled,
+                Department.created_at,
+                Department.updated_at,
+            )
+        )
+
+        row = self.s.execute(stmt).first()
+        return DepartmentDetailRow(**row._asdict()) if row else None
+
+
+    def department_courses_preview(
+        self,
+        *,
+        company_id: int,
+        department_id: int,
+        limit: int = 5,
+    ) -> List[Dict[str, Any]]:
+        stmt = (
+            select(
+                Course.id.label("id"),
+                Course.title.label("title"),
+                Course.code.label("code"),
+                Course.is_enabled.label("is_enabled"),
+            )
+            .where(
+                Course.company_id == int(company_id),
+                Course.department_id == int(department_id),
+            )
+            .order_by(Course.id.asc())
+            .limit(int(limit))
+        )
+
+        rows = self.s.execute(stmt).all()
+
+        return [
+            {
+                "id": int(r.id),
+                "title": r.title,
+                "code": r.code,
+                "is_enabled": bool(r.is_enabled),
+            }
+            for r in rows
+        ]
+
+
+    def shape_department_detail_row(
+        self,
+        r: DepartmentDetailRow,
+        *,
+        courses_preview: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        return {
+            "id": int(r.id),
+            "company_id": int(r.company_id),
+            "faculty_id": int(r.faculty_id),
+            "parent_faculty_name": r.parent_faculty_name,
+            "name": r.name,
+            "code": r.code,
+            "is_enabled": bool(r.is_enabled),
+            "course_count": int(r.course_count or 0),
+            "courses_preview": courses_preview,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
         }
 
 
@@ -724,6 +1098,112 @@ class AcademicRepo:
             "active": bool(r.is_enabled),
         }
 
+    def get_semester_detail(
+            self,
+            *,
+            company_id: int,
+            semester_id: int,
+    ) -> Optional[SemesterDetailRow]:
+
+        stmt = (
+            select(
+                Semester.id.label("id"),
+                Semester.number.label("number"),
+                Semester.name.label("name"),
+                Semester.is_enabled.label("is_enabled"),
+                Semester.academic_year_id.label("academic_year_id"),
+                AcademicYear.name.label("academic_year_name"),
+                func.count(Course.id).label("course_count"),
+                Semester.created_at.label("created_at"),
+                Semester.updated_at.label("updated_at"),
+            )
+            .select_from(Semester)
+            .outerjoin(
+                AcademicYear,
+                and_(
+                    AcademicYear.id == Semester.academic_year_id,
+                    AcademicYear.company_id == int(company_id),
+                ),
+            )
+            .outerjoin(
+                Course,
+                and_(
+                    Course.semester_id == Semester.id,
+                    Course.company_id == int(company_id),
+                ),
+            )
+            .where(
+                Semester.company_id == int(company_id),
+                Semester.id == int(semester_id),
+            )
+            .group_by(
+                Semester.id,
+                Semester.number,
+                Semester.name,
+                Semester.is_enabled,
+                Semester.academic_year_id,
+                AcademicYear.name,
+                Semester.created_at,
+                Semester.updated_at,
+            )
+        )
+
+        row = self.s.execute(stmt).first()
+        return SemesterDetailRow(**row._asdict()) if row else None
+
+    def semester_courses_preview(
+            self,
+            *,
+            company_id: int,
+            semester_id: int,
+            limit: int = 5,
+    ) -> List[Dict[str, Any]]:
+
+        stmt = (
+            select(
+                Course.id.label("id"),
+                Course.code.label("code"),
+                Course.title.label("title"),
+            )
+            .where(
+                Course.company_id == int(company_id),
+                Course.semester_id == int(semester_id),
+            )
+            .order_by(Course.id.asc())
+            .limit(limit)
+        )
+
+        rows = self.s.execute(stmt).all()
+
+        return [
+            {
+                "id": int(r.id),
+                "code": r.code,
+                "name": r.title,
+            }
+            for r in rows
+        ]
+
+    def shape_semester_detail_row(
+            self,
+            r: SemesterDetailRow,
+            *,
+            courses_preview: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+
+        return {
+            "id": int(r.id),
+            "no": int(r.number),
+            "name": r.name,
+            "active": bool(r.is_enabled),
+            "academic_year_id": int(r.academic_year_id),
+            "academic_year_name": r.academic_year_name,
+            "course_count": int(r.course_count or 0),
+            "courses_preview": courses_preview,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        }
+
 
 
     # =========================================================
@@ -860,6 +1340,134 @@ class AcademicRepo:
         }
 
 
+    # =========================================================
+    # COURSE: DETAIL
+    # =========================================================
+    def get_course_detail(
+        self,
+        *,
+        company_id: int,
+        course_id: int,
+    ) -> Optional[CourseDetailRow]:
+        stmt = (
+            select(
+                Course.id.label("id"),
+                Course.department_id.label("department_id"),
+                Department.name.label("department_name"),
+                Course.semester_id.label("semester_id"),
+                Semester.name.label("semester_name"),
+                Semester.number.label("semester_no"),
+                Course.title.label("title"),
+                Course.code.label("code"),
+                Course.description.label("description"),
+                Course.is_enabled.label("is_enabled"),
+                func.count(Chapter.id).label("chapter_count"),
+                Course.created_at.label("created_at"),
+                Course.updated_at.label("updated_at"),
+            )
+            .select_from(Course)
+            .outerjoin(
+                Department,
+                and_(
+                    Department.id == Course.department_id,
+                    Department.company_id == int(company_id),
+                ),
+            )
+            .outerjoin(
+                Semester,
+                and_(
+                    Semester.id == Course.semester_id,
+                    Semester.company_id == int(company_id),
+                ),
+            )
+            .outerjoin(
+                Chapter,
+                and_(
+                    Chapter.course_id == Course.id,
+                    Chapter.company_id == int(company_id),
+                ),
+            )
+            .where(
+                Course.company_id == int(company_id),
+                Course.id == int(course_id),
+            )
+            .group_by(
+                Course.id,
+                Course.department_id,
+                Department.name,
+                Course.semester_id,
+                Semester.name,
+                Semester.number,
+                Course.title,
+                Course.code,
+                Course.description,
+                Course.is_enabled,
+                Course.created_at,
+                Course.updated_at,
+            )
+        )
+
+        row = self.s.execute(stmt).first()
+        return CourseDetailRow(**row._asdict()) if row else None
+
+
+    def course_chapters_preview(
+        self,
+        *,
+        company_id: int,
+        course_id: int,
+        limit: int = 5,
+    ) -> List[Dict[str, Any]]:
+        stmt = (
+            select(
+                Chapter.number.label("number"),
+                Chapter.title.label("title"),
+                Chapter.is_enabled.label("is_enabled"),
+            )
+            .where(
+                Chapter.company_id == int(company_id),
+                Chapter.course_id == int(course_id),
+            )
+            .order_by(Chapter.number.asc())
+            .limit(int(limit))
+        )
+
+        rows = self.s.execute(stmt).all()
+
+        return [
+            {
+                "no": int(r.number),
+                "title": r.title,
+                "active": bool(r.is_enabled),
+            }
+            for r in rows
+        ]
+
+
+
+    def shape_course_detail_row(
+        self,
+        r: CourseDetailRow,
+        *,
+        chapters_preview: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        return {
+            "id": int(r.id),
+            "department_id": int(r.department_id),
+            "department_name": r.department_name,
+            "semester_id": int(r.semester_id),
+            "semester_name": r.semester_name,
+            "semester_no": int(r.semester_no),
+            "title": r.title,
+            "code": r.code,
+            "description": r.description,
+            "active": bool(r.is_enabled),
+            "chapter_count": int(r.chapter_count or 0),
+            "chapters_preview": chapters_preview,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
+        }
+
 
     # =========================================================
     # CHAPTER: BASE STMT
@@ -980,6 +1588,59 @@ class AcademicRepo:
             "no": int(r.number),
             "title": r.title,
             "active": bool(r.is_enabled),
+        }
+
+    # =========================================================
+    # CHAPTER: DETAIL
+    # =========================================================
+    def get_chapter_detail(
+        self,
+        *,
+        company_id: int,
+        chapter_id: int,
+    ) -> Optional[ChapterDetailRow]:
+        stmt = (
+            select(
+                Chapter.id.label("id"),
+                Chapter.course_id.label("course_id"),
+                Course.title.label("course_title"),
+                Chapter.number.label("number"),
+                Chapter.title.label("title"),
+                Chapter.description.label("description"),
+                Chapter.is_enabled.label("is_enabled"),
+                Chapter.created_at.label("created_at"),
+                Chapter.updated_at.label("updated_at"),
+            )
+            .select_from(Chapter)
+            .outerjoin(
+                Course,
+                and_(
+                    Course.id == Chapter.course_id,
+                    Course.company_id == int(company_id),
+                ),
+            )
+            .where(
+                Chapter.company_id == int(company_id),
+                Chapter.id == int(chapter_id),
+            )
+        )
+
+        row = self.s.execute(stmt).first()
+        return ChapterDetailRow(**row._asdict()) if row else None
+
+
+
+    def shape_chapter_detail_row(self, r: ChapterDetailRow) -> Dict[str, Any]:
+        return {
+            "id": int(r.id),
+            "course_id": int(r.course_id),
+            "course_title": r.course_title,
+            "no": int(r.number),
+            "title": r.title,
+            "description": r.description,
+            "active": bool(r.is_enabled),
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+            "updated_at": r.updated_at.isoformat() if r.updated_at else None,
         }
 
 

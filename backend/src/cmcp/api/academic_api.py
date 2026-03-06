@@ -143,6 +143,18 @@ def list_faculties(company_id: int):
         return _handle_error(e)
 
 
+@bp.get("/faculties/<int:faculty_id>")
+@require_company_and_permission(doctype="Faculty", action="READ")
+def get_faculty_detail(company_id: int, faculty_id: int):
+    try:
+        ok, msg, out = svc.get_faculty_detail(
+            company_id=company_id,
+            faculty_id=faculty_id,
+        )
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
+    except Exception as e:
+        return _handle_error(e)
 
 
 @bp.put("/faculties/<int:faculty_id>/update")
@@ -281,6 +293,20 @@ def list_departments(company_id: int):
     except Exception as e:
         return _handle_error(e)
 
+
+@bp.get("/departments/<int:department_id>")
+@require_company_and_permission(doctype="Department", action="READ")
+def get_department_detail(company_id: int, department_id: int):
+    try:
+        ok, msg, out = svc.get_department_detail(
+            company_id=company_id,
+            department_id=department_id,
+        )
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
+    except Exception as e:
+        return _handle_error(e)
+
 @bp.get("/departments/<int:department_id>/get")
 @require_company_and_permission(doctype="Department", action="READ")
 def get_department(company_id: int, department_id: int):
@@ -303,6 +329,19 @@ def create_year(company_id: int):
         return api_success(message=msg, data=out, status_code=201) if ok else api_error(msg, status_code=400)
     except Exception as e:
         return api_error(str(e), status_code=400)
+
+@bp.get("/academic-years/<int:academic_year_id>")
+@require_company_and_permission(doctype="AcademicYear", action="READ")
+def get_academic_year_detail(company_id: int, academic_year_id: int):
+    try:
+        ok, msg, out = svc.get_academic_year_detail(
+            company_id=company_id,
+            academic_year_id=academic_year_id,
+        )
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
+    except Exception as e:
+        return _handle_error(e)
 
 
 @bp.put("/years/<int:year_id>/update")
@@ -409,6 +448,22 @@ def create_semester(company_id: int):
         return api_success(message=msg, data=out, status_code=201) if ok else api_error(msg, status_code=400)
     except Exception as e:
         return api_error(str(e), status_code=400)
+
+
+@bp.get("/semesters/<int:semester_id>")
+@require_company_and_permission(doctype="Semester", action="READ")
+def get_semester_detail(company_id: int, semester_id: int):
+    try:
+
+        ok, msg, out = svc.get_semester_detail(
+            company_id=company_id,
+            semester_id=semester_id,
+        )
+
+        return api_success(message=msg, data=out)
+
+    except Exception as e:
+        return _handle_error(e)
 
 @bp.get("/semesters/list")
 @require_company_and_permission(doctype="Semester", action="READ")
@@ -545,6 +600,19 @@ def bulk_delete_courses(company_id: int):
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
     except Exception as e:
         return api_error(str(e), status_code=400)
+
+@bp.get("/courses/<int:course_id>")
+@require_company_and_permission(doctype="Course", action="READ")
+def get_course_detail(company_id: int, course_id: int):
+    try:
+        ok, msg, out = svc.get_course_detail(
+            company_id=company_id,
+            course_id=course_id,
+        )
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
+    except Exception as e:
+        return _handle_error(e)
 
 
 @bp.get("/courses/list")
@@ -712,6 +780,23 @@ def get_chapter(company_id: int, chapter_id: int):
         return api_success(message="OK", data=rec, status_code=200) if rec else api_error("Chapter not found.", status_code=404)
     except Exception as e:
         return api_error(str(e), status_code=400)
+
+
+
+@bp.get("/chapters/<int:chapter_id>")
+@require_company_and_permission(doctype="Chapter", action="READ")
+def get_chapter_detail(company_id: int, chapter_id: int):
+    try:
+        ok, msg, out = svc.get_chapter_detail(
+            company_id=company_id,
+            chapter_id=chapter_id,
+        )
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
+    except Exception as e:
+        return _handle_error(e)
+
+
 @bp.get("/faculties/dropdown")
 @require_company_and_permission(doctype="Faculty", action="READ")
 def faculties_dropdown(company_id: int):
