@@ -181,6 +181,29 @@ def stream_file_signed(file_key: str):
     resp.headers["Cache-Control"] = "private, max-age=300"
     return resp
 
+@media_bp.get("/download/<path:file_key>")
+@require_permission("File", "Read")
+def download_file(file_key: str):
+    _assert_safe_key(file_key)
+    try:
+        raw, mime = download_and_decrypt_file(file_key)
+    except FileNotFoundError:
+        abort(HTTPStatus.NOT_FOUND)
+    except Exception:
+        abort(HTTPStatus.INTERNAL_SERVER_ERROR)
+
+    filename = "material"
+    if "/file" in file_key:
+        part = file_key.split("/file", 1)[-1]
+        if part.endswith(".enc"):
+            part = part[:-4]
+        if part.startswith("."):
+            filename = "material" + part
+
+    resp = Response(raw, mimetype=mime)
+    resp.headers["Content-Disposition"] = f"attachment; filename*=UTF-8''{quote(filename)}"
+    resp.headers["Cache-Control"] = "private, max-age=300"
+    return resp
 # ---- DEV ONLY: serve encrypted files from disk when MEDIA_BACKEND=local
 if settings.MEDIA_BACKEND.lower() == "local":
     @media_bp.get("/_debug/raw/<path:filename>")

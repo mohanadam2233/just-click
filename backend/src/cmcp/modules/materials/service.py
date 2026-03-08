@@ -355,11 +355,24 @@ class MaterialsService:
         limit = max(1, min(int(limit or 20), 100))
 
         cur = _decode_cursor(cursor or "")
+
         last_id = cur.get("last_id")
         try:
             last_id = int(last_id) if last_id is not None else None
         except Exception:
             last_id = None
+
+        last_priority = cur.get("last_priority")
+        try:
+            last_priority = int(last_priority) if last_priority is not None else None
+        except Exception:
+            last_priority = None
+
+        last_semester_number = cur.get("last_semester_number")
+        try:
+            last_semester_number = int(last_semester_number) if last_semester_number is not None else None
+        except Exception:
+            last_semester_number = None
 
         user_id = getattr(getattr(g, "auth", None), "user_id", None)
 
@@ -367,6 +380,8 @@ class MaterialsService:
             "mode": "cursor",
             "limit": limit,
             "last_id": last_id,
+            "last_priority": last_priority,
+            "last_semester_number": last_semester_number,
             "filters": filters,
             "is_enabled": is_enabled,
             "external_base": external_base,
@@ -374,19 +389,19 @@ class MaterialsService:
         }
 
         def builder():
-            rows, total_count, has_more = self.repo.list_materials_cursor(
+            rows, total_count, has_more, next_cursor_payload = self.repo.list_materials_cursor(
                 company_id=company_id,
                 limit=limit,
                 last_id=last_id,
+                last_priority=last_priority,
+                last_semester_number=last_semester_number,
                 filters=filters,
                 is_enabled=is_enabled,
             )
 
             data = [self.repo.shape_material_list_row(r, external_base=external_base) for r in rows]
 
-            next_cursor = None
-            if has_more and rows:
-                next_cursor = _encode_cursor({"last_id": int(rows[-1].material_id)})
+            next_cursor = _encode_cursor(next_cursor_payload) if next_cursor_payload else None
 
             return {
                 "data": data,
@@ -403,7 +418,7 @@ class MaterialsService:
             company_id=company_id,
             params=params,
             scope="default",
-            ttl=20,  # ✅ short (analytics/favorites later)
+            ttl=20,
             builder=builder,
         )
 
@@ -504,3 +519,37 @@ class MaterialsService:
             return False, "Material not found.", {}
 
         return True, "OK", {"data": data}
+
+    # =========================================================
+    # FILTER OPTIONS
+    # =========================================================
+    def get_material_filter_options(
+            self,
+            *,
+            company_id: int,
+            filters: Dict[str, Any],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        user_id = getattr(getattr(g, "auth", None), "user_id", None)
+
+        params = {
+            "mode": "filter-options",
+            "filters": filters,
+            "user_id": int(user_id) if user_id is not None else None,
+        }
+
+        def builder():
+            return self.repo.get_material_filter_options(
+                company_id=company_id,
+                filters=filters,
+            )
+
+        out = cached_list(
+            entity="materials:filter-options",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        return True, "OK", out

@@ -31,6 +31,7 @@ log = logging.getLogger(__name__)
 def create_app() -> Flask:
     app = Flask(__name__)
     # --- ADD THESE TWO LINES ---
+
     from cmcp.cli.seed_command import seed_cli
     app.cli.add_command(seed_cli)
     # ---------------------------

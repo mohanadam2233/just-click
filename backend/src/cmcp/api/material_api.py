@@ -228,3 +228,35 @@ def get_material_detail(company_id: int, material_id: int):
 
     except Exception as e:
         return _handle_error(e)
+
+
+
+
+
+# ------------------------------
+# FILTER OPTIONS
+# ------------------------------
+@bp.get("/filter-options")
+@require_company_and_permission(doctype="Material", action="READ")
+def get_material_filter_options(company_id: int):
+    try:
+        q = request.args
+
+        filters: Dict[str, Any] = {
+            "academic_year_id": q.get("academic_year_id", type=int),
+            "semester_id": q.get("semester_id", type=int),
+            "course_id": q.get("course_id", type=int),
+            "chapter_id": q.get("chapter_id", type=int),
+            "department_id": q.get("department_id", type=int),
+            "search": (q.get("search") or "").strip() or None,
+        }
+
+        ok, msg, out = svc.get_material_filter_options(
+            company_id=company_id,
+            filters=filters,
+        )
+
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
+    except Exception as e:
+        return _handle_error(e)

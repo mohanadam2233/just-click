@@ -1,10 +1,12 @@
 # src/cmcp/modules/materials/repository.py
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
+from operator import or_
 from typing import Optional, Any, Dict, Tuple, List
 from flask import g
-from sqlalchemy import exists, func, select, and_
+from sqlalchemy import exists, func, select, and_, case, literal
 from sqlalchemy.orm import Session
 
 from cmcp.config.database import db
@@ -12,6 +14,8 @@ from cmcp.core.base_repo import BaseRepository
 
 from cmcp.modules.materials.models import Material, StudentMaterialInteraction
 from cmcp.modules.academic.models import Course, Chapter, Semester, AcademicYear, Department
+from cmcp.modules.education_people.models import StudentProfile, StaffProfile
+log = logging.getLogger(__name__)
 @dataclass
 class MaterialListRow:
     material_id: int
@@ -56,6 +60,9 @@ class MaterialListRow:
     user_download_count: int
     last_viewed_at: Optional[Any]
     last_downloaded_at: Optional[Any]
+    # internal sort helpers (not exposed in API shape)
+    sort_semester_number: Optional[int] = None
+    sort_semester_priority: Optional[int] = None
 
 MaterialDetailRow = MaterialListRow  # same fields works for detail
 
@@ -119,14 +126,180 @@ class MaterialsRepo:
             StudentMaterialInteraction.material_id == int(material_id),
         ))
         return bool(self.s.scalar(stmt))
+
+    def _current_user_scope(self, *, company_id: int) -> Dict[str, Any]:
+        uid = self._current_user_id()
+        out = {
+            "user_id": int(uid) if uid is not None else None,
+            "profile_type": None,  # "student" | "staff" | None
+            "department_id": None,
+            "faculty_id": None,
+            "semester_id": None,
+            "semester_number": None,
+        }
+
+
+
+        if uid is None:
+
+            return out
+
+        # Student first
+        sp = (
+            self.s.query(
+                StudentProfile.department_id.label("department_id"),
+                StudentProfile.faculty_id.label("faculty_id"),
+                StudentProfile.semester_id.label("semester_id"),
+                Semester.number.label("semester_number"),
+            )
+            .outerjoin(
+                Semester,
+                and_(
+                    Semester.id == StudentProfile.semester_id,
+                    Semester.company_id == int(company_id),
+                ),
+            )
+            .filter(
+                StudentProfile.company_id == int(company_id),
+                StudentProfile.user_id == int(uid),
+                StudentProfile.is_enabled.is_(True),
+            )
+            .first()
+        )
+
+        if sp:
+            out.update({
+                "profile_type": "student",
+                "department_id": int(sp.department_id) if sp.department_id else None,
+                "faculty_id": int(sp.faculty_id) if sp.faculty_id else None,
+                "semester_id": int(sp.semester_id) if sp.semester_id else None,
+                "semester_number": int(sp.semester_number) if sp.semester_number else None,
+            })
+
+            return out
+
+        # Staff fallback
+        st = (
+            self.s.query(
+                StaffProfile.department_id.label("department_id"),
+                StaffProfile.faculty_id.label("faculty_id"),
+            )
+            .filter(
+                StaffProfile.company_id == int(company_id),
+                StaffProfile.user_id == int(uid),
+                StaffProfile.is_enabled.is_(True),
+            )
+            .first()
+        )
+
+
+        if st:
+            out.update({
+                "profile_type": "staff",
+                "department_id": int(st.department_id) if st.department_id else None,
+                "faculty_id": int(st.faculty_id) if st.faculty_id else None,
+                "semester_id": None,
+                "semester_number": None,
+            })
+            log.info("[materials.scope] resolved staff scope=%s", out)
+            return out
+
+        return out
     # ----------------------------
     # list/detail query builder
     # ----------------------------
+    def _semester_priority_expr(self, current_semester_number: Optional[int]):
+        if not current_semester_number:
+            return None
+
+        current_semester_number = int(current_semester_number)
+
+        return case(
+            (
+                Semester.number >= current_semester_number,
+                Semester.number - current_semester_number,
+            ),
+            else_=(1000 + Semester.number - current_semester_number),
+        )
+
+    def _use_semester_priority(self, *, scope: Dict[str, Any], filters: Dict[str, Any]) -> bool:
+        enabled = True
+
+        if scope.get("profile_type") != "student":
+            enabled = False
+        elif not scope.get("semester_number"):
+            enabled = False
+        elif filters.get("semester_id") or filters.get("course_id") or filters.get("chapter_id"):
+            enabled = False
+
+
+        return enabled
+
+    def _apply_list_ordering(self, stmt, *, scope: Dict[str, Any], filters: Dict[str, Any]):
+        if self._use_semester_priority(scope=scope, filters=filters):
+            sem_priority = self._semester_priority_expr(scope.get("semester_number"))
+
+            return stmt.order_by(
+                sem_priority.asc(),
+                func.coalesce(Semester.number, 0).asc(),
+                Material.id.desc(),
+            )
+
+
+        return stmt.order_by(Material.id.desc())
+
+    def _apply_cursor_boundary(
+            self,
+            stmt,
+            *,
+            scope: Dict[str, Any],
+            filters: Dict[str, Any],
+            last_id: Optional[int],
+            last_priority: Optional[int],
+            last_semester_number: Optional[int],
+    ):
+
+
+        if not last_id:
+
+            return stmt
+
+        if self._use_semester_priority(scope=scope, filters=filters):
+            if last_priority is None or last_semester_number is None:
+
+                return stmt
+
+            sem_priority = self._semester_priority_expr(scope.get("semester_number"))
+            sem_num = func.coalesce(Semester.number, 0)
+
+
+            return stmt.where(
+                or_(
+                    sem_priority > int(last_priority),
+                    and_(
+                        sem_priority == int(last_priority),
+                        sem_num > int(last_semester_number),
+                    ),
+                    and_(
+                        sem_priority == int(last_priority),
+                        sem_num == int(last_semester_number),
+                        Material.id < int(last_id),
+                    ),
+                )
+            )
+
+
+        return stmt.where(Material.id < int(last_id))
 
     def _base_stmt(self, *, company_id: int, filters: Dict[str, Any], is_enabled: Optional[bool]):
-        uid = self._current_user_id() or 0  # if not logged in, user_state = defaults
+        uid = self._current_user_id() or 0
+        scope = self._current_user_scope(company_id=company_id)
 
-        # user interaction subquery
+        use_sem_priority = self._use_semester_priority(scope=scope, filters=filters)
+        sem_priority_expr = self._semester_priority_expr(scope.get("semester_number")) if use_sem_priority else None
+
+
+
         ui = (
             select(
                 StudentMaterialInteraction.material_id.label("m_id"),
@@ -143,7 +316,6 @@ class MaterialsRepo:
             .subquery("ui")
         )
 
-        # stats: prefer Material.view_count/download_count if exist, else SUM from interactions
         has_mat_view = hasattr(Material, "view_count")
         has_mat_down = hasattr(Material, "download_count")
 
@@ -205,48 +377,73 @@ class MaterialsRepo:
                 func.coalesce(ui.c.u_download_count, 0).label("user_download_count"),
                 ui.c.last_viewed_at.label("last_viewed_at"),
                 ui.c.last_downloaded_at.label("last_downloaded_at"),
+
+                func.coalesce(Semester.number, 0).label("sort_semester_number"),
+                (
+                    sem_priority_expr.label("sort_semester_priority")
+                    if sem_priority_expr is not None
+                    else literal(None).label("sort_semester_priority")
+                ),
             )
             .select_from(Material)
             .join(Course, and_(Course.id == Material.course_id, Course.company_id == int(company_id)))
             .outerjoin(Chapter, and_(Chapter.id == Material.chapter_id, Chapter.company_id == int(company_id)))
-            .outerjoin(Semester, Semester.id == Course.semester_id)
-            .outerjoin(AcademicYear, AcademicYear.id == Semester.academic_year_id)
-            .outerjoin(Department, Department.id == Course.department_id)
+            .outerjoin(Semester, and_(Semester.id == Course.semester_id, Semester.company_id == int(company_id)))
+            .outerjoin(AcademicYear,
+                       and_(AcademicYear.id == Semester.academic_year_id, AcademicYear.company_id == int(company_id)))
+            .outerjoin(Department,
+                       and_(Department.id == Course.department_id, Department.company_id == int(company_id)))
             .outerjoin(ui, ui.c.m_id == Material.id)
             .where(Material.company_id == int(company_id))
         )
 
-        # enabled filter
         if is_enabled is True:
             stmt = stmt.where(Material.is_enabled.is_(True))
         elif is_enabled is False:
             stmt = stmt.where(Material.is_enabled.is_(False))
 
-        # filters
-        if filters.get("course_id"):
-            stmt = stmt.where(Material.course_id == int(filters["course_id"]))
-        if filters.get("chapter_id"):
-            stmt = stmt.where(Material.chapter_id == int(filters["chapter_id"]))
-        if filters.get("material_type"):
-            stmt = stmt.where(
-                func.lower(func.cast(Material.material_type, db.String)) == filters["material_type"].lower())
+        scoped_department_id = scope.get("department_id")
+        if scoped_department_id:
 
-        # course-derived filters
-        if filters.get("semester_id"):
-            stmt = stmt.where(Course.semester_id == int(filters["semester_id"]))
+            stmt = stmt.where(Course.department_id == int(scoped_department_id))
+        else:
+            log.info("[materials.base] no scoped department restriction")
+
+        if filters.get("course_id"):
+
+            stmt = stmt.where(Material.course_id == int(filters["course_id"]))
+
+        if filters.get("chapter_id"):
+
+            stmt = stmt.where(Material.chapter_id == int(filters["chapter_id"]))
+
+        if filters.get("material_type"):
+
+            stmt = stmt.where(
+                func.lower(func.cast(Material.material_type, db.String)) == filters["material_type"].lower()
+            )
+
         if filters.get("department_id"):
+
             stmt = stmt.where(Course.department_id == int(filters["department_id"]))
+
+        if filters.get("semester_id"):
+
+            stmt = stmt.where(Course.semester_id == int(filters["semester_id"]))
+
         if filters.get("academic_year_id"):
+
             stmt = stmt.where(Semester.academic_year_id == int(filters["academic_year_id"]))
 
-        # search
         search = (filters.get("search") or "").strip()
         if search:
+
             like = f"%{search.lower()}%"
             stmt = stmt.where(
                 func.lower(func.coalesce(Material.title, "")).like(like)
                 | func.lower(func.coalesce(Material.description, "")).like(like)
             )
+
 
         return stmt
 
@@ -262,38 +459,59 @@ class MaterialsRepo:
             last_id: Optional[int],
             filters: Dict[str, Any],
             is_enabled: Optional[bool],
-    ) -> Tuple[List[MaterialListRow], int, bool]:
+            last_priority: Optional[int] = None,
+            last_semester_number: Optional[int] = None,
+    ) -> Tuple[List[MaterialListRow], int, bool, Optional[Dict[str, Any]]]:
+        scope = self._current_user_scope(company_id=company_id)
+
+
+
         base = self._base_stmt(company_id=company_id, filters=filters, is_enabled=is_enabled)
 
-        # cursor condition
-        if last_id:
-            base = base.where(Material.id < int(last_id))
+        base = self._apply_cursor_boundary(
+            base,
+            scope=scope,
+            filters=filters,
+            last_id=last_id,
+            last_priority=last_priority,
+            last_semester_number=last_semester_number,
+        )
 
-        base = base.order_by(Material.id.desc()).limit(int(limit) + 1)
+        base = self._apply_list_ordering(
+            base,
+            scope=scope,
+            filters=filters,
+        ).limit(int(limit) + 1)
 
         rows = list(self.s.execute(base).all())
+
         has_more = len(rows) > limit
         rows = rows[:limit]
 
-        # count for UI meta
-        count_stmt = select(func.count()).select_from(Material).where(Material.company_id == int(company_id))
-        # apply same filter conditions to count (simple ones only; keep aligned with base)
-        if is_enabled is True:
-            count_stmt = count_stmt.where(Material.is_enabled.is_(True))
-        elif is_enabled is False:
-            count_stmt = count_stmt.where(Material.is_enabled.is_(False))
-        if filters.get("course_id"):
-            count_stmt = count_stmt.where(Material.course_id == int(filters["course_id"]))
-        if filters.get("chapter_id"):
-            count_stmt = count_stmt.where(Material.chapter_id == int(filters["chapter_id"]))
-        if filters.get("material_type"):
-            count_stmt = count_stmt.where(
-                func.lower(func.cast(Material.material_type, db.String)) == filters["material_type"].lower())
+        count_base = self._base_stmt(company_id=company_id, filters=filters, is_enabled=is_enabled)
+        count_stmt = select(func.count()).select_from(count_base.order_by(None).subquery())
         total = int(self.s.scalar(count_stmt) or 0)
 
-        shaped = [MaterialListRow(**r._asdict()) for r in rows]
-        return shaped, total, has_more
 
+        shaped = [MaterialListRow(**r._asdict()) for r in rows]
+
+        next_cursor_payload = None
+        if has_more and shaped:
+            last = shaped[-1]
+
+            if self._use_semester_priority(scope=scope, filters=filters):
+                next_cursor_payload = {
+                    "last_id": int(last.material_id),
+                    "last_priority": int(last.sort_semester_priority or 0),
+                    "last_semester_number": int(last.sort_semester_number or 0),
+                }
+            else:
+                next_cursor_payload = {
+                    "last_id": int(last.material_id),
+                }
+
+
+        return shaped, total, has_more, next_cursor_payload
     # ----------------------------
     # LIST page
     # ----------------------------
@@ -307,20 +525,42 @@ class MaterialsRepo:
             filters: Dict[str, Any],
             is_enabled: Optional[bool],
     ) -> Tuple[List[MaterialListRow], int, int]:
+        scope = self._current_user_scope(company_id=company_id)
+
+
         base = self._base_stmt(company_id=company_id, filters=filters, is_enabled=is_enabled)
 
-        # count (subquery)
         count_stmt = select(func.count()).select_from(base.order_by(None).subquery())
         total = int(self.s.scalar(count_stmt) or 0)
         pages = max((total + per_page - 1) // per_page, 1)
         page = min(max(page, 1), pages)
         offset = (page - 1) * per_page
 
-        base = base.order_by(Material.id.desc()).offset(offset).limit(per_page)
+
+
+        base = self._apply_list_ordering(
+            base,
+            scope=scope,
+            filters=filters,
+        ).offset(offset).limit(per_page)
+
         rows = list(self.s.execute(base).all())
+
+        # extra debug sample
+        if rows:
+            first = rows[0]._asdict()
+            log.info(
+                "[materials.page] first row sample material_id=%s course_id=%s department_id=%s semester_id=%s",
+                first.get("material_id"),
+                first.get("course_id"),
+                first.get("department_id"),
+                first.get("semester_id"),
+            )
+        else:
+            log.warning("[materials.page] query returned zero rows")
+
         shaped = [MaterialListRow(**r._asdict()) for r in rows]
         return shaped, total, pages
-
         # ----------------------------
         # DETAIL
         # ----------------------------
@@ -353,21 +593,55 @@ class MaterialsRepo:
             return last.rsplit(".", 1)[-1].lower()
         return None
 
+    def _material_type_value(self, material_type):
+        if material_type is None:
+            return None
+        return getattr(material_type, "value", str(material_type)).lower()
+
+    def _download_url_from_file_url(self, file_url: Optional[str], external_base: str) -> Optional[str]:
+        if not file_url:
+            return None
+
+        # if already absolute or relative media file path, swap /file/ -> /download/
+        return file_url.replace("/api/media/file/", "/api/media/download/")
+
+    def _can_preview_in_browser(self, ext: Optional[str]) -> bool:
+        if not ext:
+            return False
+        return ext.lower() in {
+            "pdf",
+            "png",
+            "jpg",
+            "jpeg",
+            "webp",
+            "gif",
+            "bmp",
+            "txt",
+            "mp4",
+            "webm",
+            "mp3",
+            "wav",
+        }
     def shape_material_list_row(self, r: MaterialListRow, *, external_base: str) -> Dict[str, Any]:
         ext = self._file_extension_from_url(r.file_url)
+        read_url = r.file_url
+        download_url = self._download_url_from_file_url(r.file_url, external_base)
 
         return {
             "id": int(r.material_id),
             "title": r.title,
-            "material_type": str(r.material_type).lower() if r.material_type else None,
+            # "material_type": str(r.material_type).lower() if r.material_type else None,
+            "material_type": self._material_type_value(r.material_type),
             "description": r.description,
 
             "file": {
-                "url": r.file_url,
+                "read_url": read_url,
+                "download_url": download_url,
                 "extension": ext,
                 "size_mb": float(r.file_size_mb) if r.file_size_mb is not None else None,
                 "page_count": int(r.page_count) if r.page_count is not None else None,
                 "slide_count": int(r.slide_count) if r.slide_count is not None else None,
+                "can_preview_in_browser": self._can_preview_in_browser(ext),
             },
 
             "flags": {
@@ -430,3 +704,226 @@ class MaterialsRepo:
             out["learning_objectives"] = []
 
         return out
+
+    def _filters_base_stmt(self, *, company_id: int, filters: Dict[str, Any]):
+        """
+        Base stmt for filter-options only.
+        It is lighter than list stmt and only joins what filter UI needs.
+        """
+        scope = self._current_user_scope(company_id=company_id)
+
+        stmt = (
+            select(
+                Material.id.label("material_id"),
+                Course.id.label("course_id"),
+                Course.title.label("course_title"),
+                Chapter.id.label("chapter_id"),
+                Chapter.title.label("chapter_title"),
+                Chapter.number.label("chapter_number"),
+                Semester.id.label("semester_id"),
+                Semester.name.label("semester_name"),
+                Semester.number.label("semester_number"),
+                AcademicYear.id.label("academic_year_id"),
+                AcademicYear.name.label("academic_year_name"),
+                Department.id.label("department_id"),
+                Department.name.label("department_name"),
+            )
+            .select_from(Material)
+            .join(Course, and_(Course.id == Material.course_id, Course.company_id == int(company_id)))
+            .outerjoin(Chapter, and_(Chapter.id == Material.chapter_id, Chapter.company_id == int(company_id)))
+            .outerjoin(Semester, and_(Semester.id == Course.semester_id, Semester.company_id == int(company_id)))
+            .outerjoin(AcademicYear,
+                       and_(AcademicYear.id == Semester.academic_year_id, AcademicYear.company_id == int(company_id)))
+            .outerjoin(Department,
+                       and_(Department.id == Course.department_id, Department.company_id == int(company_id)))
+            .where(
+                Material.company_id == int(company_id),
+                Material.is_enabled.is_(True),
+                Course.is_enabled.is_(True),
+            )
+        )
+
+        # hard user scope restriction
+        scoped_department_id = scope.get("department_id")
+        if scoped_department_id:
+            stmt = stmt.where(Course.department_id == int(scoped_department_id))
+
+        # currently selected filters
+        if filters.get("department_id"):
+            stmt = stmt.where(Course.department_id == int(filters["department_id"]))
+
+        if filters.get("academic_year_id"):
+            stmt = stmt.where(Semester.academic_year_id == int(filters["academic_year_id"]))
+
+        if filters.get("semester_id"):
+            stmt = stmt.where(Course.semester_id == int(filters["semester_id"]))
+
+        if filters.get("course_id"):
+            stmt = stmt.where(Course.id == int(filters["course_id"]))
+
+        if filters.get("chapter_id"):
+            stmt = stmt.where(Chapter.id == int(filters["chapter_id"]))
+
+        search = (filters.get("search") or "").strip()
+        if search:
+            like = f"%{search.lower()}%"
+            stmt = stmt.where(
+                func.lower(func.coalesce(Material.title, "")).like(like)
+                | func.lower(func.coalesce(Material.description, "")).like(like)
+                | func.lower(func.coalesce(Course.title, "")).like(like)
+                | func.lower(func.coalesce(Chapter.title, "")).like(like)
+            )
+
+        return stmt
+
+    def get_material_filter_options(self, *, company_id: int, filters: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Returns filter options for the materials screen only.
+
+        Rules:
+        - semesters: all semesters in allowed scope having materials
+        - courses:
+            * no semester selected -> []
+            * semester selected -> only courses in that semester
+        - chapters:
+            * no course selected -> []
+            * course selected -> chapters in that course having materials
+        """
+        scope = self._current_user_scope(company_id=company_id)
+
+        # ----------------------------
+        # semesters (always available)
+        # ----------------------------
+        semester_filters = {
+            "department_id": filters.get("department_id"),
+            "academic_year_id": filters.get("academic_year_id"),
+            "search": filters.get("search"),
+        }
+        semester_base = self._filters_base_stmt(
+            company_id=company_id,
+            filters=semester_filters,
+        ).subquery("semester_base")
+
+        semester_rows = self.s.execute(
+            select(
+                semester_base.c.semester_id.label("id"),
+                func.coalesce(
+                    semester_base.c.semester_name,
+                    func.concat("Semester ", semester_base.c.semester_number),
+                ).label("label"),
+                func.count(func.distinct(semester_base.c.material_id)).label("count"),
+                semester_base.c.semester_number.label("sort_number"),
+            )
+            .where(semester_base.c.semester_id.isnot(None))
+            .group_by(
+                semester_base.c.semester_id,
+                semester_base.c.semester_name,
+                semester_base.c.semester_number,
+            )
+            .order_by(semester_base.c.semester_number.asc(), semester_base.c.semester_id.asc())
+        ).all()
+
+        semesters = [
+            {
+                "id": int(r.id),
+                "label": r.label,
+                "count": int(r.count or 0),
+            }
+            for r in semester_rows
+        ]
+
+        # ----------------------------
+        # courses (ONLY after semester selected)
+        # ----------------------------
+        courses: List[Dict[str, Any]] = []
+        if filters.get("semester_id"):
+            course_filters = {
+                "department_id": filters.get("department_id"),
+                "academic_year_id": filters.get("academic_year_id"),
+                "semester_id": filters.get("semester_id"),
+                "search": filters.get("search"),
+            }
+            course_base = self._filters_base_stmt(
+                company_id=company_id,
+                filters=course_filters,
+            ).subquery("course_base")
+
+            course_rows = self.s.execute(
+                select(
+                    course_base.c.course_id.label("id"),
+                    course_base.c.course_title.label("label"),
+                    func.count(func.distinct(course_base.c.material_id)).label("count"),
+                )
+                .where(course_base.c.course_id.isnot(None))
+                .group_by(course_base.c.course_id, course_base.c.course_title)
+                .order_by(course_base.c.course_title.asc(), course_base.c.course_id.asc())
+            ).all()
+
+            courses = [
+                {
+                    "id": int(r.id),
+                    "label": r.label,
+                    "count": int(r.count or 0),
+                }
+                for r in course_rows
+            ]
+
+        # ----------------------------
+        # chapters (ONLY after course selected)
+        # ----------------------------
+        chapters: List[Dict[str, Any]] = []
+        if filters.get("course_id"):
+            chapter_filters = {
+                "department_id": filters.get("department_id"),
+                "academic_year_id": filters.get("academic_year_id"),
+                "semester_id": filters.get("semester_id"),
+                "course_id": filters.get("course_id"),
+                "search": filters.get("search"),
+            }
+            chapter_base = self._filters_base_stmt(
+                company_id=company_id,
+                filters=chapter_filters,
+            ).subquery("chapter_base")
+
+            chapter_rows = self.s.execute(
+                select(
+                    chapter_base.c.chapter_id.label("id"),
+                    chapter_base.c.chapter_title.label("label"),
+                    func.count(func.distinct(chapter_base.c.material_id)).label("count"),
+                    chapter_base.c.chapter_number.label("sort_number"),
+                )
+                .where(chapter_base.c.chapter_id.isnot(None))
+                .group_by(
+                    chapter_base.c.chapter_id,
+                    chapter_base.c.chapter_title,
+                    chapter_base.c.chapter_number,
+                )
+                .order_by(chapter_base.c.chapter_number.asc(), chapter_base.c.chapter_id.asc())
+            ).all()
+
+            chapters = [
+                {
+                    "id": int(r.id),
+                    "label": r.label,
+                    "count": int(r.count or 0),
+                }
+                for r in chapter_rows
+            ]
+
+        return {
+            "selected": {
+                "academic_year_id": int(filters["academic_year_id"]) if filters.get("academic_year_id") else None,
+                "semester_id": int(filters["semester_id"]) if filters.get("semester_id") else None,
+                "course_id": int(filters["course_id"]) if filters.get("course_id") else None,
+                "chapter_id": int(filters["chapter_id"]) if filters.get("chapter_id") else None,
+            },
+            "options": {
+                "semesters": semesters,
+                "courses": courses,
+                "chapters": chapters,
+            },
+            "scope": {
+                "profile_type": scope.get("profile_type"),
+                "department_id": int(scope["department_id"]) if scope.get("department_id") else None,
+            },
+        }
