@@ -1,453 +1,1410 @@
+// "use client";
 
-// components/sections/courses/CoursesPrimary.jsx
+// import CoursesGrid from "@/components/shared/courses/CoursesGrid";
+// import CoursesList from "@/components/shared/courses/CoursesList";
+// import NoData from "@/components/shared/others/NoData";
+// import Pagination from "@/components/shared/others/Pagination";
+// import TabContentWrapper from "@/components/shared/wrappers/TabContentWrapper";
+// import useTab from "@/hooks/useTab";
+// import getAllMaterials from "@/lib/getAllMaterials";
+// import { usePathname, useRouter, useSearchParams } from "next/navigation";
+// import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+
+// /* -------------------------------------------------------------------------- */
+// /*                                Constants                                   */
+// /* -------------------------------------------------------------------------- */
+
+// const sortInputs = ["Sort by New", "Title Ascending", "Title Descending"];
+// const materialsBeforeFilter = getAllMaterials();
+// const limit = 9;
+
+// const formatCount = (count) => (count < 10 ? `0${count}` : `${count}`);
+
+// const getUniqueSemesters = () => {
+//   const semesters = [...new Set(materialsBeforeFilter.map((m) => m.semester))];
+//   return semesters.sort((a, b) => a - b);
+// };
+
+// const getSortedMaterials = (materials, sortInput) => {
+//   const list = [...materials];
+
+//   switch (sortInput) {
+//     case "Title Ascending":
+//       return list.sort((a, b) => a.title.localeCompare(b.title));
+//     case "Title Descending":
+//       return list.sort((a, b) => b.title.localeCompare(a.title));
+//     case "Sort by New":
+//     default:
+//       return list.sort(
+//         (a, b) => new Date(b.uploadDate) - new Date(a.uploadDate),
+//       );
+//   }
+// };
+
+// /* -------------------------------------------------------------------------- */
+// /*                             Skeleton Loaders                               */
+// /* -------------------------------------------------------------------------- */
+
+// const GridCardSkeleton = () => (
+//   <div className="bg-white dark:bg-gray-800/40 rounded-2xl border border-gray-100 dark:border-gray-800 p-4 animate-pulse">
+//     <div className="w-full h-40 bg-gray-100 dark:bg-gray-700/50 rounded-xl mb-4"></div>
+//     <div className="space-y-3">
+//       <div className="h-5 bg-gray-100 dark:bg-gray-700/50 rounded w-full"></div>
+//       <div className="h-4 bg-gray-100 dark:bg-gray-700/50 rounded w-2/3"></div>
+//       <div className="flex gap-2 pt-2">
+//         <div className="h-6 w-16 bg-gray-100 dark:bg-gray-700/50 rounded-full"></div>
+//         <div className="h-6 w-16 bg-gray-100 dark:bg-gray-700/50 rounded-full"></div>
+//       </div>
+//     </div>
+//   </div>
+// );
+
+// const ListRowSkeleton = () => (
+//   <div className="bg-white dark:bg-gray-800/40 rounded-2xl border border-gray-100 dark:border-gray-800 p-4 animate-pulse flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+//     <div className="w-full sm:w-32 h-24 bg-gray-100 dark:bg-gray-700/50 rounded-xl shrink-0"></div>
+//     <div className="flex-1 space-y-3 w-full">
+//       <div className="h-5 bg-gray-100 dark:bg-gray-700/50 rounded w-3/4"></div>
+//       <div className="h-4 bg-gray-100 dark:bg-gray-700/50 rounded w-1/2"></div>
+//       <div className="flex gap-2 pt-1">
+//         <div className="h-6 w-16 bg-gray-100 dark:bg-gray-700/50 rounded-full"></div>
+//         <div className="h-6 w-16 bg-gray-100 dark:bg-gray-700/50 rounded-full"></div>
+//       </div>
+//     </div>
+//   </div>
+// );
+
+// const GridSkeleton = () => (
+//   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+//     {[...Array(6)].map((_, i) => (
+//       <GridCardSkeleton key={i} />
+//     ))}
+//   </div>
+// );
+
+// const ListSkeleton = () => (
+//   <div className="space-y-4">
+//     {[...Array(5)].map((_, i) => (
+//       <ListRowSkeleton key={i} />
+//     ))}
+//   </div>
+// );
+
+// /* -------------------------------------------------------------------------- */
+// /*                             Filter Components                              */
+// /* -------------------------------------------------------------------------- */
+
+// const FilterChip = ({ label, active, count, onClick, disabled }) => (
+//   <button
+//     type="button"
+//     onClick={!disabled ? onClick : undefined}
+//     disabled={disabled}
+//     className={`
+//       w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-sm transition-all mb-1
+//       ${
+//         active
+//           ? "bg-primaryColor text-white shadow-md shadow-primaryColor/20 dark:shadow-none"
+//           : "bg-white dark:bg-gray-800/60 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-100 dark:border-gray-700/50"
+//       }
+//       ${disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}
+//     `}
+//   >
+//     <span className="font-medium truncate">{label}</span>
+//     {count !== undefined && (
+//       <span
+//         className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+//           active
+//             ? "bg-white/20 text-white"
+//             : "bg-gray-100 dark:bg-gray-900/50 text-gray-500 dark:text-gray-400"
+//         }`}
+//       >
+//         {formatCount(count)}
+//       </span>
+//     )}
+//   </button>
+// );
+
+// const FilterSection = ({ title, children, disabled = false, badge }) => (
+//   <div className="mb-6">
+//     <div className="flex items-center justify-between px-1 mb-3">
+//       <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">
+//         {title}
+//       </span>
+//       {badge && !disabled && (
+//         <span className="text-[9px] px-2 py-0.5 bg-primaryColor/10 text-primaryColor rounded-full font-bold">
+//           {badge}
+//         </span>
+//       )}
+//     </div>
+//     <div className={`space-y-1 ${disabled ? "opacity-50" : ""}`}>
+//       {children}
+//     </div>
+//   </div>
+// );
+
+// const ViewToggle = ({ currentIdx, onChange }) => (
+//   <div className="flex bg-white dark:bg-gray-800 p-1 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+//     <button
+//       type="button"
+//       onClick={() => onChange(0)}
+//       className={`w-9 h-9 flex items-center justify-center rounded-lg transition-all ${
+//         currentIdx === 0
+//           ? "bg-gray-100 dark:bg-gray-700 text-primaryColor shadow-sm"
+//           : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+//       }`}
+//       aria-label="Grid view"
+//     >
+//       <i className="icofont-layout text-lg"></i>
+//     </button>
+
+//     <button
+//       type="button"
+//       onClick={() => onChange(1)}
+//       className={`w-9 h-9 flex items-center justify-center rounded-lg transition-all ${
+//         currentIdx === 1
+//           ? "bg-gray-100 dark:bg-gray-700 text-primaryColor shadow-sm"
+//           : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+//       }`}
+//       aria-label="List view"
+//     >
+//       <i className="icofont-listine-dots text-lg"></i>
+//     </button>
+//   </div>
+// );
+
+// /* -------------------------------------------------------------------------- */
+// /*                              Main Component                                */
+// /* -------------------------------------------------------------------------- */
+
+// const CoursesPrimary = ({ isNotSidebar, isList, card }) => {
+//   const router = useRouter();
+//   const pathname = usePathname();
+//   const searchParams = useSearchParams();
+
+//   const [isLoading, setIsLoading] = useState(true);
+//   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+
+//   const [selectedSemester, setSelectedSemester] = useState(
+//     Number(searchParams.get("sem")) || null,
+//   );
+//   const [selectedSubject, setSelectedSubject] = useState(
+//     searchParams.get("sub") || null,
+//   );
+//   const [selectedChapter, setSelectedChapter] = useState(
+//     searchParams.get("ch") || null,
+//   );
+//   const [searchString, setSearchString] = useState(searchParams.get("q") || "");
+//   const [sortInput, setSortInput] = useState(
+//     searchParams.get("sort") || "Sort by New",
+//   );
+//   const [currentPage, setCurrentPage] = useState(
+//     Number(searchParams.get("page")) || 0,
+//   );
+
+//   const { currentIdx, setCurrentIdx } = useTab();
+//   const materialsRef = useRef(null);
+
+//   useEffect(() => {
+//     if (isList) setCurrentIdx(1);
+//   }, [isList, setCurrentIdx]);
+
+//   useEffect(() => {
+//     setIsLoading(true);
+//     const timer = setTimeout(() => setIsLoading(false), 400);
+//     return () => clearTimeout(timer);
+//   }, [
+//     selectedSemester,
+//     selectedSubject,
+//     selectedChapter,
+//     searchString,
+//     sortInput,
+//     currentPage,
+//     currentIdx,
+//   ]);
+
+//   const updateURL = useCallback(
+//     (updates) => {
+//       const params = new URLSearchParams(searchParams.toString());
+//       Object.entries(updates).forEach(([k, v]) => {
+//         if (v === null || v === undefined || v === "") {
+//           params.delete(k);
+//         } else {
+//           params.set(k, String(v));
+//         }
+//       });
+//       const qs = params.toString();
+//       router.push(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+//     },
+//     [searchParams, pathname, router],
+//   );
+
+//   const semesters = useMemo(() => getUniqueSemesters(), []);
+
+//   const availableSubjects = useMemo(() => {
+//     if (!selectedSemester) return [];
+//     return [
+//       ...new Set(
+//         materialsBeforeFilter
+//           .filter((m) => m.semester === selectedSemester)
+//           .map((m) => m.subject),
+//       ),
+//     ].sort();
+//   }, [selectedSemester]);
+
+//   const availableChapters = useMemo(() => {
+//     if (!selectedSubject) return [];
+//     return [
+//       ...new Set(
+//         materialsBeforeFilter
+//           .filter(
+//             (m) =>
+//               m.semester === selectedSemester && m.subject === selectedSubject,
+//           )
+//           .map((m) => m.chapter),
+//       ),
+//     ].sort();
+//   }, [selectedSemester, selectedSubject]);
+
+//   const filteredMaterials = useMemo(() => {
+//     let list = materialsBeforeFilter.filter((m) => {
+//       const matchSem = !selectedSemester || m.semester === selectedSemester;
+//       const matchSub = !selectedSubject || m.subject === selectedSubject;
+//       const matchCh = !selectedChapter || m.chapter === selectedChapter;
+//       const matchSearch =
+//         !searchString ||
+//         m.title.toLowerCase().includes(searchString.toLowerCase()) ||
+//         m.subject.toLowerCase().includes(searchString.toLowerCase()) ||
+//         m.chapter.toLowerCase().includes(searchString.toLowerCase());
+
+//       return matchSem && matchSub && matchCh && matchSearch;
+//     });
+
+//     return getSortedMaterials(list, sortInput);
+//   }, [
+//     selectedSemester,
+//     selectedSubject,
+//     selectedChapter,
+//     searchString,
+//     sortInput,
+//   ]);
+
+//   const currentMaterials = filteredMaterials.slice(
+//     currentPage * limit,
+//     (currentPage + 1) * limit,
+//   );
+//   const totalPages = Math.ceil(filteredMaterials.length / limit);
+
+//   const handleSemesterChange = (sem) => {
+//     const val = selectedSemester === sem ? null : sem;
+//     setSelectedSemester(val);
+//     setSelectedSubject(null);
+//     setSelectedChapter(null);
+//     setCurrentPage(0);
+//     updateURL({ sem: val, sub: null, ch: null, page: null });
+//   };
+
+//   const handleSubjectChange = (sub) => {
+//     const val = selectedSubject === sub ? null : sub;
+//     setSelectedSubject(val);
+//     setSelectedChapter(null);
+//     setCurrentPage(0);
+//     updateURL({ sub: val, ch: null, page: null });
+//   };
+
+//   const handleChapterChange = (ch) => {
+//     const val = selectedChapter === ch ? null : ch;
+//     setSelectedChapter(val);
+//     setCurrentPage(0);
+//     updateURL({ ch: val, page: null });
+//   };
+
+//   const clearAll = () => {
+//     setSelectedSemester(null);
+//     setSelectedSubject(null);
+//     setSelectedChapter(null);
+//     setSearchString("");
+//     setSortInput("Sort by New");
+//     setCurrentPage(0);
+//     setIsMobileFilterOpen(false);
+//     router.push(pathname, { scroll: false });
+//   };
+
+//   const handlePagination = (id) => {
+//     if (typeof id === "number") {
+//       setCurrentPage(id);
+//     } else if (id === "prev" && currentPage > 0) {
+//       setCurrentPage(currentPage - 1);
+//     } else if (id === "next" && currentPage < totalPages - 1) {
+//       setCurrentPage(currentPage + 1);
+//     }
+
+//     materialsRef.current?.scrollIntoView({
+//       behavior: "smooth",
+//       block: "start",
+//     });
+//   };
+
+//   const handleViewChange = (idx) => {
+//     setCurrentIdx(idx);
+//   };
+
+//   useEffect(() => {
+//     setCurrentPage(0);
+//   }, [
+//     selectedSemester,
+//     selectedSubject,
+//     selectedChapter,
+//     searchString,
+//     sortInput,
+//   ]);
+
+//   useEffect(() => {
+//     updateURL({
+//       sem: selectedSemester,
+//       sub: selectedSubject,
+//       ch: selectedChapter,
+//       q: searchString || null,
+//       sort: sortInput !== "Sort by New" ? sortInput : null,
+//       page: currentPage > 0 ? currentPage : null,
+//     });
+//   }, [
+//     selectedSemester,
+//     selectedSubject,
+//     selectedChapter,
+//     searchString,
+//     sortInput,
+//     currentPage,
+//     updateURL,
+//   ]);
+
+//   const hasActiveFilters =
+//     selectedSemester || selectedSubject || selectedChapter || searchString;
+
+//   const activeFilterCount = [
+//     selectedSemester,
+//     selectedSubject,
+//     selectedChapter,
+//     searchString,
+//   ].filter(Boolean).length;
+
+//   const SidebarContent = ({ mobile = false }) => (
+//     <div className="space-y-4">
+//       {mobile && (
+//         <FilterSection title="View">
+//           <ViewToggle currentIdx={currentIdx} onChange={handleViewChange} />
+//         </FilterSection>
+//       )}
+
+//       <FilterSection title="Search">
+//         <div className="relative group">
+//           <input
+//             type="text"
+//             placeholder="Search materials..."
+//             value={searchString}
+//             onChange={(e) => setSearchString(e.target.value)}
+//             className="w-full px-4 py-3 pl-10 bg-white dark:bg-gray-800/60 border border-gray-100 dark:border-gray-700/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primaryColor/20 transition-all text-gray-700 dark:text-gray-200"
+//           />
+//           <i className="icofont-search-1 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-primaryColor transition-colors"></i>
+//         </div>
+//       </FilterSection>
+
+//       <FilterSection title="Semester" badge={`${semesters.length}`}>
+//         <div className="max-h-48 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+//           {semesters.map((sem) => (
+//             <FilterChip
+//               key={sem}
+//               label={`Semester ${sem}`}
+//               active={selectedSemester === sem}
+//               count={
+//                 materialsBeforeFilter.filter((m) => m.semester === sem).length
+//               }
+//               onClick={() => handleSemesterChange(sem)}
+//             />
+//           ))}
+//         </div>
+//       </FilterSection>
+
+//       <FilterSection
+//         title="Subject"
+//         disabled={!selectedSemester}
+//         badge={
+//           availableSubjects.length ? `${availableSubjects.length}` : undefined
+//         }
+//       >
+//         {!selectedSemester ? (
+//           <div className="text-center py-4 text-xs font-medium text-gray-400 bg-white/50 dark:bg-gray-800/30 rounded-xl border-2 border-dashed border-gray-100 dark:border-gray-700/50">
+//             Select a semester first
+//           </div>
+//         ) : (
+//           <div className="max-h-48 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+//             {availableSubjects.map((sub) => (
+//               <FilterChip
+//                 key={sub}
+//                 label={sub}
+//                 active={selectedSubject === sub}
+//                 count={
+//                   materialsBeforeFilter.filter(
+//                     (m) => m.semester === selectedSemester && m.subject === sub,
+//                   ).length
+//                 }
+//                 onClick={() => handleSubjectChange(sub)}
+//               />
+//             ))}
+//           </div>
+//         )}
+//       </FilterSection>
+
+//       {selectedSubject && (
+//         <FilterSection
+//           title="Chapter"
+//           badge={
+//             availableChapters.length ? `${availableChapters.length}` : undefined
+//           }
+//         >
+//           <div className="max-h-48 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+//             {availableChapters.map((ch) => (
+//               <FilterChip
+//                 key={ch}
+//                 label={ch}
+//                 active={selectedChapter === ch}
+//                 count={
+//                   materialsBeforeFilter.filter(
+//                     (m) =>
+//                       m.semester === selectedSemester &&
+//                       m.subject === selectedSubject &&
+//                       m.chapter === ch,
+//                   ).length
+//                 }
+//                 onClick={() => handleChapterChange(ch)}
+//               />
+//             ))}
+//           </div>
+//         </FilterSection>
+//       )}
+//     </div>
+//   );
+
+//   return (
+//     <div className="bg-gray-50/50 dark:bg-gray-900 min-h-screen">
+//       <div className="container py-6 md:py-8 lg:py-10" ref={materialsRef}>
+//         {/* ACTION BAR */}
+//         <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-5 bg-transparent">
+//           <div>
+//             <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
+//               Study Materials
+//             </h1>
+//             <div className="flex items-center gap-3 mt-2">
+//               <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md bg-gray-200/50 dark:bg-gray-800 text-xs font-semibold text-gray-600 dark:text-gray-300">
+//                 {filteredMaterials.length}{" "}
+//                 {filteredMaterials.length === 1 ? "Result" : "Results"}
+//               </span>
+//               {hasActiveFilters && (
+//                 <button
+//                   type="button"
+//                   onClick={clearAll}
+//                   className="text-[11px] font-bold text-gray-400 hover:text-red-500 uppercase tracking-wider transition-colors"
+//                 >
+//                   Clear Filters
+//                 </button>
+//               )}
+//             </div>
+//           </div>
+
+//           <div className="flex items-center flex-wrap gap-2">
+//             <button
+//               type="button"
+//               onClick={() => setIsMobileFilterOpen(true)}
+//               className="lg:hidden flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 text-sm font-medium shadow-sm hover:shadow-md transition-all"
+//             >
+//               <i className="icofont-filter text-primaryColor"></i>
+//               <span className="text-gray-700 dark:text-gray-200">Filters</span>
+//               {activeFilterCount > 0 && (
+//                 <span className="w-5 h-5 bg-primaryColor text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+//                   {activeFilterCount}
+//                 </span>
+//               )}
+//             </button>
+
+//             <div className="flex bg-white dark:bg-gray-800 p-1 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+//               <div className="hidden lg:flex items-center gap-1 border-r border-gray-100 dark:border-gray-700 pr-2 mr-2">
+//                 <ViewToggle
+//                   currentIdx={currentIdx}
+//                   onChange={handleViewChange}
+//                 />
+//               </div>
+
+//               <div className="relative flex items-center h-9 px-1">
+//                 <select
+//                   value={sortInput}
+//                   onChange={(e) => setSortInput(e.target.value)}
+//                   className="appearance-none text-sm font-medium bg-transparent text-gray-700 dark:text-gray-300 pl-3 pr-8 focus:outline-none cursor-pointer"
+//                 >
+//                   {sortInputs.map((s) => (
+//                     <option key={s} value={s} className="dark:bg-gray-800">
+//                       {s}
+//                     </option>
+//                   ))}
+//                 </select>
+//                 <i className="icofont-rounded-down absolute right-3 text-gray-400 pointer-events-none text-sm"></i>
+//               </div>
+//             </div>
+//           </div>
+//         </div>
+
+//         {/* ACTIVE FILTER TAGS */}
+//         {hasActiveFilters && (
+//           <div className="flex flex-wrap gap-2 mb-6">
+//             {selectedSemester && (
+//               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm text-xs text-gray-700 dark:text-gray-300">
+//                 <span className="font-semibold text-primaryColor">Sem</span>
+//                 {selectedSemester}
+//                 <button
+//                   type="button"
+//                   onClick={() => handleSemesterChange(selectedSemester)}
+//                   className="ml-1 text-gray-400 hover:text-red-500"
+//                 >
+//                   <i className="icofont-close-line text-sm"></i>
+//                 </button>
+//               </span>
+//             )}
+//             {selectedSubject && (
+//               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm text-xs text-gray-700 dark:text-gray-300">
+//                 {selectedSubject}
+//                 <button
+//                   type="button"
+//                   onClick={() => handleSubjectChange(selectedSubject)}
+//                   className="ml-1 text-gray-400 hover:text-red-500"
+//                 >
+//                   <i className="icofont-close-line text-sm"></i>
+//                 </button>
+//               </span>
+//             )}
+//             {selectedChapter && (
+//               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm text-xs text-gray-700 dark:text-gray-300">
+//                 <span className="truncate max-w-[150px]">
+//                   {selectedChapter}
+//                 </span>
+//                 <button
+//                   type="button"
+//                   onClick={() => handleChapterChange(selectedChapter)}
+//                   className="ml-1 text-gray-400 hover:text-red-500"
+//                 >
+//                   <i className="icofont-close-line text-sm"></i>
+//                 </button>
+//               </span>
+//             )}
+//             {searchString && (
+//               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm text-xs text-gray-700 dark:text-gray-300">
+//                 "{searchString}"
+//                 <button
+//                   type="button"
+//                   onClick={() => setSearchString("")}
+//                   className="ml-1 text-gray-400 hover:text-red-500"
+//                 >
+//                   <i className="icofont-close-line text-sm"></i>
+//                 </button>
+//               </span>
+//             )}
+//           </div>
+//         )}
+
+//         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+//           {/* DESKTOP SIDEBAR */}
+//           <aside className="hidden lg:block lg:col-span-3">
+//             <div className="sticky top-24 max-h-[calc(100vh-120px)] overflow-y-auto pr-2 custom-scrollbar">
+//               <SidebarContent />
+//             </div>
+//           </aside>
+
+//           {/* MAIN CONTENT */}
+//           <main className="lg:col-span-9">
+//             {isLoading ? (
+//               currentIdx === 0 ? (
+//                 <GridSkeleton />
+//               ) : (
+//                 <ListSkeleton />
+//               )
+//             ) : currentMaterials.length > 0 ? (
+//               <div className="space-y-8">
+//                 <div className="tab-contents">
+//                   <TabContentWrapper isShow={currentIdx === 0}>
+//                     <CoursesGrid
+//                       isNotSidebar={isNotSidebar}
+//                       materials={currentMaterials}
+//                       card={card}
+//                     />
+//                   </TabContentWrapper>
+
+//                   <TabContentWrapper isShow={currentIdx === 1}>
+//                     <CoursesList
+//                       isNotSidebar={isNotSidebar}
+//                       isList={isList}
+//                       materials={currentMaterials}
+//                       card={card}
+//                     />
+//                   </TabContentWrapper>
+//                 </div>
+
+//                 {filteredMaterials.length > limit && (
+//                   <div className="flex justify-center pt-8 border-t border-gray-200/50 dark:border-gray-800">
+//                     <Pagination
+//                       pages={[...Array(totalPages)]}
+//                       totalItems={filteredMaterials.length}
+//                       handlePagesnation={handlePagination}
+//                       currentPage={currentPage}
+//                       skip={currentPage * limit}
+//                       limit={limit}
+//                     />
+//                   </div>
+//                 )}
+//               </div>
+//             ) : (
+//               <NoData message="No materials found matching your filters." />
+//             )}
+//           </main>
+//         </div>
+//       </div>
+
+//       {/* MOBILE FILTER DRAWER */}
+//       <div
+//         className={`fixed inset-0 z-50 lg:hidden transition-all duration-300 ${
+//           isMobileFilterOpen ? "visible" : "invisible"
+//         }`}
+//       >
+//         <div
+//           className={`absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ${
+//             isMobileFilterOpen ? "opacity-100" : "opacity-0"
+//           }`}
+//           onClick={() => setIsMobileFilterOpen(false)}
+//         />
+//         <div
+//           className={`absolute right-0 top-0 h-full w-[85%] max-w-[360px] bg-gray-50 dark:bg-gray-900 shadow-2xl transform transition-transform duration-300 ease-out ${
+//             isMobileFilterOpen ? "translate-x-0" : "translate-x-full"
+//           }`}
+//         >
+//           <div className="sticky top-0 flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+//             <div className="flex items-center gap-2">
+//               <i className="icofont-filter text-primaryColor"></i>
+//               <h3 className="font-bold text-gray-900 dark:text-white">
+//                 Filters
+//               </h3>
+//             </div>
+//             <button
+//               type="button"
+//               onClick={() => setIsMobileFilterOpen(false)}
+//               className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+//             >
+//               <i className="icofont-close"></i>
+//             </button>
+//           </div>
+//           <div className="p-5 overflow-y-auto h-[calc(100%-73px)]">
+//             <SidebarContent mobile />
+//             {hasActiveFilters && (
+//               <button
+//                 type="button"
+//                 onClick={() => {
+//                   clearAll();
+//                   setIsMobileFilterOpen(false);
+//                 }}
+//                 className="w-full mt-8 py-3 bg-red-50 dark:bg-red-500/10 text-red-500 hover:bg-red-100 dark:hover:bg-red-500/20 rounded-xl text-sm font-bold transition-colors"
+//               >
+//                 Clear All Filters
+//               </button>
+//             )}
+//           </div>
+//         </div>
+//       </div>
+//     </div>
+//   );
+// };
+
+// export default CoursesPrimary;
 "use client";
-import { useSearchParams } from "next/navigation";
-import TabButtonSecondary from "@/components/shared/buttons/TabButtonSecondary";
+
 import CoursesGrid from "@/components/shared/courses/CoursesGrid";
 import CoursesList from "@/components/shared/courses/CoursesList";
-import Pagination from "@/components/shared/others/Pagination";
-import TabContentWrapper from "@/components/shared/wrappers/TabContentWrapper";
-import useTab from "@/hooks/useTab";
-import { useEffect, useRef, useState } from "react";
-import getAllMaterials from "@/lib/getAllMaterials";
-import Image from "next/image";
-import Link from "next/link";
 import NoData from "@/components/shared/others/NoData";
+import TabContentWrapper from "@/components/shared/wrappers/TabContentWrapper";
+import {
+  useInfiniteMaterialsList,
+  useMaterialFilterOptions,
+} from "@/features/materials/hooks";
+import {
+  flattenInfiniteMaterials,
+  mapMaterialToCardModel,
+  sortMaterials,
+} from "@/features/materials/utils";
+import useIntersectionLoadMore from "@/hooks/useIntersectionLoadMore";
+import useTab from "@/hooks/useTab";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-const sortInputs = [
-  "Sort by New",
-  "Title Ascending",
-  "Title Descending",
-];
+/* -------------------------------------------------------------------------- */
+/*                                Constants                                   */
+/* -------------------------------------------------------------------------- */
 
-const materialsBeforeFilter = getAllMaterials();
+const sortInputs = ["Sort by New", "Title Ascending", "Title Descending"];
 
-// Get unique semesters
-const getUniqueSemesters = () => {
-  const semesters = [...new Set(materialsBeforeFilter.map(m => m.semester))];
-  return semesters.sort((a, b) => a - b);
-};
+/* -------------------------------------------------------------------------- */
+/*                             Skeleton Loaders                               */
+/* -------------------------------------------------------------------------- */
 
-// Get subjects for a specific semester
-const getSubjectsBySemester = (semester) => {
-  const subjects = [...new Set(
-    materialsBeforeFilter
-      .filter(m => m.semester === semester)
-      .map(m => m.subject)
-  )];
-  return subjects;
-};
+const GridCardSkeleton = () => (
+  <div className="bg-white dark:bg-gray-800/40 rounded-2xl border border-gray-100 dark:border-gray-800 p-4 animate-pulse">
+    <div className="w-full h-40 bg-gray-100 dark:bg-gray-700/50 rounded-xl mb-4" />
+    <div className="space-y-3">
+      <div className="h-5 bg-gray-100 dark:bg-gray-700/50 rounded w-full" />
+      <div className="h-4 bg-gray-100 dark:bg-gray-700/50 rounded w-2/3" />
+      <div className="h-4 bg-gray-100 dark:bg-gray-700/50 rounded w-1/2" />
+      <div className="flex gap-2 pt-2">
+        <div className="h-6 w-16 bg-gray-100 dark:bg-gray-700/50 rounded-full" />
+        <div className="h-6 w-20 bg-gray-100 dark:bg-gray-700/50 rounded-full" />
+      </div>
+    </div>
+  </div>
+);
 
-const getFilteredMaterialsLength = (filterkey, filterValue) => {
-  const filteredLength = materialsBeforeFilter?.filter(
-    (material) => material[filterkey] === filterValue
-  )?.length;
-  return filteredLength;
-};
+const ListRowSkeleton = () => (
+  <div className="bg-white dark:bg-gray-800/40 rounded-2xl border border-gray-100 dark:border-gray-800 p-4 animate-pulse flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+    <div className="w-full sm:w-32 h-24 bg-gray-100 dark:bg-gray-700/50 rounded-xl shrink-0" />
+    <div className="flex-1 space-y-3 w-full">
+      <div className="h-5 bg-gray-100 dark:bg-gray-700/50 rounded w-3/4" />
+      <div className="h-4 bg-gray-100 dark:bg-gray-700/50 rounded w-1/2" />
+      <div className="h-4 bg-gray-100 dark:bg-gray-700/50 rounded w-1/3" />
+      <div className="flex gap-2 pt-1">
+        <div className="h-6 w-16 bg-gray-100 dark:bg-gray-700/50 rounded-full" />
+        <div className="h-6 w-20 bg-gray-100 dark:bg-gray-700/50 rounded-full" />
+      </div>
+    </div>
+  </div>
+);
 
-// get all filtered materials
-const getAllFilteredMaterials = (filterableMaterials, filterObject) => {
-  const { currentSemesters, currentSubjects } = filterObject;
-  const filteredMaterials = filterableMaterials?.filter(
-    ({ semester, subject }) =>
-      (!currentSemesters?.length || currentSemesters.includes(semester)) &&
-      (!currentSubjects?.length || currentSubjects?.includes(subject))
+const GridSkeleton = ({ count = 6 }) => (
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    {[...Array(count)].map((_, i) => (
+      <GridCardSkeleton key={i} />
+    ))}
+  </div>
+);
+
+const ListSkeleton = ({ count = 5 }) => (
+  <div className="space-y-4">
+    {[...Array(count)].map((_, i) => (
+      <ListRowSkeleton key={i} />
+    ))}
+  </div>
+);
+
+/* -------------------------------------------------------------------------- */
+/*                             Filter Components                              */
+/* -------------------------------------------------------------------------- */
+
+const formatCount = (count) => (count < 10 ? `0${count}` : `${count}`);
+
+const FilterChip = ({ label, active, count, onClick, disabled }) => (
+  <button
+    type="button"
+    onClick={!disabled ? onClick : undefined}
+    disabled={disabled}
+    className={`
+      w-full flex items-center justify-between px-4 py-2.5 rounded-xl text-sm transition-all mb-1
+      ${
+        active
+          ? "bg-primaryColor text-white shadow-md shadow-primaryColor/20 dark:shadow-none"
+          : "bg-white dark:bg-gray-800/60 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 border border-gray-100 dark:border-gray-700/50"
+      }
+      ${disabled ? "opacity-40 cursor-not-allowed" : "cursor-pointer"}
+    `}
+  >
+    <span className="font-medium truncate">{label}</span>
+    {count !== undefined && (
+      <span
+        className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+          active
+            ? "bg-white/20 text-white"
+            : "bg-gray-100 dark:bg-gray-900/50 text-gray-500 dark:text-gray-400"
+        }`}
+      >
+        {formatCount(count)}
+      </span>
+    )}
+  </button>
+);
+
+const FilterSection = ({ title, children, disabled = false, badge }) => (
+  <div className="mb-6">
+    <div className="flex items-center justify-between px-1 mb-3">
+      <span className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest">
+        {title}
+      </span>
+      {badge && !disabled && (
+        <span className="text-[9px] px-2 py-0.5 bg-primaryColor/10 text-primaryColor rounded-full font-bold">
+          {badge}
+        </span>
+      )}
+    </div>
+    <div className={`space-y-1 ${disabled ? "opacity-50" : ""}`}>
+      {children}
+    </div>
+  </div>
+);
+
+const ViewToggle = ({ currentIdx, onChange }) => (
+  <div className="flex bg-white dark:bg-gray-800 p-1 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+    <button
+      type="button"
+      onClick={() => onChange(0)}
+      className={`w-9 h-9 flex items-center justify-center rounded-lg transition-all ${
+        currentIdx === 0
+          ? "bg-gray-100 dark:bg-gray-700 text-primaryColor shadow-sm"
+          : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+      }`}
+      aria-label="Grid view"
+    >
+      <i className="icofont-layout text-lg" />
+    </button>
+
+    <button
+      type="button"
+      onClick={() => onChange(1)}
+      className={`w-9 h-9 flex items-center justify-center rounded-lg transition-all ${
+        currentIdx === 1
+          ? "bg-gray-100 dark:bg-gray-700 text-primaryColor shadow-sm"
+          : "text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+      }`}
+      aria-label="List view"
+    >
+      <i className="icofont-listine-dots text-lg" />
+    </button>
+  </div>
+);
+
+/* -------------------------------------------------------------------------- */
+/*                              Main Component                                */
+/* -------------------------------------------------------------------------- */
+
+const CoursesPrimary = ({ isNotSidebar, isList }) => {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const { currentIdx, setCurrentIdx } = useTab();
+
+  const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+
+  const [selectedSemester, setSelectedSemester] = useState(
+    searchParams.get("sem") ? Number(searchParams.get("sem")) : null,
   );
-  return filteredMaterials;
-};
-
-// get sorted materials
-const getSortedMaterials = (materials, sortInput) => {
-  switch (sortInput) {
-    case "Sort by New":
-      return materials?.sort((a, b) => new Date(b.uploadDate) - new Date(a.uploadDate));
-    case "Title Ascending":
-      return materials?.sort((a, b) => a?.title?.localeCompare(b?.title));
-    case "Title Descending":
-      return materials?.sort((a, b) => b?.title?.localeCompare(a?.title));
-    default:
-      return materials;
-  }
-};
-
-const CoursesPrimary = ({ isNotSidebar, isList, card }) => {
-  const semesterParam = useSearchParams().get("semester");
-  const [currentSemesters, setCurrentSemesters] = useState(
-    semesterParam ? [parseInt(semesterParam)] : []
+  const [selectedCourse, setSelectedCourse] = useState(
+    searchParams.get("course") ? Number(searchParams.get("course")) : null,
   );
-  const [currentSubjects, setCurrentSubjects] = useState([]);
-  const [sortInput, setSortInput] = useState("Sort by New");
-  const [isSearch, setIsSearch] = useState(false);
-  const [searchString, setSearchString] = useState("");
-  const [searchMaterials, setSearchMaterials] = useState([]);
-  const { currentIdx, setCurrentIdx, handleTabClick } = useTab();
-  const [currentMaterials, setCurrentMaterials] = useState(null);
-  const [skip, setSkip] = useState(0);
-  const [currentPage, setCurrentPage] = useState(0);
-  const [isBlock, setIsBlog] = useState(false);
-  const materialsRef = useRef(null);
-  const serarchTimeoutRef = useRef(null);
-
-  // Get available subjects based on selected semesters
-  const availableSubjects = currentSemesters.length > 0
-    ? [...new Set(
-        materialsBeforeFilter
-          .filter(m => currentSemesters.includes(m.semester))
-          .map(m => m.subject)
-      )]
-    : [];
-
-  const filterObject = {
-    currentSemesters,
-    currentSubjects,
-  };
-
-  const allFilteredMaterials = getAllFilteredMaterials(materialsBeforeFilter, filterObject);
-  const materials = getSortedMaterials(isSearch ? searchMaterials : allFilteredMaterials, sortInput);
-
-  const materialsString = JSON.stringify(materials);
-  const totalMaterials = materials?.length || 0;
-  const limit = 9;
-  const totalPages = Math.ceil(totalMaterials / limit);
-  const paginationItems = [...Array(totalPages)];
-
-  const handlePagesnation = (id) => {
-    materialsRef.current.scrollIntoView({ behavior: "smooth" });
-    if (typeof id === "number") {
-      setCurrentPage(id);
-      setSkip(limit * id);
-    } else if (id === "prev") {
-      setCurrentPage(currentPage - 1);
-      setSkip(skip - limit);
-    } else if (id === "next") {
-      setCurrentPage(currentPage + 1);
-      setSkip(skip + limit);
-    }
-  };
-
-  const tapButtons = [
-    {
-      name: <i className="icofont-layout"></i>,
-      content: (
-        <CoursesGrid isNotSidebar={isNotSidebar} materials={currentMaterials} />
-      ),
-    },
-    {
-      name: <i className="icofont-listine-dots"></i>,
-      content: (
-        <CoursesList
-          isNotSidebar={isNotSidebar}
-          isList={isList}
-          materials={currentMaterials}
-          card={card}
-        />
-      ),
-    },
-  ];
+  const [selectedChapter, setSelectedChapter] = useState(
+    searchParams.get("ch") ? Number(searchParams.get("ch")) : null,
+  );
+  const [searchString, setSearchString] = useState(searchParams.get("q") || "");
+  const [sortInput, setSortInput] = useState(
+    searchParams.get("sort") || "Sort by New",
+  );
 
   useEffect(() => {
-    const materials = JSON.parse(materialsString);
-    const materialsToShow = [...materials].splice(skip, limit);
-    setCurrentMaterials(materialsToShow);
-  }, [skip, limit, materialsString]);
-
-  useEffect(() => {
-    if (isList) {
-      setCurrentIdx(1);
-    }
+    if (isList) setCurrentIdx(1);
   }, [isList, setCurrentIdx]);
 
-  // Reset subjects when semesters change
+  const updateURL = useCallback(
+    (updates) => {
+      const params = new URLSearchParams(searchParams.toString());
+
+      Object.entries(updates).forEach(([k, v]) => {
+        if (v === null || v === undefined || v === "") {
+          params.delete(k);
+        } else {
+          params.set(k, String(v));
+        }
+      });
+
+      const qs = params.toString();
+      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParams],
+  );
+
   useEffect(() => {
-    setCurrentSubjects([]);
-  }, [currentSemesters]);
+    updateURL({
+      sem: selectedSemester,
+      course: selectedCourse,
+      ch: selectedChapter,
+      q: searchString || null,
+      sort: sortInput !== "Sort by New" ? sortInput : null,
+    });
+  }, [
+    selectedSemester,
+    selectedCourse,
+    selectedChapter,
+    searchString,
+    sortInput,
+    updateURL,
+  ]);
 
-  // handle filters
-  const getCurrentFilterInputs = (input, ps) => {
-    return ![...ps]?.includes(input)
-      ? [...ps, input]
-      : [...ps?.filter((pInput) => pInput !== input)];
+  const filterOptionsParams = useMemo(
+    () => ({
+      semester_id: selectedSemester || undefined,
+      course_id: selectedCourse || undefined,
+      chapter_id: selectedChapter || undefined,
+    }),
+    [selectedSemester, selectedCourse, selectedChapter],
+  );
+
+  const {
+    data: filterOptionsResponse,
+    isLoading: isFilterOptionsLoading,
+    isFetching: isFilterOptionsFetching,
+  } = useMaterialFilterOptions(filterOptionsParams, {
+    staleTime: 1000 * 60 * 5,
+  });
+
+  const semesters = filterOptionsResponse?.data?.options?.semesters || [];
+  const courses = filterOptionsResponse?.data?.options?.courses || [];
+  const chapters = filterOptionsResponse?.data?.options?.chapters || [];
+
+  const materialsParams = useMemo(
+    () => ({
+      mode: "cursor",
+      limit: 10,
+      semester_id: selectedSemester || undefined,
+      course_id: selectedCourse || undefined,
+      chapter_id: selectedChapter || undefined,
+      search: searchString || undefined,
+      is_enabled: true,
+    }),
+    [selectedSemester, selectedCourse, selectedChapter, searchString],
+  );
+
+  const {
+    data,
+    isLoading,
+    isFetching,
+    isFetchingNextPage,
+    hasNextPage,
+    fetchNextPage,
+  } = useInfiniteMaterialsList(materialsParams, {
+    staleTime: 1000 * 30,
+  });
+
+  const materials = useMemo(() => {
+    const raw = flattenInfiniteMaterials(data?.pages || []);
+    const mapped = raw.map(mapMaterialToCardModel);
+    return sortMaterials(mapped, sortInput);
+  }, [data?.pages, sortInput]);
+
+  const totalCount =
+    data?.pages?.[0]?.data?.meta?.total_count ?? materials.length;
+
+  const hasActiveFilters =
+    !!selectedSemester ||
+    !!selectedCourse ||
+    !!selectedChapter ||
+    !!searchString;
+
+  const activeFilterCount = [
+    selectedSemester,
+    selectedCourse,
+    selectedChapter,
+    searchString,
+  ].filter(Boolean).length;
+
+  const handleSemesterChange = (semId) => {
+    const nextValue = selectedSemester === semId ? null : semId;
+    setSelectedSemester(nextValue);
+    setSelectedCourse(null);
+    setSelectedChapter(null);
   };
 
-  const handleFilters = (name, input) => {
-    setIsSearch(false);
+  const handleCourseChange = (courseId) => {
+    const nextValue = selectedCourse === courseId ? null : courseId;
+    setSelectedCourse(nextValue);
+    setSelectedChapter(null);
+  };
+
+  const handleChapterChange = (chapterId) => {
+    const nextValue = selectedChapter === chapterId ? null : chapterId;
+    setSelectedChapter(nextValue);
+  };
+
+  const clearAll = () => {
+    setSelectedSemester(null);
+    setSelectedCourse(null);
+    setSelectedChapter(null);
     setSearchString("");
-    switch (name) {
-      case "Semester":
-        return setCurrentSemesters((ps) => getCurrentFilterInputs(input, ps));
-      case "Subject":
-        return setCurrentSubjects((ps) => getCurrentFilterInputs(input, ps));
-      default:
-        break;
-    }
+    setSortInput("Sort by New");
+    setIsMobileFilterOpen(false);
+    router.replace(pathname, { scroll: false });
   };
 
-  // handle search
-  const handleSearchMaterials = (e) => {
-    setIsBlog(true);
-    setCurrentSemesters([]);
-    setCurrentSubjects([]);
-    const value = e.target.value;
-    setSearchString(value.toLowerCase());
+  const handleViewChange = (idx) => {
+    setCurrentIdx(idx);
   };
 
-  const startSearch = () => {
-    serarchTimeoutRef.current = setTimeout(() => {
-      const searchText = new RegExp(searchString, "i");
-      let searchResults;
-      if (searchString) {
-        setIsBlog(true);
-        searchResults = materialsBeforeFilter?.filter(({ title }) =>
-          searchText.test(title)
-        );
-      } else {
-        searchResults = [];
-      }
-      setSearchMaterials(searchResults);
-    }, 200);
-  };
+  const loadMoreRef = useIntersectionLoadMore({
+    enabled: true,
+    hasNextPage,
+    isFetchingNextPage,
+    onLoadMore: fetchNextPage,
+  });
 
-  return (
-    <div>
-      <div
-        className="container tab py-10 md:py-50px lg:py-60px 2xl:py-100px"
-        ref={materialsRef}
+  const SidebarContent = ({ mobile = false }) => (
+    <div className="space-y-4">
+      {mobile && (
+        <FilterSection title="View">
+          <ViewToggle currentIdx={currentIdx} onChange={handleViewChange} />
+        </FilterSection>
+      )}
+
+      <FilterSection title="Search">
+        <div className="relative group">
+          <input
+            type="text"
+            placeholder="Search materials..."
+            value={searchString}
+            onChange={(e) => setSearchString(e.target.value)}
+            className="w-full px-4 py-3 pl-10 bg-white dark:bg-gray-800/60 border border-gray-100 dark:border-gray-700/50 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-primaryColor/20 transition-all text-gray-700 dark:text-gray-200"
+          />
+          <i className="icofont-search-1 absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-primaryColor transition-colors" />
+        </div>
+      </FilterSection>
+
+      <FilterSection
+        title="Semester"
+        badge={semesters.length ? `${semesters.length}` : undefined}
       >
-        {/* materials header */}
-        <div
-          className="courses-header flex justify-between items-center flex-wrap px-13px py-5px border border-borderColor dark:border-borderColor-dark mb-30px gap-y-5"
-          data-aos="fade-up"
-        >
-          <div>
-            {currentMaterials ? (
-              <p className="text-blackColor dark:text-blackColor-dark">
-                Showing {skip ? skip + 1 : 1} -{" "}
-                {skip + limit >= totalMaterials ? totalMaterials : skip + limit} of{" "}
-                {totalMaterials} Results
-              </p>
+        {isFilterOptionsLoading ? (
+          <div className="space-y-2">
+            {[...Array(4)].map((_, i) => (
+              <div
+                key={i}
+                className="h-11 rounded-xl bg-gray-100 dark:bg-gray-800/60 animate-pulse"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="max-h-48 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+            {semesters.map((sem) => (
+              <FilterChip
+                key={sem.id}
+                label={sem.label}
+                count={sem.count}
+                active={selectedSemester === sem.id}
+                onClick={() => handleSemesterChange(sem.id)}
+              />
+            ))}
+          </div>
+        )}
+      </FilterSection>
+
+      <FilterSection
+        title="Course"
+        disabled={!selectedSemester}
+        badge={courses.length ? `${courses.length}` : undefined}
+      >
+        {!selectedSemester ? (
+          <div className="text-center py-4 text-xs font-medium text-gray-400 bg-white/50 dark:bg-gray-800/30 rounded-xl border-2 border-dashed border-gray-100 dark:border-gray-700/50">
+            Select a semester first
+          </div>
+        ) : isFilterOptionsFetching ? (
+          <div className="space-y-2">
+            {[...Array(3)].map((_, i) => (
+              <div
+                key={i}
+                className="h-11 rounded-xl bg-gray-100 dark:bg-gray-800/60 animate-pulse"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="max-h-48 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+            {courses.length ? (
+              courses.map((course) => (
+                <FilterChip
+                  key={course.id}
+                  label={course.label}
+                  count={course.count}
+                  active={selectedCourse === course.id}
+                  onClick={() => handleCourseChange(course.id)}
+                />
+              ))
             ) : (
-              ""
+              <div className="text-center py-4 text-xs font-medium text-gray-400 bg-white/50 dark:bg-gray-800/30 rounded-xl border-2 border-dashed border-gray-100 dark:border-gray-700/50">
+                No courses found
+              </div>
             )}
           </div>
-          <div className="flex items-center">
-            <div className="tab-links transition-all duration-300 text-contentColor dark:text-contentColor-dark flex gap-11px">
-              {tapButtons?.map(({ name }, idx) => (
-                <TabButtonSecondary
-                  key={idx}
-                  name={name}
-                  button={"icon"}
-                  currentIdx={currentIdx}
-                  handleTabClick={handleTabClick}
-                  idx={idx}
+        )}
+      </FilterSection>
+
+      <FilterSection
+        title="Chapter"
+        disabled={!selectedCourse}
+        badge={chapters.length ? `${chapters.length}` : undefined}
+      >
+        {!selectedCourse ? (
+          <div className="text-center py-4 text-xs font-medium text-gray-400 bg-white/50 dark:bg-gray-800/30 rounded-xl border-2 border-dashed border-gray-100 dark:border-gray-700/50">
+            Select a course first
+          </div>
+        ) : isFilterOptionsFetching ? (
+          <div className="space-y-2">
+            {[...Array(3)].map((_, i) => (
+              <div
+                key={i}
+                className="h-11 rounded-xl bg-gray-100 dark:bg-gray-800/60 animate-pulse"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="max-h-48 overflow-y-auto space-y-1 pr-1 custom-scrollbar">
+            {chapters.length ? (
+              chapters.map((chapter) => (
+                <FilterChip
+                  key={chapter.id}
+                  label={chapter.label}
+                  count={chapter.count}
+                  active={selectedChapter === chapter.id}
+                  onClick={() => handleChapterChange(chapter.id)}
                 />
-              ))}
+              ))
+            ) : (
+              <div className="text-center py-4 text-xs font-medium text-gray-400 bg-white/50 dark:bg-gray-800/30 rounded-xl border-2 border-dashed border-gray-100 dark:border-gray-700/50">
+                No chapters found
+              </div>
+            )}
+          </div>
+        )}
+      </FilterSection>
+    </div>
+  );
+
+  return (
+    <div className="bg-gray-50/50 dark:bg-gray-900 min-h-screen">
+      <div className="container py-6 md:py-8 lg:py-10">
+        <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-5 bg-transparent">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">
+              Study Materials
+            </h1>
+            <div className="flex items-center gap-3 mt-2">
+              <span className="inline-flex items-center justify-center px-2.5 py-1 rounded-md bg-gray-200/50 dark:bg-gray-800 text-xs font-semibold text-gray-600 dark:text-gray-300">
+                {totalCount} {totalCount === 1 ? "Result" : "Results"}
+              </span>
+              {hasActiveFilters && (
+                <button
+                  type="button"
+                  onClick={clearAll}
+                  className="text-[11px] font-bold text-gray-400 hover:text-red-500 uppercase tracking-wider transition-colors"
+                >
+                  Clear Filters
+                </button>
+              )}
             </div>
-            <div className="pl-50px sm:pl-20 pr-10px">
-              <select
-                className="text-blackColor bg-whiteColor py-2 pr-2 pl-3 rounded-md outline-none border-4 border-transparent focus:border-blue-light box-border"
-                onChange={(e) => setSortInput(e.target.value)}
-                value={sortInput}
-              >
-                {sortInputs.map((input, idx) => (
-                  <option key={idx} value={input}>
-                    {input}
-                  </option>
-                ))}
-              </select>
+          </div>
+
+          <div className="flex items-center flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setIsMobileFilterOpen(true)}
+              className="lg:hidden flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 text-sm font-medium shadow-sm hover:shadow-md transition-all"
+            >
+              <i className="icofont-filter text-primaryColor" />
+              <span className="text-gray-700 dark:text-gray-200">Filters</span>
+              {activeFilterCount > 0 && (
+                <span className="w-5 h-5 bg-primaryColor text-white text-[10px] font-bold rounded-full flex items-center justify-center">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+
+            <div className="flex bg-white dark:bg-gray-800 p-1 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700">
+              <div className="hidden lg:flex items-center gap-1 border-r border-gray-100 dark:border-gray-700 pr-2 mr-2">
+                <ViewToggle
+                  currentIdx={currentIdx}
+                  onChange={handleViewChange}
+                />
+              </div>
+
+              <div className="relative flex items-center h-9 px-1">
+                <select
+                  value={sortInput}
+                  onChange={(e) => setSortInput(e.target.value)}
+                  className="appearance-none text-sm font-medium bg-transparent text-gray-700 dark:text-gray-300 pl-3 pr-8 focus:outline-none cursor-pointer"
+                >
+                  {sortInputs.map((s) => (
+                    <option key={s} value={s} className="dark:bg-gray-800">
+                      {s}
+                    </option>
+                  ))}
+                </select>
+                <i className="icofont-rounded-down absolute right-3 text-gray-400 pointer-events-none text-sm" />
+              </div>
             </div>
           </div>
         </div>
 
-        <div
-          className={`grid grid-cols-1 ${
-            isNotSidebar ? "" : "md:grid-cols-12"
-          } gap-30px`}
-        >
-          {/* materials sidebar */}
-          {!isNotSidebar && (
-            <div className="md:col-start-1 md:col-span-4 lg:col-span-3">
-              <div className="flex flex-col">
-                {/* search input */}
-                <div
-                  className="pt-30px pr-15px pl-10px pb-23px 2xl:pt-10 2xl:pr-25px 2xl:pl-5 2xl:pb-33px mb-30px border border-borderColor dark:border-borderColor-dark"
-                  data-aos="fade-up"
+        {hasActiveFilters && (
+          <div className="flex flex-wrap gap-2 mb-6">
+            {selectedSemester && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm text-xs text-gray-700 dark:text-gray-300">
+                <span className="font-semibold text-primaryColor">
+                  Semester
+                </span>
+                {semesters.find((s) => s.id === selectedSemester)?.label ||
+                  selectedSemester}
+                <button
+                  type="button"
+                  onClick={() => handleSemesterChange(selectedSemester)}
+                  className="ml-1 text-gray-400 hover:text-red-500"
                 >
-                  <h4 className="text-size-22 text-blackColor dark:text-blackColor-dark font-bold leading-30px mb-25px">
-                    Search here
-                  </h4>
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      setIsSearch(true);
-                    }}
-                    className="w-full px-4 py-10px text-sm text-blackColor dark:text-blackColor-dark bg-placeholder bg-opacity-5 dark:bg-lightGrey10-dark flex justify-center items-center leading-26px dark:border dark:border-whiteColor relative"
-                  >
-                    <input
-                      onChange={handleSearchMaterials}
-                      onKeyDown={() => {
-                        clearTimeout(serarchTimeoutRef.current);
-                        setIsBlog(false);
-                      }}
-                      onBlur={() => setIsBlog(false)}
-                      onKeyUp={startSearch}
-                      type="text"
-                      value={searchString}
-                      placeholder="Search materials..."
-                      className="placeholder:text-placeholder dark:placeholder:text-[rgb(183,183,183)] bg-transparent focus:outline-none placeholder:opacity-80 w-full placeholder:font-medium"
+                  <i className="icofont-close-line text-sm" />
+                </button>
+              </span>
+            )}
+
+            {selectedCourse && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm text-xs text-gray-700 dark:text-gray-300">
+                {courses.find((c) => c.id === selectedCourse)?.label ||
+                  selectedCourse}
+                <button
+                  type="button"
+                  onClick={() => handleCourseChange(selectedCourse)}
+                  className="ml-1 text-gray-400 hover:text-red-500"
+                >
+                  <i className="icofont-close-line text-sm" />
+                </button>
+              </span>
+            )}
+
+            {selectedChapter && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm text-xs text-gray-700 dark:text-gray-300">
+                {chapters.find((c) => c.id === selectedChapter)?.label ||
+                  selectedChapter}
+                <button
+                  type="button"
+                  onClick={() => handleChapterChange(selectedChapter)}
+                  className="ml-1 text-gray-400 hover:text-red-500"
+                >
+                  <i className="icofont-close-line text-sm" />
+                </button>
+              </span>
+            )}
+
+            {searchString && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm text-xs text-gray-700 dark:text-gray-300">
+                "{searchString}"
+                <button
+                  type="button"
+                  onClick={() => setSearchString("")}
+                  className="ml-1 text-gray-400 hover:text-red-500"
+                >
+                  <i className="icofont-close-line text-sm" />
+                </button>
+              </span>
+            )}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+          <aside className="hidden lg:block lg:col-span-3">
+            <div className="sticky top-24 max-h-[calc(100vh-120px)] overflow-y-auto pr-2 custom-scrollbar">
+              <SidebarContent />
+            </div>
+          </aside>
+
+          <main className="lg:col-span-9">
+            {isLoading ? (
+              currentIdx === 0 ? (
+                <GridSkeleton />
+              ) : (
+                <ListSkeleton />
+              )
+            ) : materials.length > 0 ? (
+              <div className="space-y-8">
+                <div className="tab-contents">
+                  <TabContentWrapper isShow={currentIdx === 0}>
+                    <CoursesGrid
+                      isNotSidebar={isNotSidebar}
+                      materials={materials}
                     />
-                    <button type="submit">
-                      <i className="icofont-search-1 text-base"></i>
-                    </button>
-                    {searchMaterials?.length ? (
-                      <ul
-                        className={`absolute left-0 top-full transition-all opacity-0 ${
-                          searchMaterials?.length && isBlock
-                            ? "visible opacity-100"
-                            : "invisible"
-                        } flex flex-col gap-y-1 border-b border-borderColor dark:border-borderColor-dark overflow-y-auto bg-whiteColor dark:bg-whiteColor-dark p-10px shadow-dropdown-card dark:shadow-brand-dark w-full rounded-b-md`}
-                      >
-                        {[...searchMaterials]?.slice(0, 5).map((material, idx) => (
-                          <li
-                            key={idx}
-                            className="relative flex gap-x-1.5 items-center"
-                          >
-                            <div className="w-12 h-12 bg-primaryColor/10 flex items-center justify-center rounded">
-                              <i className={`${material.fileType === 'pdf' ? 'icofont-file-pdf' : 'icofont-file-powerpoint'} text-2xl text-primaryColor`}></i>
-                            </div>
-                            <div>
-                              <Link
-                                href={`/materials/${material.id}`}
-                                className="text-xs md:text-sm text-darkblack hover:text-secondaryColor leading-4 block capitalize dark:text-darkblack-dark dark:hover:text-secondaryColor"
-                              >
-                                {material.title.length > 16
-                                  ? material.title.slice(0, 16) + "..."
-                                  : material.title}
-                              </Link>
-                              <p className="text-size-10 text-darkblack leading-5 block pb-5px dark:text-darkblack-dark">
-                                <span className="text-secondaryColor">
-                                  Sem {material.semester}
-                                </span>
-                              </p>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    ) : (
-                      ""
-                    )}
-                  </form>
+                  </TabContentWrapper>
+
+                  <TabContentWrapper isShow={currentIdx === 1}>
+                    <CoursesList materials={materials} />
+                  </TabContentWrapper>
                 </div>
 
-                {/* Semester Filter */}
-                <div
-                  className="pt-30px pr-15px pl-10px pb-23px 2xl:pt-10 2xl:pr-25px 2xl:pl-5 2xl:pb-33px mb-30px border border-borderColor dark:border-borderColor-dark"
-                  data-aos="fade-up"
-                >
-                  <h4 className="text-size-22 text-blackColor dark:text-blackColor-dark font-bold leading-30px mb-15px">
-                    Semester
-                  </h4>
-                  <ul className="flex flex-col gap-y-4">
-                    {getUniqueSemesters().map((semester) => (
-                      <li key={semester}>
-                        <button
-                          onClick={() => handleFilters("Semester", semester)}
-                          className={`${
-                            currentSemesters.includes(semester)
-                              ? "bg-primaryColor text-contentColor-dark"
-                              : "text-contentColor dark:text-contentColor-dark hover:text-contentColor-dark hover:bg-primaryColor"
-                          } text-sm font-medium px-13px py-2 border border-borderColor dark:border-borderColor-dark flex justify-between leading-7 transition-all duration-300 w-full`}
-                        >
-                          <span>Semester {semester}</span>
-                          <span>
-                            {getFilteredMaterialsLength("semester", semester) < 10
-                              ? `0${getFilteredMaterialsLength("semester", semester)}`
-                              : getFilteredMaterialsLength("semester", semester)}
-                          </span>
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+                <div ref={loadMoreRef} className="h-2 w-full" />
 
-                {/* Subject Filter - Only shows when semesters are selected */}
-                {currentSemesters.length > 0 && availableSubjects.length > 0 && (
-                  <div
-                    className="pt-30px pr-15px pl-10px pb-23px 2xl:pt-10 2xl:pr-25px 2xl:pl-5 2xl:pb-33px mb-30px border border-borderColor dark:border-borderColor-dark"
-                    data-aos="fade-up"
-                  >
-                    <h4 className="text-size-22 text-blackColor dark:text-blackColor-dark font-bold leading-30px mb-15px">
-                      Subject
-                    </h4>
-                    <ul className="flex flex-col gap-y-4">
-                      {availableSubjects.map((subject) => (
-                        <li key={subject}>
-                          <button
-                            onClick={() => handleFilters("Subject", subject)}
-                            className={`${
-                              currentSubjects.includes(subject)
-                                ? "bg-primaryColor text-contentColor-dark"
-                                : "text-contentColor dark:text-contentColor-dark hover:text-contentColor-dark hover:bg-primaryColor"
-                            } text-sm font-medium px-13px py-2 border border-borderColor dark:border-borderColor-dark flex justify-between leading-7 transition-all duration-300 w-full`}
-                          >
-                            <span>{subject}</span>
-                            <span>
-                              {materialsBeforeFilter.filter(
-                                m => currentSemesters.includes(m.semester) && m.subject === subject
-                              ).length < 10
-                                ? `0${materialsBeforeFilter.filter(
-                                    m => currentSemesters.includes(m.semester) && m.subject === subject
-                                  ).length}`
-                                : materialsBeforeFilter.filter(
-                                    m => currentSemesters.includes(m.semester) && m.subject === subject
-                                  ).length}
-                            </span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
+                {isFetchingNextPage &&
+                  (currentIdx === 0 ? (
+                    <GridSkeleton count={3} />
+                  ) : (
+                    <ListSkeleton count={3} />
+                  ))}
+
+                {!hasNextPage && materials.length > 0 && (
+                  <div className="text-center text-sm text-gray-400 py-6">
+                    You have reached the end.
                   </div>
                 )}
               </div>
-            </div>
-          )}
-
-          {/* materials main */}
-          <div
-            className={`${
-              isNotSidebar
-                ? ""
-                : "md:col-start-5 md:col-span-8 lg:col-start-4 lg:col-span-9"
-            } space-y-[30px]`}
-          >
-            {currentMaterials ? (
-              <>
-                <div className="tab-contents">
-                  {tapButtons?.map(({ content }, idx) => (
-                    <TabContentWrapper
-                      key={idx}
-                      isShow={idx === currentIdx}
-                    >
-                      {content}
-                    </TabContentWrapper>
-                  ))}
-                </div>
-
-                {/* pagination */}
-                {totalMaterials > limit ? (
-                  <Pagination
-                    pages={paginationItems}
-                    totalItems={totalMaterials}
-                    handlePagesnation={handlePagesnation}
-                    currentPage={currentPage}
-                    skip={skip}
-                    limit={limit}
-                  />
-                ) : (
-                  ""
-                )}
-              </>
             ) : (
-              <NoData message={"No Materials Found"} />
+              <NoData message="No materials found matching your filters." />
+            )}
+
+            {isFetching && !isLoading && !isFetchingNextPage && (
+              <div className="mt-4 text-xs text-gray-400">Refreshing...</div>
+            )}
+          </main>
+        </div>
+      </div>
+
+      <div
+        className={`fixed inset-0 z-50 lg:hidden transition-all duration-300 ${
+          isMobileFilterOpen ? "visible" : "invisible"
+        }`}
+      >
+        <div
+          className={`absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity duration-300 ${
+            isMobileFilterOpen ? "opacity-100" : "opacity-0"
+          }`}
+          onClick={() => setIsMobileFilterOpen(false)}
+        />
+        <div
+          className={`absolute right-0 top-0 h-full w-[85%] max-w-[360px] bg-gray-50 dark:bg-gray-900 shadow-2xl transform transition-transform duration-300 ease-out ${
+            isMobileFilterOpen ? "translate-x-0" : "translate-x-full"
+          }`}
+        >
+          <div className="sticky top-0 flex items-center justify-between p-5 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+            <div className="flex items-center gap-2">
+              <i className="icofont-filter text-primaryColor" />
+              <h3 className="font-bold text-gray-900 dark:text-white">
+                Filters
+              </h3>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsMobileFilterOpen(false)}
+              className="w-8 h-8 rounded-full bg-gray-100 dark:bg-gray-800 flex items-center justify-center text-gray-500 hover:text-gray-900 dark:hover:text-white transition-colors"
+            >
+              <i className="icofont-close" />
+            </button>
+          </div>
+
+          <div className="p-5 overflow-y-auto h-[calc(100%-73px)]">
+            <SidebarContent mobile />
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={() => {
+                  clearAll();
+                  setIsMobileFilterOpen(false);
+                }}
+                className="w-full mt-8 py-3 bg-red-50 dark:bg-red-500/10 text-red-500 hover:bg-red-100 dark:hover:bg-red-500/20 rounded-xl text-sm font-bold transition-colors"
+              >
+                Clear All Filters
+              </button>
             )}
           </div>
         </div>

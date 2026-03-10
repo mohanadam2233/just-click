@@ -1,5 +1,3 @@
-
-// components/shared/courses/CoursesList.jsx
 import MaterialListItem from "./MaterialListItem";
 
 const CoursesList = ({ materials }) => {
@@ -17,11 +15,15 @@ const CoursesList = ({ materials }) => {
           </thead>
           <tbody>
             {materials?.length ? (
-              materials?.map((material, idx) => (
-                <MaterialListItem key={idx} material={material} />
+              materials.map((material) => (
+                <MaterialListItem key={material.id} material={material} />
               ))
             ) : (
-              <tr><td colSpan="4" className="text-center py-20 text-contentColor">No materials available.</td></tr>
+              <tr>
+                <td colSpan="4" className="text-center py-20 text-contentColor">
+                  No materials available.
+                </td>
+              </tr>
             )}
           </tbody>
         </table>

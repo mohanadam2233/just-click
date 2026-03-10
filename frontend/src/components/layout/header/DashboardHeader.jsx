@@ -1,38 +1,83 @@
 "use client";
 
+import { useLogout, useMe } from "@/features/auth/hooks";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 export default function DashboardHeader() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const menuRef = useRef(null);
+  const router = useRouter();
 
-  // Sticky header effect
+  const { data: meData, isLoading: isMeLoading, isError: isMeError } = useMe();
+  const logoutMutation = useLogout();
+
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50);
     };
+
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Close dropdown on outside click
   useEffect(() => {
     const handleClickOutside = (event) => {
       if (menuRef.current && !menuRef.current.contains(event.target)) {
         setIsOpen(false);
       }
     };
+
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Mock user data
-  const user = {
-    name: "Alex Johnson",
-    email: "alex@justclick.io",
-    initials: "AJ",
+  const fallbackUser = {
+    username: "User",
+    userType: "user",
+    primaryRole: "No role",
+    initials: "U",
+  };
+
+  const apiUser = meData?.data?.user;
+
+  const user = useMemo(() => {
+    if (!apiUser) return fallbackUser;
+
+    const username = apiUser?.username || fallbackUser.username;
+    const userType = apiUser?.user_type || fallbackUser.userType;
+    const roles = Array.isArray(apiUser?.roles) ? apiUser.roles : [];
+    const primaryRole = roles[0] || fallbackUser.primaryRole;
+
+    const initials =
+      username
+        .split(/[\s._-]+/)
+        .filter(Boolean)
+        .slice(0, 2)
+        .map((part) => part[0]?.toUpperCase())
+        .join("") || fallbackUser.initials;
+
+    return {
+      username,
+      userType,
+      primaryRole,
+      initials,
+    };
+  }, [apiUser]);
+
+  const safeUser = isMeError ? fallbackUser : user;
+
+  const handleLogout = async () => {
+    try {
+      setIsOpen(false);
+      await logoutMutation.mutateAsync();
+      router.replace("/login");
+      router.refresh();
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
   };
 
   return (
@@ -46,38 +91,13 @@ export default function DashboardHeader() {
       >
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 md:h-20">
-            {/* Logo */}
-            <Link href="/" className="flex items-center">
+            <Link href="/materials" className="flex items-center">
               <span className="text-xl font-bold text-blackColor dark:text-whiteColor">
                 Just<span className="text-primaryColor">Click</span>
               </span>
             </Link>
 
-            {/* Right side */}
             <div className="flex items-center gap-4">
-              {/* Navigation Links */}
-              {/* <nav className="hidden md:flex items-center gap-6">
-                <Link
-                  href="/dashboard"
-                  className="text-sm font-medium text-blackColor dark:text-whiteColor hover:text-primaryColor transition-colors"
-                >
-                  Overview
-                </Link>
-                <Link
-                  href="/courses"
-                  className="text-sm font-medium text-blackColor dark:text-whiteColor hover:text-primaryColor transition-colors"
-                >
-                  Courses
-                </Link>
-                <Link
-                  href="/analytics"
-                  className="text-sm font-medium text-blackColor dark:text-whiteColor hover:text-primaryColor transition-colors"
-                >
-                  Analytics
-                </Link>
-              </nav> */}
-
-              {/* Profile Dropdown */}
               <div className="relative" ref={menuRef}>
                 <button
                   onClick={() => setIsOpen(!isOpen)}
@@ -85,7 +105,11 @@ export default function DashboardHeader() {
                   aria-label="Profile menu"
                 >
                   <div className="h-10 w-10 rounded-full bg-gradient-to-r from-primaryColor to-secondaryColor flex items-center justify-center text-white font-semibold text-sm shadow-md hover:shadow-lg transition-shadow">
-                    {user.initials}
+                    {isMeLoading ? (
+                      <div className="h-4 w-5 rounded bg-white/30 animate-pulse" />
+                    ) : (
+                      safeUser.initials
+                    )}
                   </div>
                   <svg
                     className={`w-4 h-4 text-blackColor dark:text-whiteColor transition-transform duration-200 ${
@@ -104,20 +128,30 @@ export default function DashboardHeader() {
                   </svg>
                 </button>
 
-                {/* Dropdown Menu */}
                 {isOpen && (
                   <div className="absolute right-0 mt-3 w-64 bg-white dark:bg-blackColor rounded-xl shadow-lg border border-borderColor dark:border-borderColor-dark overflow-hidden">
-                    {/* User Info */}
                     <div className="px-4 py-3 border-b border-borderColor dark:border-borderColor-dark">
-                      <p className="text-sm font-semibold text-blackColor dark:text-whiteColor">
-                        {user.name}
-                      </p>
-                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                        {user.email}
-                      </p>
+                      {isMeLoading ? (
+                        <div className="space-y-2">
+                          <div className="h-4 w-28 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
+                          <div className="h-3 w-20 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
+                          <div className="h-3 w-24 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
+                        </div>
+                      ) : (
+                        <>
+                          <p className="text-sm font-semibold text-blackColor dark:text-whiteColor">
+                            {safeUser.username}
+                          </p>
+                          {/* <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            {safeUser.userType}
+                          </p> */}
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                            {safeUser.primaryRole}
+                          </p>
+                        </>
+                      )}
                     </div>
 
-                    {/* Menu Items */}
                     <div className="p-2">
                       <Link
                         href="/profile"
@@ -170,11 +204,9 @@ export default function DashboardHeader() {
                       <div className="my-2 border-t border-borderColor dark:border-borderColor-dark" />
 
                       <button
-                        onClick={() => {
-                          setIsOpen(false);
-                          // Add logout logic here
-                        }}
-                        className="flex items-center gap-3 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors w-full text-left"
+                        onClick={handleLogout}
+                        disabled={logoutMutation.isPending}
+                        className="flex items-center gap-3 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors w-full text-left disabled:opacity-60 disabled:cursor-not-allowed"
                       >
                         <svg
                           className="w-4 h-4"
@@ -189,7 +221,7 @@ export default function DashboardHeader() {
                             d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
                           />
                         </svg>
-                        Logout
+                        {logoutMutation.isPending ? "Logging out..." : "Logout"}
                       </button>
                     </div>
                   </div>
@@ -199,7 +231,7 @@ export default function DashboardHeader() {
           </div>
         </div>
       </div>
-      {/* Spacer to prevent content from hiding under fixed header */}
+
       <div className="h-16 md:h-20" />
     </header>
   );

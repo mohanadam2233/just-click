@@ -1,5 +1,3 @@
-
-// components/shared/courses/CoursesGrid.jsx
 import MaterialCard from "./MaterialCard";
 
 const CoursesGrid = ({ materials, isNotSidebar }) => {
@@ -12,8 +10,12 @@ const CoursesGrid = ({ materials, isNotSidebar }) => {
       } gap-30px`}
     >
       {materials?.length ? (
-        materials?.map((material, idx) => (
-          <MaterialCard key={idx} material={material} type={"primaryMd"} />
+        materials.map((material) => (
+          <MaterialCard
+            key={material.id}
+            material={material}
+            type="primaryMd"
+          />
         ))
       ) : (
         <span>No materials found.</span>

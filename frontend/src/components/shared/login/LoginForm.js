@@ -1,12 +1,11 @@
-
 "use client";
 
-import React, { useState, useEffect } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import toast from "react-hot-toast";
 import { useLogin } from "@/features/auth/hooks";
 import { useSession } from "@/providers/SessionProvider";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import toast from "react-hot-toast";
 
 const LoginForm = () => {
   const router = useRouter();
@@ -21,7 +20,7 @@ const LoginForm = () => {
   const [showPassword, setShowPassword] = useState(false);
 
   useEffect(() => {
-    if (user) router.replace("/dashboard");
+    if (user) router.replace("/materials");
   }, [user, router]);
 
   const onChange = (e) => {
@@ -45,7 +44,7 @@ const LoginForm = () => {
       });
 
       toast.success("Login successful.");
-   router.replace("/materials");
+      router.replace("/materials");
     } catch (e2) {
       toast.error(e2?.message || "Login failed");
     }

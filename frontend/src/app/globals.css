@@ -388,7 +388,44 @@ h6 {
   margin-top: 8px;
   transform: translateX(0) rotate(90deg);
 }
+/* Modern Thin Scrollbar */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
 
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #e2e8f0; /* Light mode: Slate 200 */
+  border-radius: 20px;
+}
+
+.dark .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: #334155; /* Dark mode: Slate 700 */
+}
+
+/* Subtle background texture for Dark Mode */
+.dark body {
+  background-image: radial-gradient(
+    circle at 2px 2px,
+    rgba(255, 255, 255, 0.02) 1px,
+    transparent 0
+  );
+  background-size: 40px 40px;
+}
+
+/* Tab animations */
+.tab-enter {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.tab-enter-active {
+  opacity: 1;
+  transform: translateY(0);
+  transition: all 300ms ease-out;
+}
 /* responsive */
 @media screen and (min-width: 768px) {
   /* testimonila swiper */

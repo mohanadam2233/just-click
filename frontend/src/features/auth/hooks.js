@@ -16,6 +16,7 @@ export function useMe(opts = {}) {
 
 export function useLogin() {
   const qc = useQueryClient();
+
   return useMutation({
     mutationFn: authApi.login,
     onSuccess: async () => {
@@ -26,10 +27,18 @@ export function useLogin() {
 
 export function useLogout() {
   const qc = useQueryClient();
+
   return useMutation({
     mutationFn: authApi.logout,
     onSuccess: async () => {
-      await qc.removeQueries({ queryKey: authKeys.root });
+      // clear current user immediately
+      qc.setQueryData(authKeys.me(), null);
+
+      // remove all auth cache
+      qc.removeQueries({ queryKey: authKeys.root });
+
+      // optional: invalidate everything depending on auth
+      await qc.invalidateQueries();
     },
   });
 }

@@ -1,8 +1,3 @@
-// import AuthGate from "@/components/AuthGate";
-
-// export default function ProtectedLayout({ children }) {
-//   return <AuthGate>{children}</AuthGate>;
-// }
 import AuthGate from "@/components/AuthGate";
 import DashboardHeader from "@/components/layout/header/DashboardHeader";
 import Scrollup from "@/components/shared/others/Scrollup";
