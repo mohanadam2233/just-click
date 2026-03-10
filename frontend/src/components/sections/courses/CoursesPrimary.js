@@ -3,7 +3,6 @@
 import CoursesGrid from "@/components/shared/courses/CoursesGrid";
 import CoursesList from "@/components/shared/courses/CoursesList";
 import NoData from "@/components/shared/others/NoData";
-import TabContentWrapper from "@/components/shared/wrappers/TabContentWrapper";
 import {
   useInfiniteMaterialsList,
   useMaterialFilterOptions,
@@ -602,16 +601,14 @@ const CoursesPrimary = ({ isNotSidebar, isList }) => {
             ) : materials.length > 0 ? (
               <div className="space-y-8">
                 <div className="tab-contents">
-                  <TabContentWrapper isShow={currentIdx === 0}>
+                  {currentIdx === 0 ? (
                     <CoursesGrid
                       isNotSidebar={isNotSidebar}
                       materials={materials}
                     />
-                  </TabContentWrapper>
-
-                  <TabContentWrapper isShow={currentIdx === 1}>
+                  ) : (
                     <CoursesList materials={materials} />
-                  </TabContentWrapper>
+                  )}
                 </div>
 
                 <div ref={loadMoreRef} className="h-2 w-full" />

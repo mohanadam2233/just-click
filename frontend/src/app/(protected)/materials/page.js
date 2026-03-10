@@ -3,8 +3,8 @@ import CoursesMain from "@/components/layout/main/CoursesMain";
 import ThemeController from "@/components/shared/others/ThemeController";
 
 export const metadata = {
-  title: "Courses | Edurock - Education LMS Template",
-  description: "Courses | Edurock - Education LMS Template",
+  title: "Material list | CMCP",
+  description: "Material list | CMCP system",
 };
 
 const Courses = async () => {
