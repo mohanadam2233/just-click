@@ -1,5 +1,3 @@
-import QuizContainers from "@/components/shared/containers/QuizContainers";
-
 const InstructorMyQuizAttemsPrimary = ({ title }) => {
   const allResults = [
     {
@@ -43,7 +41,7 @@ const InstructorMyQuizAttemsPrimary = ({ title }) => {
       status: "processing",
     },
   ];
-  return <QuizContainers allResults={allResults} title={title} />;
+  return;
 };
 
 export default InstructorMyQuizAttemsPrimary;

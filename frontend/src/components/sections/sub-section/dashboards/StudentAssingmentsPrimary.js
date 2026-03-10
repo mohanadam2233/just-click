@@ -1,6 +1,3 @@
-import QuizContainers from "@/components/shared/containers/QuizContainers";
-import React from "react";
-
 const StudentAssingmentsPrimary = () => {
   const allResults = [
     {
@@ -40,9 +37,7 @@ const StudentAssingmentsPrimary = () => {
       totalSubmit: 2,
     },
   ];
-  return (
-    <QuizContainers allResults={allResults} title="Assignments" table={2} />
-  );
+  return;
 };
 
 export default StudentAssingmentsPrimary;

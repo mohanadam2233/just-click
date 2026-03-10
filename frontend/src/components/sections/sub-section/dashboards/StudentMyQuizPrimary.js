@@ -1,6 +1,3 @@
-import QuizContainers from "@/components/shared/containers/QuizContainers";
-import React from "react";
-
 const StudentMyQuizPrimary = () => {
   const allResults = [
     {
@@ -48,7 +45,7 @@ const StudentMyQuizPrimary = () => {
       status: "pass",
     },
   ];
-  return <QuizContainers allResults={allResults} title={"My Quiz Attempts"} />;
+  return;
 };
 
 export default StudentMyQuizPrimary;

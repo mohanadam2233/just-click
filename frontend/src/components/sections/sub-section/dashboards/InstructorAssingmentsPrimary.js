@@ -1,5 +1,3 @@
-import QuizContainers from "@/components/shared/containers/QuizContainers";
-
 const InstructorAssingmentsPrimary = () => {
   const allResults = [
     {
@@ -34,9 +32,7 @@ const InstructorAssingmentsPrimary = () => {
       totalSubmit: 2,
     },
   ];
-  return (
-    <QuizContainers allResults={allResults} title="Assignments" table={2} />
-  );
+  return;
 };
 
 export default InstructorAssingmentsPrimary;

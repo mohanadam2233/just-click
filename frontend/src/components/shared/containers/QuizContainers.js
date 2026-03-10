@@ -1,6 +1,3 @@
-import React from "react";
-import LessonQuizResults from "../lesson-quiz/LessonQuizResults";
-import QuizFilter from "../dashboards/QuizFilter";
 import HeadingDashboard from "../headings/HeadingDashboard";
 
 const QuizContainers = ({ allResults, title, table }) => {
@@ -11,15 +8,9 @@ const QuizContainers = ({ allResults, title, table }) => {
       <HeadingDashboard>{title ? title : "My Quiz Attempts"}</HeadingDashboard>
 
       {/* filter content */}
-      <QuizFilter />
+
       <hr className="my-4 border-contentColor opacity-35" />
       {/* main content */}
-      <LessonQuizResults
-        allResults={allResults}
-        isHeading={false}
-        title={"Quiz Attempts"}
-        table={table}
-      />
     </div>
   );
 };

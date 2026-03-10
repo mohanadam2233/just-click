@@ -1,6 +1,3 @@
-import QuizContainers from "@/components/shared/containers/QuizContainers";
-import React from "react";
-
 const AdminQuizPrimaryt = () => {
   const allResults = [
     {
@@ -44,7 +41,7 @@ const AdminQuizPrimaryt = () => {
       status: "cancel",
     },
   ];
-  return <QuizContainers allResults={allResults} />;
+  return;
 };
 
 export default AdminQuizPrimaryt;

@@ -1,4 +1,3 @@
-import AdminAcademicMaterialsMain from "@/components/layout/main/dashboards/AdminAcademicMaterialsMain";
 import DashboardContainer from "@/components/shared/containers/DashboardContainer";
 import ThemeController from "@/components/shared/others/ThemeController";
 import DsahboardWrapper from "@/components/shared/wrappers/DsahboardWrapper";
@@ -12,9 +11,7 @@ const admin_academic_materials = () => {
     <PageWrapper>
       <main>
         <DsahboardWrapper>
-          <DashboardContainer>
-            <AdminAcademicMaterialsMain />
-          </DashboardContainer>
+          <DashboardContainer></DashboardContainer>
         </DsahboardWrapper>
         <ThemeController />
       </main>
