@@ -5,16 +5,18 @@ import ItemsDashboard from "./ItemsDashboard";
 
 const SidebarDashboard = () => {
   const pathname = usePathname();
-  const partOfPathNaem = pathname.split("/")[2].split("-")[0];
-  const isAdmin = partOfPathNaem === "admin" ? true : false;
-  const isInstructor = partOfPathNaem === "instructor" ? true : false;
+  // Admin routes live at /admin/dashboards/... so we check the first segment
+  const isAdmin = pathname.startsWith("/admin/");
+  const isInstructor = !isAdmin && pathname.split("/")[2]?.split("-")[0] === "instructor";
+
+  // ─── Admin Sidebar ────────────────────────────────────────────────────────
   const adminItems = [
     {
       title: " WELCOME, MICLE OBEMA",
       items: [
         {
           name: "Dashboard",
-          path: "/dashboards/admin-dashboard",
+          path: "/admin/dashboards/admin-dashboard",
           icon: (
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -35,7 +37,7 @@ const SidebarDashboard = () => {
         },
         {
           name: "Academic",
-          path: "/dashboards/admin-course",
+          path: "/admin/dashboards/admin-academic/courses",
           icon: (
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -47,22 +49,21 @@ const SidebarDashboard = () => {
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="feather feather-bookmark"
             >
-              <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"></path>
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
+              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
             </svg>
           ),
           subItems: [
-            { name: "Faculties", path: "#" },
-            { name: "Departments", path: "#" },
-            { name: "Semesters", path: "#" },
-            { name: "Courses", path: "#" },
-            { name: "Materials", path: "#" },
+            { name: "Faculties", path: "/admin/dashboards/admin-academic/faculties" },
+            { name: "Departments", path: "/admin/dashboards/admin-academic/departments" },
+            { name: "Courses", path: "/admin/dashboards/admin-academic/courses" },
+            { name: "Materials", path: "/admin/dashboards/admin-academic/materials" },
           ],
         },
         {
           name: "Students",
-          path: "/dashboards/admin-reviews",
+          path: "/admin/dashboards/admin-reviews",
           icon: (
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -74,15 +75,17 @@ const SidebarDashboard = () => {
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="feather feather-star"
             >
-              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+              <circle cx="9" cy="7" r="4"></circle>
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+              <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
             </svg>
           ),
         },
         {
           name: "Staff",
-          path: "/dashboards/admin-profile",
+          path: "/admin/dashboards/admin-profile",
           icon: (
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -94,28 +97,6 @@ const SidebarDashboard = () => {
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="feather feather-user"
-            >
-              <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
-              <circle cx="12" cy="7" r="4"></circle>
-            </svg>
-          ),
-        },
-        {
-          name: "Users",
-          path: "/dashboards/admin-profile",
-          icon: (
-            <svg
-              xmlns="http://www.w3.org/2000/svg"
-              width="16"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="feather feather-user"
             >
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
               <circle cx="12" cy="7" r="4"></circle>
@@ -129,7 +110,7 @@ const SidebarDashboard = () => {
       items: [
         {
           name: "Settings",
-          path: "/dashboards/admin-settings",
+          path: "/admin/dashboards/admin-settings",
           icon: (
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -162,10 +143,10 @@ const SidebarDashboard = () => {
               strokeWidth="2"
               strokeLinecap="round"
               strokeLinejoin="round"
-              className="feather feather-volume-1"
             >
-              <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
-              <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+              <polyline points="16 17 21 12 16 7"></polyline>
+              <line x1="21" y1="12" x2="9" y2="12"></line>
             </svg>
           ),
         },
@@ -173,6 +154,7 @@ const SidebarDashboard = () => {
     },
   ];
 
+  // ─── Instructor Sidebar ───────────────────────────────────────────────────
   const instructorItems = [
     {
       title: "MICHLE OBEMA",
@@ -466,6 +448,7 @@ const SidebarDashboard = () => {
     },
   ];
 
+  // ─── Student Sidebar ──────────────────────────────────────────────────────
   const studentItems = [
     {
       title: "WELCOME, DOND TOND",
@@ -689,7 +672,7 @@ const SidebarDashboard = () => {
       ? instructorItems
       : studentItems;
   return (
-    <div className="lg:col-start-1 lg:col-span-3">
+    <div className="w-full">
       {/* navigation menu */}
       <div className="p-30px pt-5 lg:p-5 2xl:p-30px 2xl:pt-5 rounded-lg2 shadow-accordion dark:shadow-accordion-dark bg-whiteColor dark:bg-whiteColor-dark">
         {items?.map((item, idx) => (

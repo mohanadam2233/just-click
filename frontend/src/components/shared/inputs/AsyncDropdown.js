@@ -1,8 +1,15 @@
 "use client";
 
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  autoUpdate,
+  flip,
+  offset,
+  shift,
+  size,
+  useFloating,
+} from "@floating-ui/react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { useFloating, autoUpdate, offset, flip, shift, size } from "@floating-ui/react";
 
 /* thin scrollbar */
 const INJECT_ID = "jc-dd-scroll-css";
@@ -57,7 +64,7 @@ export default function AsyncDropdown({
 
   const selectedOption = useMemo(
     () => options.find((o) => String(o.value) === String(value ?? "")),
-    [options, value]
+    [options, value],
   );
 
   // when closed -> show selected label
@@ -125,7 +132,7 @@ export default function AsyncDropdown({
       setText(opt.label ?? "");
       onSearch?.(""); // reset query
     },
-    [onChange, onSearch]
+    [onChange, onSearch],
   );
 
   // scrolling load more
@@ -155,7 +162,8 @@ export default function AsyncDropdown({
         case "Enter":
           e.preventDefault();
           if (!isOpen) return openMenu();
-          if (options[highlightedIndex]) handleSelect(options[highlightedIndex]);
+          if (options[highlightedIndex])
+            handleSelect(options[highlightedIndex]);
           break;
         case "Escape":
           e.preventDefault();
@@ -163,7 +171,15 @@ export default function AsyncDropdown({
           break;
       }
     },
-    [disabled, isOpen, openMenu, highlightedIndex, maxIndex, options, handleSelect]
+    [
+      disabled,
+      isOpen,
+      openMenu,
+      highlightedIndex,
+      maxIndex,
+      options,
+      handleSelect,
+    ],
   );
 
   return (
@@ -175,8 +191,9 @@ export default function AsyncDropdown({
         placeholder={placeholder}
         className={inputClassName}
         autoComplete="off"
-        aria-expanded={isOpen}
         aria-haspopup="listbox"
+        aria-controls={isOpen ? "async-dropdown-listbox" : undefined}
+        aria-autocomplete="list"
         onFocus={() => !isOpen && openMenu()}
         onClick={() => !isOpen && openMenu()}
         onKeyDown={handleKeyDown}
@@ -184,7 +201,7 @@ export default function AsyncDropdown({
           const v = e.target.value;
           setText(v);
           if (!isOpen) setIsOpen(true);
-          onSearch?.(v); // type to filter
+          onSearch?.(v);
         }}
       />
 
@@ -211,6 +228,7 @@ export default function AsyncDropdown({
                     : 280,
                 }}
                 role="listbox"
+                id="async-dropdown-listbox"
               >
                 {options.length === 0 && !isLoading && (
                   <div className="px-3 py-2 text-[13px] text-gray-500 text-center">
@@ -221,7 +239,9 @@ export default function AsyncDropdown({
                 {options.map((opt, idx) => {
                   const selected = String(opt.value) === String(value ?? "");
                   const active = idx === highlightedIndex;
-                  const sub = getSublabel ? getSublabel(opt) : opt?.meta?.description;
+                  const sub = getSublabel
+                    ? getSublabel(opt)
+                    : opt?.meta?.description;
 
                   return (
                     <div
@@ -231,7 +251,9 @@ export default function AsyncDropdown({
                       className={
                         ROW_BASE +
                         (active ? " bg-gray-100 dark:bg-gray-700" : "") +
-                        (selected ? " bg-primaryColor/10 text-primaryColor" : "")
+                        (selected
+                          ? " bg-primaryColor/10 text-primaryColor"
+                          : "")
                       }
                       onMouseEnter={() => setHighlightedIndex(idx)}
                       onMouseDown={(e) => e.preventDefault()}
@@ -246,7 +268,9 @@ export default function AsyncDropdown({
                             </div>
                           ) : null}
                         </div>
-                        {selected ? <span className="text-[12px]">✓</span> : null}
+                        {selected ? (
+                          <span className="text-[12px]">✓</span>
+                        ) : null}
                       </div>
                     </div>
                   );
@@ -266,7 +290,7 @@ export default function AsyncDropdown({
               </div>
             </div>
           </div>,
-          document.body
+          document.body,
         )}
     </div>
   );

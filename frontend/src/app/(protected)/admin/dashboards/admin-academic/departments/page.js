@@ -1,18 +1,19 @@
-import AdminDashboardMain from "@/components/layout/main/dashboards/AdminDashboardMain";
 import DashboardContainer from "@/components/shared/containers/DashboardContainer";
 import ThemeController from "@/components/shared/others/ThemeController";
 import DsahboardWrapper from "@/components/shared/wrappers/DsahboardWrapper";
+import DepartmentsMain from "@/components/layout/main/dashboards/academic/DepartmentsMain";
 
 export const metadata = {
-  title: "Admin Dashboard | Edurock - Education LMS Template",
-  description: "Admin Dashboard | Edurock - Education LMS Template",
+  title: "Departments | Admin Dashboard",
+  description: "Manage university departments",
 };
-const Admin_Dashboard = () => {
+
+const DepartmentsPage = () => {
   return (
     <main>
       <DsahboardWrapper>
         <DashboardContainer>
-          <AdminDashboardMain />
+          <DepartmentsMain />
         </DashboardContainer>
       </DsahboardWrapper>
       <ThemeController />
@@ -20,4 +21,4 @@ const Admin_Dashboard = () => {
   );
 };
 
-export default Admin_Dashboard;
+export default DepartmentsPage;

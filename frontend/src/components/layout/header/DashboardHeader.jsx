@@ -5,6 +5,13 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+const fallbackUser = {
+  username: "User",
+  userType: "user",
+  primaryRole: "No role",
+  initials: "U",
+};
+
 export default function DashboardHeader() {
   const [isScrolled, setIsScrolled] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
@@ -33,13 +40,6 @@ export default function DashboardHeader() {
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
-
-  const fallbackUser = {
-    username: "User",
-    userType: "user",
-    primaryRole: "No role",
-    initials: "U",
-  };
 
   const apiUser = meData?.data?.user;
 
@@ -103,6 +103,7 @@ export default function DashboardHeader() {
                   onClick={() => setIsOpen(!isOpen)}
                   className="flex items-center gap-3 focus:outline-none"
                   aria-label="Profile menu"
+                  type="button"
                 >
                   <div className="h-10 w-10 rounded-full bg-gradient-to-r from-primaryColor to-secondaryColor flex items-center justify-center text-white font-semibold text-sm shadow-md hover:shadow-lg transition-shadow">
                     {isMeLoading ? (
@@ -142,9 +143,6 @@ export default function DashboardHeader() {
                           <p className="text-sm font-semibold text-blackColor dark:text-whiteColor">
                             {safeUser.username}
                           </p>
-                          {/* <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-                            {safeUser.userType}
-                          </p> */}
                           <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                             {safeUser.primaryRole}
                           </p>
@@ -207,6 +205,7 @@ export default function DashboardHeader() {
                         onClick={handleLogout}
                         disabled={logoutMutation.isPending}
                         className="flex items-center gap-3 px-3 py-2.5 text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors w-full text-left disabled:opacity-60 disabled:cursor-not-allowed"
+                        type="button"
                       >
                         <svg
                           className="w-4 h-4"

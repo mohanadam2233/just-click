@@ -30,9 +30,15 @@ const ItemDashboard = ({ item }) => {
         } hover:text-primaryColor transition-all`}
         onClick={toggleDropdown}
       >
-        <Link href={path} className="flex gap-3 text-nowrap items-center grow">
-          {icon} {name}
-        </Link>
+        {hasSubItems ? (
+          <div className="flex gap-3 text-nowrap items-center grow">
+            {icon} {name}
+          </div>
+        ) : (
+          <Link href={path} className="flex gap-3 text-nowrap items-center grow">
+            {icon} {name}
+          </Link>
+        )}
 
         {/* Render Tag OR Chevron for dropdown */}
         {tag && (
