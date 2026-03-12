@@ -143,7 +143,7 @@ def list_faculties(company_id: int):
         return _handle_error(e)
 
 
-@bp.get("/faculties/<int:faculty_id>")
+@bp.get("/faculties/<int:faculty_id>/get")
 @require_company_and_permission(doctype="Faculty", action="READ")
 def get_faculty_detail(company_id: int, faculty_id: int):
     try:
@@ -151,8 +151,7 @@ def get_faculty_detail(company_id: int, faculty_id: int):
             company_id=company_id,
             faculty_id=faculty_id,
         )
-        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
-
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=404)
     except Exception as e:
         return _handle_error(e)
 
@@ -185,16 +184,6 @@ def bulk_delete_faculties(company_id: int):
         payload = BulkDeleteIn.model_validate(request.get_json(silent=True) or {})
         ok, msg, out = svc.bulk_delete_faculties(company_id=company_id, ids=payload.ids, soft=True)
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
-    except Exception as e:
-        return api_error(str(e), status_code=400)
-
-
-@bp.get("/faculties/<int:faculty_id>/get")
-@require_company_and_permission(doctype="Faculty", action="READ")
-def get_faculty(company_id: int, faculty_id: int):
-    try:
-        rec = svc.get_faculty(company_id=company_id, faculty_id=faculty_id)
-        return api_success(message="OK", data=rec, status_code=200) if rec else api_error("Faculty not found.", status_code=404)
     except Exception as e:
         return api_error(str(e), status_code=400)
 
@@ -293,8 +282,7 @@ def list_departments(company_id: int):
     except Exception as e:
         return _handle_error(e)
 
-
-@bp.get("/departments/<int:department_id>")
+@bp.get("/departments/<int:department_id>/get")
 @require_company_and_permission(doctype="Department", action="READ")
 def get_department_detail(company_id: int, department_id: int):
     try:
@@ -302,19 +290,10 @@ def get_department_detail(company_id: int, department_id: int):
             company_id=company_id,
             department_id=department_id,
         )
-        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
-
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=404)
     except Exception as e:
         return _handle_error(e)
 
-@bp.get("/departments/<int:department_id>/get")
-@require_company_and_permission(doctype="Department", action="READ")
-def get_department(company_id: int, department_id: int):
-    try:
-        rec = svc.get_department(company_id=company_id, department_id=department_id)
-        return api_success(message="OK", data=rec, status_code=200) if rec else api_error("Department not found.", status_code=404)
-    except Exception as e:
-        return api_error(str(e), status_code=400)
 
 
 # =========================================================
@@ -330,7 +309,7 @@ def create_year(company_id: int):
     except Exception as e:
         return api_error(str(e), status_code=400)
 
-@bp.get("/academic-years/<int:academic_year_id>")
+@bp.get("/academic-years/<int:academic_year_id>/get")
 @require_company_and_permission(doctype="AcademicYear", action="READ")
 def get_academic_year_detail(company_id: int, academic_year_id: int):
     try:
@@ -426,14 +405,6 @@ def list_academic_years(company_id: int):
         return _handle_error(e)
 
 
-@bp.get("/years/<int:year_id>/get")
-@require_company_and_permission(doctype="Academic Year", action="READ")
-def get_year(company_id: int, year_id: int):
-    try:
-        rec = svc.get_year(company_id=company_id, year_id=year_id)
-        return api_success(message="OK", data=rec, status_code=200) if rec else api_error("Academic year not found.", status_code=404)
-    except Exception as e:
-        return api_error(str(e), status_code=400)
 
 
 # =========================================================
@@ -450,7 +421,7 @@ def create_semester(company_id: int):
         return api_error(str(e), status_code=400)
 
 
-@bp.get("/semesters/<int:semester_id>")
+@bp.get("/semesters/<int:semester_id>/get")
 @require_company_and_permission(doctype="Semester", action="READ")
 def get_semester_detail(company_id: int, semester_id: int):
     try:
@@ -546,14 +517,6 @@ def bulk_delete_semesters(company_id: int):
     except Exception as e:
         return api_error(str(e), status_code=400)
 
-@bp.get("/semesters/<int:semester_id>/get")
-@require_company_and_permission(doctype="Academic Term", action="READ")
-def get_semester(company_id: int, semester_id: int):
-    try:
-        rec = svc.get_semester(company_id=company_id, semester_id=semester_id)
-        return api_success(message="OK", data=rec, status_code=200) if rec else api_error("Semester not found.", status_code=404)
-    except Exception as e:
-        return api_error(str(e), status_code=400)
 
 
 # =========================================================
@@ -601,7 +564,7 @@ def bulk_delete_courses(company_id: int):
     except Exception as e:
         return api_error(str(e), status_code=400)
 
-@bp.get("/courses/<int:course_id>")
+@bp.get("/courses/<int:course_id>/get")
 @require_company_and_permission(doctype="Course", action="READ")
 def get_course_detail(company_id: int, course_id: int):
     try:
@@ -666,14 +629,7 @@ def list_courses(company_id: int):
         return _handle_error(e)
 
 
-@bp.get("/courses/<int:course_id>/get")
-@require_company_and_permission(doctype="Course", action="READ")
-def get_course(company_id: int, course_id: int):
-    try:
-        rec = svc.get_course(company_id=company_id, course_id=course_id)
-        return api_success(message="OK", data=rec, status_code=200) if rec else api_error("Course not found.", status_code=404)
-    except Exception as e:
-        return api_error(str(e), status_code=400)
+
 
 
 # =========================================================
@@ -772,18 +728,10 @@ def list_chapters(company_id: int):
         return _handle_error(e)
 
 
+
+
+
 @bp.get("/chapters/<int:chapter_id>/get")
-@require_company_and_permission(doctype="Chapter", action="READ")
-def get_chapter(company_id: int, chapter_id: int):
-    try:
-        rec = svc.get_chapter(company_id=company_id, chapter_id=chapter_id)
-        return api_success(message="OK", data=rec, status_code=200) if rec else api_error("Chapter not found.", status_code=404)
-    except Exception as e:
-        return api_error(str(e), status_code=400)
-
-
-
-@bp.get("/chapters/<int:chapter_id>")
 @require_company_and_permission(doctype="Chapter", action="READ")
 def get_chapter_detail(company_id: int, chapter_id: int):
     try:

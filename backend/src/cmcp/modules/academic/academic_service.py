@@ -5,7 +5,7 @@ from typing import Any, Dict, Optional, Tuple, List, Set
 from flask import g
 from sqlalchemy import exists, select
 
-from cmcp.common.cache import cached_dropdown, cached_list
+from cmcp.common.cache import cached_dropdown, cached_list, cached_detail
 from cmcp.core.base_service import BaseService
 from cmcp.core.exceptions import NotFoundError
 from cmcp.modules.academic.academic_repo import AcademicRepo
@@ -414,40 +414,47 @@ class AcademicService:
 
         return True, "OK", out
 
+    def get_academic_year_detail(
+            self,
+            *,
+            company_id: int,
+            academic_year_id: int,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        def builder():
+            row = self.repo.get_academic_year_detail(
+                company_id=company_id,
+                academic_year_id=academic_year_id,
+            )
+            if not row:
+                return None
 
-    def get_year(self, *, company_id: int, year_id: int) -> Optional[Dict[str, Any]]:
-        return self.year_svc.get_one(company_id=company_id, id=year_id)
+            semesters_preview = self.repo.academic_year_semesters_preview(
+                company_id=company_id,
+                academic_year_id=academic_year_id,
+                limit=5,
+            )
 
+            return self.repo.shape_academic_year_detail_row(
+                row,
+                semesters_preview=semesters_preview,
+            )
 
+        data = cached_detail(
+            entity="academic_years:detail",
+            company_id=company_id,
+            record_id=academic_year_id,
+            ttl=30,
+            builder=builder,
+        )
+
+        if data is None:
+            return False, "Academic year not found.", {}
+
+        return True, "OK", {"data": data}
     # =========================================================
     # ACADEMIC YEAR: DETAIL
     # =========================================================
-    def get_academic_year_detail(
-        self,
-        *,
-        company_id: int,
-        academic_year_id: int,
-    ) -> Tuple[bool, str, Dict[str, Any]]:
-        row = self.repo.get_academic_year_detail(
-            company_id=company_id,
-            academic_year_id=academic_year_id,
-        )
 
-        if not row:
-            raise NotFoundError("Academic year not found")
-
-        semesters_preview = self.repo.academic_year_semesters_preview(
-            company_id=company_id,
-            academic_year_id=academic_year_id,
-            limit=5,
-        )
-
-        data = self.repo.shape_academic_year_detail_row(
-            row,
-            semesters_preview=semesters_preview,
-        )
-
-        return True, "OK", data
 
     # ----- Semester -----
     def create_semester(self, *, company_id: int, data: Dict[str, Any]):
@@ -594,27 +601,38 @@ class AcademicService:
             *,
             company_id: int,
             semester_id: int,
-    ):
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        def builder():
+            row = self.repo.get_semester_detail(
+                company_id=company_id,
+                semester_id=semester_id,
+            )
+            if not row:
+                return None
 
-        row = self.repo.get_semester_detail(
+            courses_preview = self.repo.semester_courses_preview(
+                company_id=company_id,
+                semester_id=semester_id,
+                limit=5,
+            )
+
+            return self.repo.shape_semester_detail_row(
+                row,
+                courses_preview=courses_preview,
+            )
+
+        data = cached_detail(
+            entity="semesters:detail",
             company_id=company_id,
-            semester_id=semester_id,
+            record_id=semester_id,
+            ttl=30,
+            builder=builder,
         )
 
-        if not row:
-            raise NotFoundError("Semester not found")
+        if data is None:
+            return False, "Semester not found.", {}
 
-        courses_preview = self.repo.semester_courses_preview(
-            company_id=company_id,
-            semester_id=semester_id,
-        )
-
-        data = self.repo.shape_semester_detail_row(
-            row,
-            courses_preview=courses_preview,
-        )
-
-        return True, "OK", data
+        return True, "OK", {"data": data}
 
     def update_semester(self, *, company_id: int, semester_id: int, data: Dict[str, Any]):
         obj = self.repo.semesters.get(semester_id, company_id=company_id)
@@ -786,31 +804,41 @@ class AcademicService:
     # COURSE: DETAIL
     # =========================================================
     def get_course_detail(
-        self,
-        *,
-        company_id: int,
-        course_id: int,
+            self,
+            *,
+            company_id: int,
+            course_id: int,
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        row = self.repo.get_course_detail(
+        def builder():
+            row = self.repo.get_course_detail(
+                company_id=company_id,
+                course_id=course_id,
+            )
+            if not row:
+                return None
+
+            chapters = self.repo.course_chapters(
+                company_id=company_id,
+                course_id=course_id,
+            )
+
+            return self.repo.shape_course_detail_row(
+                row,
+                chapters=chapters,
+            )
+
+        data = cached_detail(
+            entity="courses:detail",
             company_id=company_id,
-            course_id=course_id,
+            record_id=course_id,
+            ttl=30,
+            builder=builder,
         )
 
-        if not row:
-            raise NotFoundError("Course not found")
+        if data is None:
+            return False, "Course not found.", {}
 
-        chapters_preview = self.repo.course_chapters_preview(
-            company_id=company_id,
-            course_id=course_id,
-            limit=5,
-        )
-
-        data = self.repo.shape_course_detail_row(
-            row,
-            chapters_preview=chapters_preview,
-        )
-
-        return True, "OK", data
+        return True, "OK", {"data": data}
 
     # ----- Chapter -----
     def create_chapter(self, *, company_id: int, data: Dict[str, Any]):
@@ -1186,35 +1214,43 @@ class AcademicService:
 
         return True, "OK", out
 
-    # =========================================================
-    # FACULTY: DETAIL
-    # =========================================================
     def get_faculty_detail(
-        self,
-        *,
-        company_id: int,
-        faculty_id: int,
+            self,
+            *,
+            company_id: int,
+            faculty_id: int,
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        row = self.repo.get_faculty_detail(
+        def builder():
+            row = self.repo.get_faculty_detail(
+                company_id=company_id,
+                faculty_id=faculty_id,
+            )
+            if not row:
+                return None
+
+            departments_preview = self.repo.faculty_departments_preview(
+                company_id=company_id,
+                faculty_id=faculty_id,
+                limit=5,
+            )
+
+            return self.repo.shape_faculty_detail_row(
+                row,
+                departments_preview=departments_preview,
+            )
+
+        data = cached_detail(
+            entity="faculties:detail",
             company_id=company_id,
-            faculty_id=faculty_id,
+            record_id=faculty_id,
+            ttl=30,
+            builder=builder,
         )
 
-        if not row:
-            raise NotFoundError("Faculty not found")
+        if data is None:
+            return False, "Faculty not found.", {}
 
-        departments_preview = self.repo.faculty_departments_preview(
-            company_id=company_id,
-            faculty_id=faculty_id,
-            limit=5,
-        )
-
-        data = self.repo.shape_faculty_detail_row(
-            row,
-            departments_preview=departments_preview,
-        )
-        return True, "OK", data
-
+        return True, "OK", {"data": data}
 
     def list_departments_cursor(
             self,
@@ -1340,36 +1376,43 @@ class AcademicService:
 
         return True, "OK", out
 
-
-    # =========================================================
-    # DEPARTMENT: DETAIL
-    # =========================================================
     def get_department_detail(
-        self,
-        *,
-        company_id: int,
-        department_id: int,
+            self,
+            *,
+            company_id: int,
+            department_id: int,
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        row = self.repo.get_department_detail(
+        def builder():
+            row = self.repo.get_department_detail(
+                company_id=company_id,
+                department_id=department_id,
+            )
+            if not row:
+                return None
+
+            courses_preview = self.repo.department_courses_preview(
+                company_id=company_id,
+                department_id=department_id,
+                limit=5,
+            )
+
+            return self.repo.shape_department_detail_row(
+                row,
+                courses_preview=courses_preview,
+            )
+
+        data = cached_detail(
+            entity="departments:detail",
             company_id=company_id,
-            department_id=department_id,
+            record_id=department_id,
+            ttl=30,
+            builder=builder,
         )
 
-        if not row:
-            raise NotFoundError("Department not found")
+        if data is None:
+            return False, "Department not found.", {}
 
-        courses_preview = self.repo.department_courses_preview(
-            company_id=company_id,
-            department_id=department_id,
-            limit=5,
-        )
-
-        data = self.repo.shape_department_detail_row(
-            row,
-            courses_preview=courses_preview,
-        )
-
-        return True, "OK", data
+        return True, "OK", {"data": data}
 
 
 
@@ -1437,7 +1480,6 @@ class AcademicService:
         return True, "OK", out
 
 
-
     def list_courses_page(
         self,
         *,
@@ -1488,134 +1530,16 @@ class AcademicService:
             ttl=20,
             builder=builder,
         )
-
-        def list_chapters_cursor(
-                self,
-                *,
-                company_id: int,
-                limit: int,
-                cursor: Optional[str],
-                filters: Dict[str, Any],
-                is_enabled: Optional[bool],
-        ) -> Tuple[bool, str, Dict[str, Any]]:
-            limit = max(1, min(int(limit or 20), 100))
-
-            cur = _decode_cursor(cursor or "")
-            last_no = cur.get("last_no")
-            try:
-                last_no = int(last_no) if last_no is not None else None
-            except Exception:
-                last_no = None
-
-            params = {
-                "mode": "cursor",
-                "limit": limit,
-                "last_no": last_no,
-                "filters": filters,
-                "is_enabled": is_enabled,
-            }
-
-            def builder():
-                rows, total_count, has_more = self.repo.list_chapters_cursor(
-                    company_id=company_id,
-                    limit=limit,
-                    last_no=last_no,
-                    filters=filters,
-                    is_enabled=is_enabled,
-                )
-
-                data = [self.repo.shape_chapter_list_row(r) for r in rows]
-
-                next_cursor = None
-                if has_more and rows:
-                    next_cursor = _encode_cursor({"last_no": int(rows[-1].number)})
-
-                return {
-                    "data": data,
-                    "pagination": {
-                        "limit": limit,
-                        "next_cursor": next_cursor,
-                        "has_more": bool(has_more),
-                    },
-                    "meta": {"total_count": int(total_count)},
-                }
-
-            out = cached_list(
-                entity="chapters:list",
-                company_id=company_id,
-                params=params,
-                scope="default",
-                ttl=20,
-                builder=builder,
-            )
-
-            return True, "OK", out
-
-        def list_chapters_page(
-                self,
-                *,
-                company_id: int,
-                page: int,
-                per_page: int,
-                filters: Dict[str, Any],
-                is_enabled: Optional[bool],
-        ) -> Tuple[bool, str, Dict[str, Any]]:
-            allowed = {10, 20, 50, 500}
-            per_page = per_page if int(per_page or 20) in allowed else 20
-            page = max(int(page or 1), 1)
-
-            params = {
-                "mode": "page",
-                "page": page,
-                "per_page": per_page,
-                "filters": filters,
-                "is_enabled": is_enabled,
-            }
-
-            def builder():
-                rows, total_count, pages = self.repo.list_chapters_page(
-                    company_id=company_id,
-                    page=page,
-                    per_page=per_page,
-                    filters=filters,
-                    is_enabled=is_enabled,
-                )
-
-                data = [self.repo.shape_chapter_list_row(r) for r in rows]
-
-                return {
-                    "data": data,
-                    "pagination": {
-                        "page": page,
-                        "per_page": per_page,
-                        "pages": int(pages),
-                        "total_count": int(total_count),
-                    },
-                }
-
-            out = cached_list(
-                entity="chapters:list",
-                company_id=company_id,
-                params=params,
-                scope="default",
-                ttl=20,
-                builder=builder,
-            )
-
-            return True, "OK", out
-
         return True, "OK", out
 
-
-
     def list_chapters_cursor(
-        self,
-        *,
-        company_id: int,
-        limit: int,
-        cursor: Optional[str],
-        filters: Dict[str, Any],
-        is_enabled: Optional[bool],
+            self,
+            *,
+            company_id: int,
+            limit: int,
+            cursor: Optional[str],
+            filters: Dict[str, Any],
+            is_enabled: Optional[bool],
     ) -> Tuple[bool, str, Dict[str, Any]]:
         limit = max(1, min(int(limit or 20), 100))
 
@@ -1656,7 +1580,9 @@ class AcademicService:
                     "next_cursor": next_cursor,
                     "has_more": bool(has_more),
                 },
-                "meta": {"total_count": int(total_count)},
+                "meta": {
+                    "total_count": int(total_count),
+                },
             }
 
         out = cached_list(
@@ -1670,15 +1596,14 @@ class AcademicService:
 
         return True, "OK", out
 
-
     def list_chapters_page(
-        self,
-        *,
-        company_id: int,
-        page: int,
-        per_page: int,
-        filters: Dict[str, Any],
-        is_enabled: Optional[bool],
+            self,
+            *,
+            company_id: int,
+            page: int,
+            per_page: int,
+            filters: Dict[str, Any],
+            is_enabled: Optional[bool],
     ) -> Tuple[bool, str, Dict[str, Any]]:
         allowed = {10, 20, 50, 500}
         per_page = per_page if int(per_page or 20) in allowed else 20
@@ -1725,27 +1650,31 @@ class AcademicService:
         return True, "OK", out
 
 
-
-    # =========================================================
-    # CHAPTER: DETAIL
-    # =========================================================
     def get_chapter_detail(
         self,
         *,
         company_id: int,
         chapter_id: int,
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        row = self.repo.get_chapter_detail(
+        def builder():
+            row = self.repo.get_chapter_detail(
+                company_id=company_id,
+                chapter_id=chapter_id,
+            )
+            if not row:
+                return None
+            return self.repo.shape_chapter_detail_row(row)
+
+        data = cached_detail(
+            entity="chapters:detail",
             company_id=company_id,
-            chapter_id=chapter_id,
+            record_id=chapter_id,
+            ttl=30,
+            builder=builder,
         )
 
-        if not row:
-            raise NotFoundError("Chapter not found")
+        if data is None:
+            return False, "Chapter not found.", {}
 
-        data = self.repo.shape_chapter_detail_row(row)
-        return True, "OK", data
-
-
-
+        return True, "OK", {"data": data}
 
