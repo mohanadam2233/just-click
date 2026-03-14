@@ -2,8 +2,11 @@
 
 import AcademicTable from "@/components/shared/dashboards/AcademicTable";
 import { materialsData, materialsColumns } from "@/lib/mockAcademicData";
+import { useRouter } from "next/navigation";
 
 const MaterialsMain = () => {
+  const router = useRouter();
+
   return (
     <AcademicTable
       title="Materials"
@@ -11,7 +14,8 @@ const MaterialsMain = () => {
       columns={materialsColumns}
       data={materialsData}
       addNewLabel="Upload Material"
-      onAddNew={() => alert("Upload Material clicked")}
+      onAddNew={() => router.push("/admin/dashboards/admin-academic/materials/create")}
+      onRowClick={(row) => router.push(`/admin/dashboards/admin-academic/materials/${row.id}`)}
     />
   );
 };

@@ -84,6 +84,7 @@ const TypePill = ({ value }) => (
  *  - data: Array of objects
  *  - actions: Array<{ label, icon, onClick }> — the bulk actions (Print, Export, Delete, etc.)
  *  - sortOptions: Array<{ label, value }> - options for the "Last Updated On" style dropdown
+ *  - onRowClick: Function triggered when a row is clicked (passes row object)
  */
 const AcademicTable = ({
   title,
@@ -91,6 +92,7 @@ const AcademicTable = ({
   data = [],
   addNewLabel = "Add New",
   onAddNew,
+  onRowClick,
   actions = [
     { label: "Delete", action: "delete" },
     { label: "Print", action: "print" },
@@ -322,10 +324,11 @@ const AcademicTable = ({
                 return (
                   <tr 
                     key={rowId} 
-                    className={`border-b border-gray-100 dark:border-slate-800/70 group transition-colors hover:bg-gray-50 dark:hover:bg-slate-800/50 ${isSelected ? 'bg-blue-50/50 dark:bg-blue-500/10' : ''}`}
+                    onClick={() => onRowClick && onRowClick(row)}
+                    className={`border-b border-gray-100 dark:border-slate-800/70 group transition-colors hover:bg-gray-50 dark:hover:bg-slate-800/50 ${onRowClick ? "cursor-pointer" : ""} ${isSelected ? 'bg-blue-50/50 dark:bg-blue-500/10' : ''}`}
                   >
                     {/* Checkbox */}
-                    <td className="py-3.5 px-4 text-center">
+                    <td className="py-3.5 px-4 text-center" onClick={(e) => e.stopPropagation()}>
                       <input
                         type="checkbox"
                         checked={isSelected}
@@ -344,7 +347,7 @@ const AcademicTable = ({
                           ) : col.type === "typeBadge" ? (
                             <TypePill value={val} />
                           ) : (
-                            <span className={`${col.bold ? "font-semibold text-gray-900 dark:text-gray-100" : "text-gray-600 dark:text-gray-400"}`}>
+                            <span className={`${col.bold || col.linkRow ? "font-semibold text-gray-900 dark:text-gray-100" : "text-gray-600 dark:text-gray-400"} ${col.linkRow ? "hover:text-blue-600 dark:hover:text-blue-400 hover:underline cursor-pointer" : ""}`}>
                               {val || "—"}
                             </span>
                           )}

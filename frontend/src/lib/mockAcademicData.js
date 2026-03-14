@@ -446,7 +446,7 @@ export const materialsData = [
 
 export const materialsColumns = [
   { key: "id", label: "ID", width: "w-24" },
-  { key: "title", label: "Title", width: "flex-1", bold: true },
+  { key: "title", label: "Title", width: "flex-1", linkRow: true },
   { key: "course", label: "Course", width: "w-24", align: "center" },
   { key: "type", label: "Type", width: "w-24", type: "typeBadge" },
   { key: "uploadedBy", label: "Uploaded By", width: "w-44" },
