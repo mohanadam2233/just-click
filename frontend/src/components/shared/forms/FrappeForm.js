@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
 import ButtonPrimary from "../buttons/ButtonPrimary";
+import TagInput from "../inputs/agInput";
 import AsyncDropdown from "../inputs/AsyncDropdown";
-
+import CheckboxField from "../inputs/CheckboxField";
 /**
  * Reusable Frappe-style Form Component
  * @param {string} title - The title of the form document (e.g., "New Material")
@@ -44,19 +45,27 @@ const FrappeForm = ({
     return (
       <div key={field.name} className="flex flex-col sm:flex-row mb-4 flex-1">
         {/* Strict Label Width and Alignment (Matching Frappe Screenshot) */}
-        <div className="sm:w-32 lg:w-40 xl:w-48 flex-shrink-0 mb-1 sm:mb-0 sm:pr-4 flex sm:items-center sm:justify-start">
+        <div className="sm:w-28 lg:w-32 xl:w-36 flex-shrink-0 mb-1 sm:mb-0 sm:pr-3 flex sm:items-center sm:justify-start">
           <label className="text-[13px] text-gray-600 dark:text-gray-400 font-medium whitespace-nowrap">
-            {field.label} {field.required && <span className="text-red-500 ml-1">*</span>}
+            {field.label}{" "}
+            {field.required && <span className="text-red-500 ml-1">*</span>}
           </label>
         </div>
 
         {/* Input area takes the remaining width of its column */}
-        <div className="flex-1 max-w-[400px]">
+        <div className="flex-1 max-w-[460px]">
           {field.type === "text" || field.type === "number" ? (
             <input
               type={field.type}
               value={value || ""}
-              onChange={(e) => onChange(field.name, field.type === "number" ? Number(e.target.value) : e.target.value)}
+              onChange={(e) =>
+                onChange(
+                  field.name,
+                  field.type === "number"
+                    ? Number(e.target.value)
+                    : e.target.value,
+                )
+              }
               placeholder={field.placeholder || ""}
               className={inputClasses}
             />
@@ -73,9 +82,13 @@ const FrappeForm = ({
               onChange={(e) => onChange(field.name, e.target.value)}
               className={inputClasses}
             >
-              <option value="" disabled>Select...</option>
+              <option value="" disabled>
+                Select...
+              </option>
               {field.options?.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
               ))}
             </select>
           ) : field.type === "async-dropdown" ? (
@@ -87,19 +100,35 @@ const FrappeForm = ({
               hasMore={field.dropdownProps?.hasMore}
               onLoadMore={field.dropdownProps?.loadMore}
               onSearch={(query) => {
-                if (field.dropdownProps?.setSearch) field.dropdownProps.setSearch(query);
+                if (field.dropdownProps?.setSearch)
+                  field.dropdownProps.setSearch(query);
               }}
               placeholder={field.placeholder || "Select..."}
               inputClassName={inputClasses}
             />
+          ) : field.type === "tags" ? (
+            <TagInput
+              value={Array.isArray(value) ? value : []}
+              onChange={(val) => onChange(field.name, val)}
+              placeholder={field.placeholder || "Type and press Enter"}
+            />
           ) : field.type === "checkbox" ? (
-            <div className="flex items-center h-full py-1">
-              <input
-                type="checkbox"
+            <div className="flex items-start gap-2.5 pt-1">
+              <CheckboxField
                 checked={!!value}
-                onChange={(e) => onChange(field.name, e.target.checked)}
-                className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 cursor-pointer"
+                onChange={(checked) => onChange(field.name, checked)}
+                className="mt-0.5"
               />
+              <div className="min-w-0">
+                <p className="text-sm text-gray-700 dark:text-gray-300 leading-5">
+                  {field.checkboxLabel || field.label}
+                </p>
+                {field.checkboxDescription ? (
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5 leading-4">
+                    {field.checkboxDescription}
+                  </p>
+                ) : null}
+              </div>
             </div>
           ) : field.type === "file" ? (
             <div className="flex items-center gap-3">
@@ -109,18 +138,24 @@ const FrappeForm = ({
                   type="file"
                   className="hidden"
                   onChange={(e) => {
-                    const file = e.target.files[0];
+                    const file = e.target.files?.[0];
                     if (file) {
                       onChange(field.name, file);
-                      // Auto populate size if a sizeField maps to it
                       if (field.sizeField) {
-                        onChange(field.sizeField, (file.size / (1024 * 1024)).toFixed(2) + " MB");
+                        onChange(
+                          field.sizeField,
+                          Number((file.size / (1024 * 1024)).toFixed(2)),
+                        );
                       }
                     }
                   }}
                 />
               </label>
-              {value && <span className="text-xs text-gray-500 truncate">{value.name || value}</span>}
+              {value && (
+                <span className="text-xs text-gray-500 truncate">
+                  {value.name || value}
+                </span>
+              )}
             </div>
           ) : null}
 
@@ -133,14 +168,23 @@ const FrappeForm = ({
 
   return (
     <div className="flex flex-col w-full bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-sm shadow-sm min-h-[600px] font-sans">
-      
       {/* ─── Top Navbar (Frappe Form Header Style) ────────────────────────── */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between px-6 py-4 border-b border-gray-200 dark:border-slate-800 relative">
         <div className="flex items-center gap-3 mb-4 sm:mb-0">
           <div className="flex items-center">
             {showSidebarToggle && (
-              <svg className="w-5 h-5 mr-3 text-gray-500 dark:text-gray-400 cursor-pointer hover:text-gray-800 dark:hover:text-gray-200" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 6h16M4 12h16M4 18h16" />
+              <svg
+                className="w-5 h-5 mr-3 text-gray-500 dark:text-gray-400 cursor-pointer hover:text-gray-800 dark:hover:text-gray-200"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M4 6h16M4 12h16M4 18h16"
+                />
               </svg>
             )}
             <h1 className="text-xl font-semibold text-gray-800 dark:text-gray-100 tracking-tight flex items-center gap-3">
@@ -156,21 +200,29 @@ const FrappeForm = ({
         </div>
 
         <div className="flex items-center gap-2 relative">
-          
           {menuOptions && menuOptions.length > 0 && (
             <div className="relative">
-              <button 
+              <button
                 type="button"
                 onClick={() => setIsMenuOpen(!isMenuOpen)}
                 className="p-1.5 px-2 text-gray-500 dark:text-gray-400 bg-white dark:bg-slate-800 border border-gray-200 dark:border-slate-700 rounded hover:bg-gray-50 dark:hover:bg-slate-700 transition-colors"
                 title="Menu"
               >
-                <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M12 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-7 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm14 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" /></svg>
+                <svg
+                  className="w-5 h-5"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path d="M12 10c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm-7 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm14 0c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z" />
+                </svg>
               </button>
-              
+
               {isMenuOpen && (
                 <>
-                  <div className="fixed inset-0 z-10" onClick={() => setIsMenuOpen(false)}></div>
+                  <div
+                    className="fixed inset-0 z-10"
+                    onClick={() => setIsMenuOpen(false)}
+                  ></div>
                   <div className="absolute right-0 mt-1 w-48 bg-white dark:bg-slate-800 rounded shadow-lg border border-gray-100 dark:border-slate-700 z-20 py-1">
                     {menuOptions.map((opt, idx) => (
                       <button
@@ -189,7 +241,7 @@ const FrappeForm = ({
               )}
             </div>
           )}
-          
+
           <ButtonPrimary type="button" onClick={onSave} disabled={isSaving}>
             {isSaving ? "Saving..." : "Save"}
           </ButtonPrimary>
@@ -201,20 +253,28 @@ const FrappeForm = ({
         <div className="grid gap-x-6 gap-y-4 grid-cols-1 sm:grid-cols-12 w-full">
           {fields.map((field) => {
             // Determine Width Span
-            const layoutType = field.layout || 'third';
-            let colSpanClass = 'sm:col-span-4'; // default third
-            
-            if (layoutType === 'full' || layoutType === 'stacked') {
-              colSpanClass = 'sm:col-span-12';
-            } else if (layoutType === 'half') {
-              colSpanClass = 'sm:col-span-6';
+            const layoutType = field.layout || "third";
+            let colSpanClass = "sm:col-span-4"; // default third
+
+            if (layoutType === "full" || layoutType === "stacked") {
+              colSpanClass = "sm:col-span-12";
+            } else if (layoutType === "half") {
+              colSpanClass = "sm:col-span-6";
             }
 
             // Determine if hidden
-            const shouldHide = typeof field.condition === 'function' ? !field.condition(values) : false;
-            
+            const shouldHide =
+              typeof field.condition === "function"
+                ? !field.condition(values)
+                : false;
+
             if (shouldHide) {
-              return <div key={field.name} className={`${colSpanClass} hidden sm:block pointer-events-none opacity-0`} />; 
+              return (
+                <div
+                  key={field.name}
+                  className={`${colSpanClass} hidden sm:block pointer-events-none opacity-0`}
+                />
+              );
               // Returning invisible div maintains grid structure if items were perfectly aligned
             }
 
