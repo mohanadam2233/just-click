@@ -1,17 +1,27 @@
 "use client";
 
 import AcademicTable from "@/components/shared/dashboards/AcademicTable";
-import { departmentsData, departmentsColumns } from "@/lib/mockAcademicData";
+import {
+  departmentsColumns,
+  departmentsTableData,
+} from "@/lib/mockAcademicData";
+import { useRouter } from "next/navigation";
 
 const DepartmentsMain = () => {
+  const router = useRouter();
+
   return (
     <AcademicTable
       title="Departments"
-      subtitle="Manage all university departments"
       columns={departmentsColumns}
-      data={departmentsData}
+      data={departmentsTableData}
       addNewLabel="Add Department"
-      onAddNew={() => alert("Add Department clicked")}
+      onAddNew={() =>
+        router.push("/admin/dashboards/admin-academic/departments/create")
+      }
+      onRowClick={(row) =>
+        router.push(`/admin/dashboards/admin-academic/departments/${row.id}`)
+      }
     />
   );
 };

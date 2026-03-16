@@ -1,17 +1,24 @@
 "use client";
 
 import AcademicTable from "@/components/shared/dashboards/AcademicTable";
-import { facultiesData, facultiesColumns } from "@/lib/mockAcademicData";
+import { facultiesColumns, facultiesTableData } from "@/lib/mockAcademicData";
+import { useRouter } from "next/navigation";
 
 const FacultiesMain = () => {
+  const router = useRouter();
+
   return (
     <AcademicTable
       title="Faculties"
-      subtitle="Manage all university faculties"
       columns={facultiesColumns}
-      data={facultiesData}
+      data={facultiesTableData}
       addNewLabel="Add Faculty"
-      onAddNew={() => alert("Add Faculty clicked")}
+      onAddNew={() =>
+        router.push("/admin/dashboards/admin-academic/faculties/create")
+      }
+      onRowClick={(row) =>
+        router.push(`/admin/dashboards/admin-academic/faculties/${row.id}`)
+      }
     />
   );
 };

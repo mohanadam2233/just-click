@@ -1,22 +1,22 @@
-import DepartmentsMain from "@/components/layout/main/dashboards/academic/DepartmentsMain";
+import CreateFacultyMain from "@/components/layout/main/dashboards/academic/CreateFacultyMain";
 import DashboardContainer from "@/components/shared/containers/DashboardContainer";
 import ThemeController from "@/components/shared/others/ThemeController";
 import DsahboardWrapper from "@/components/shared/wrappers/DsahboardWrapper";
 
 export const metadata = {
-  title: "Departments | Admin Dashboard",
-  description: "Manage departments",
+  title: "Create Faculty | Admin Dashboard",
+  description: "Create faculty",
 };
 
-const DepartmentsPage = () => {
+const CreateFacultyPage = () => {
   return (
     <DsahboardWrapper>
       <ThemeController />
       <DashboardContainer>
-        <DepartmentsMain />
+        <CreateFacultyMain />
       </DashboardContainer>
     </DsahboardWrapper>
   );
 };
 
-export default DepartmentsPage;
+export default CreateFacultyPage;

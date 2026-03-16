@@ -1,27 +1,32 @@
 "use client";
 
 import AcademicTable from "@/components/shared/dashboards/AcademicTable";
-import { coursesData, coursesColumns, departmentsData } from "@/lib/mockAcademicData";
 import { useDropdown } from "@/hooks/dropdown/useDropdown";
+import {
+  coursesColumns,
+  coursesTableData,
+  departmentsData,
+} from "@/lib/mockAcademicData";
+import { useRouter } from "next/navigation";
 import { useMemo } from "react";
 
 const CoursesMain = () => {
-  // Setup dropdown for the "Department" column filter
+  const router = useRouter();
+
   const deptDD = useDropdown({
-    cacheKey: "departments-filter",
+    cacheKey: "courses-departments-filter",
     enabled: true,
     limit: 10,
-    mockOptions: departmentsData.map(d => ({
+    mockOptions: departmentsData.map((d) => ({
       label: d.name,
-      value: d.name, // using name as value since the table filter runs against row[col.key] (which is the department name string here)
-      meta: { code: d.id },
-    }))
+      value: d.name,
+      meta: { code: d.code },
+    })),
   });
 
-  // Inject the filterDropdown prop into the specific column
   const enrichedColumns = useMemo(() => {
-    return coursesColumns.map(col => {
-      if (col.key === "department") {
+    return coursesColumns.map((col) => {
+      if (col.key === "department_name") {
         return {
           ...col,
           filterDropdown: deptDD,
@@ -34,11 +39,15 @@ const CoursesMain = () => {
   return (
     <AcademicTable
       title="Courses"
-      subtitle="Manage all courses across departments"
       columns={enrichedColumns}
-      data={coursesData}
+      data={coursesTableData}
       addNewLabel="Add Course"
-      onAddNew={() => alert("Add Course clicked")}
+      onAddNew={() =>
+        router.push("/admin/dashboards/admin-academic/courses/create")
+      }
+      onRowClick={(row) =>
+        router.push(`/admin/dashboards/admin-academic/courses/${row.id}`)
+      }
     />
   );
 };

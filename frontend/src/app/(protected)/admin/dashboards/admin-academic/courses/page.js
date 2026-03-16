@@ -5,19 +5,17 @@ import DsahboardWrapper from "@/components/shared/wrappers/DsahboardWrapper";
 
 export const metadata = {
   title: "Courses | Admin Dashboard",
-  description: "Manage university courses",
+  description: "Manage courses",
 };
 
 const CoursesPage = () => {
   return (
-    <main>
-      <DsahboardWrapper>
-        <DashboardContainer>
-          <CoursesMain />
-        </DashboardContainer>
-      </DsahboardWrapper>
+    <DsahboardWrapper>
       <ThemeController />
-    </main>
+      <DashboardContainer>
+        <CoursesMain />
+      </DashboardContainer>
+    </DsahboardWrapper>
   );
 };
 
