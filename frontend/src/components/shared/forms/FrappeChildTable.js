@@ -474,9 +474,13 @@ const FrappeChildTable = ({
   allowAddRow = true,
   allowDeleteSelected = true,
   allowRowSelection = true,
+  showRowSelection = true,
+  showAddRowButton = true,
+  showDeleteSelectedButton = true,
   showMoreAction = true,
   useModal = true,
   autoOpenNewRowModal = false,
+  showFooter = true,
 }) => {
   const rows = useMemo(() => {
     return (value || []).map((row, index) => ({
@@ -489,6 +493,12 @@ const FrappeChildTable = ({
   const [selectedIds, setSelectedIds] = useState([]);
   const [editingIndex, setEditingIndex] = useState(null);
 
+  const hasSelectionColumn = showRowSelection;
+  const hasMoreColumn = showMoreAction && useModal;
+  const addRowDisabled = !editable || !allowAddRow;
+  const deleteDisabled =
+    !editable || !allowDeleteSelected || !selectedIds.length;
+
   const syncRows = (nextRows) => {
     const normalized = nextRows.map((row, index) => ({
       ...row,
@@ -500,7 +510,7 @@ const FrappeChildTable = ({
   };
 
   const handleAddRow = () => {
-    if (!editable || !allowAddRow) return;
+    if (addRowDisabled) return;
 
     const newRow = defaultCreateRow(columns, rows);
     const nextRows = [...rows, newRow];
@@ -512,7 +522,7 @@ const FrappeChildTable = ({
   };
 
   const handleDeleteSelected = () => {
-    if (!editable || !allowDeleteSelected) return;
+    if (deleteDisabled) return;
 
     const nextRows = rows.filter((row) => !selectedIds.includes(row.__id));
     setSelectedIds([]);
@@ -565,6 +575,12 @@ const FrappeChildTable = ({
     selectedIds.length > 0 &&
     selectedIds.length < rows.length;
 
+  const footerVisible =
+    showFooter && (showAddRowButton || showDeleteSelectedButton);
+
+  const colSpan =
+    columns.length + (hasSelectionColumn ? 1 : 0) + (hasMoreColumn ? 1 : 0);
+
   return (
     <div className="w-full font-sans">
       {label ? (
@@ -583,19 +599,21 @@ const FrappeChildTable = ({
           <table className="w-full min-w-[600px] text-[13px] border-collapse">
             <thead className="bg-white dark:bg-slate-900 border-b border-gray-200 dark:border-slate-700">
               <tr>
-                <th className="w-10 px-2 py-2 text-center border-r border-gray-200 dark:border-slate-700">
-                  {allowRowSelection ? (
+                {hasSelectionColumn ? (
+                  <th className="w-10 px-2 py-2 text-center border-r border-gray-200 dark:border-slate-700">
                     <input
                       type="checkbox"
-                      checked={isAllSelected}
+                      checked={Boolean(isAllSelected)}
+                      disabled={!allowRowSelection}
                       ref={(input) => {
-                        if (input) input.indeterminate = isIndeterminate;
+                        if (input)
+                          input.indeterminate = Boolean(isIndeterminate);
                       }}
                       onChange={(e) => handleSelectAll(e.target.checked)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-0 w-3.5 h-3.5 cursor-pointer"
+                      className="rounded border-gray-300 text-blue-600 focus:ring-0 w-3.5 h-3.5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                     />
-                  ) : null}
-                </th>
+                  </th>
+                ) : null}
 
                 {columns.map((col) => (
                   <th
@@ -609,9 +627,11 @@ const FrappeChildTable = ({
                   </th>
                 ))}
 
-                <th className="w-20 px-3 py-2 text-center">
-                  {showMoreAction ? <SettingsIcon /> : null}
-                </th>
+                {hasMoreColumn ? (
+                  <th className="w-20 px-3 py-2 text-center">
+                    <SettingsIcon />
+                  </th>
+                ) : null}
               </tr>
             </thead>
 
@@ -619,7 +639,7 @@ const FrappeChildTable = ({
               {rows.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={columns.length + 2}
+                    colSpan={colSpan}
                     className="px-4 py-8 text-center text-sm text-gray-500 dark:text-gray-400"
                   >
                     {emptyMessage}
@@ -631,18 +651,23 @@ const FrappeChildTable = ({
                     key={row.__id}
                     className="border-b border-gray-200 dark:border-slate-700 hover:bg-gray-50/50 group last:border-b-0"
                   >
-                    <td className="px-2 py-1.5 text-center border-r border-gray-200 dark:border-slate-700">
-                      {allowRowSelection ? (
+                    {hasSelectionColumn ? (
+                      <td className="px-2 py-1.5 text-center border-r border-gray-200 dark:border-slate-700">
                         <input
                           type="checkbox"
-                          checked={selectedIds.includes(row.__id)}
+                          checked={
+                            allowRowSelection
+                              ? selectedIds.includes(row.__id)
+                              : false
+                          }
+                          disabled={!allowRowSelection}
                           onChange={(e) =>
                             handleRowSelect(row.__id, e.target.checked)
                           }
-                          className="rounded border-gray-300 text-blue-600 focus:ring-0 w-3.5 h-3.5 cursor-pointer"
+                          className="rounded border-gray-300 text-blue-600 focus:ring-0 w-3.5 h-3.5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                         />
-                      ) : null}
-                    </td>
+                      </td>
+                    ) : null}
 
                     {columns.map((col) => (
                       <td
@@ -661,8 +686,8 @@ const FrappeChildTable = ({
                       </td>
                     ))}
 
-                    <td className="px-3 py-1.5 text-center">
-                      {showMoreAction && useModal ? (
+                    {hasMoreColumn ? (
+                      <td className="px-3 py-1.5 text-center">
                         <button
                           type="button"
                           onClick={() => setEditingIndex(rowIndex)}
@@ -671,8 +696,8 @@ const FrappeChildTable = ({
                           <EditIcon />
                           More
                         </button>
-                      ) : null}
-                    </td>
+                      </td>
+                    ) : null}
                   </tr>
                 ))
               )}
@@ -681,24 +706,26 @@ const FrappeChildTable = ({
         </div>
       </div>
 
-      {editable ? (
+      {footerVisible ? (
         <div className="flex items-center justify-between mt-3 px-0">
           <div className="flex items-center gap-2">
-            {allowAddRow ? (
+            {showAddRowButton ? (
               <button
                 type="button"
                 onClick={handleAddRow}
-                className="px-3 py-1.5 text-[13px] bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors"
+                disabled={addRowDisabled}
+                className="px-3 py-1.5 text-[13px] bg-gray-100 dark:bg-slate-800 text-gray-800 dark:text-gray-200 rounded-md hover:bg-gray-200 dark:hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {addRowLabel}
               </button>
             ) : null}
 
-            {allowDeleteSelected && selectedIds.length > 0 ? (
+            {showDeleteSelectedButton ? (
               <button
                 type="button"
                 onClick={handleDeleteSelected}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] bg-red-50 dark:bg-red-900/20 text-red-600 rounded-md hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors"
+                disabled={deleteDisabled}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-[13px] bg-red-50 dark:bg-red-900/20 text-red-600 rounded-md hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <TrashIcon />
                 Delete Selected
