@@ -1090,3 +1090,85 @@ export const materialsTableData = materialsData.map((item) => {
     file_size_display: item.file_size_mb ? `${item.file_size_mb} MB` : "—",
   };
 });
+export const studentOnboardingTableData = [
+  {
+    id: 1,
+    full_name: "Ahmed Ali",
+    email: "ahmed.ali@example.com",
+    status_label: "Pending Email",
+    email_verified: "No",
+    registered_at: "2026-03-14",
+  },
+  {
+    id: 2,
+    full_name: "Hodan Yusuf",
+    email: "hodan.yusuf@example.com",
+    status_label: "Pending Approval",
+    email_verified: "Yes",
+    registered_at: "2026-03-15",
+  },
+  {
+    id: 3,
+    full_name: "Abdullahi Omar",
+    email: "abdullahi.omar@example.com",
+    status_label: "Pending Email",
+    email_verified: "No",
+    registered_at: "2026-03-16",
+  },
+];
+
+export const studentOnboardingColumns = [
+  { key: "full_name", label: "Student", width: "flex-1", bold: true },
+  { key: "email", label: "Email", width: "w-64" },
+  { key: "status_label", label: "Status", width: "w-40" },
+  { key: "email_verified", label: "Verified", width: "w-24" },
+  { key: "registered_at", label: "Registered", width: "w-32" },
+];
+
+export const studentOnboardingDetailsData = [
+  {
+    id: 1,
+    full_name: "Ahmed Ali",
+    email: "ahmed.ali@example.com",
+    username: "",
+    status: "pending_email",
+    email_verified_at: "",
+    created_at: "2026-03-14 09:20 AM",
+    verification_email_status: "sent",
+    verification_email_tries: 1,
+    verification_email_last_error: "",
+    approval_email_status: "pending",
+    approval_email_tries: 0,
+    approval_email_last_error: "",
+  },
+  {
+    id: 2,
+    full_name: "Hodan Yusuf",
+    email: "hodan.yusuf@example.com",
+    username: "",
+    status: "pending_approval",
+    email_verified_at: "2026-03-15 02:40 PM",
+    created_at: "2026-03-15 10:10 AM",
+    verification_email_status: "sent",
+    verification_email_tries: 1,
+    verification_email_last_error: "",
+    approval_email_status: "pending",
+    approval_email_tries: 0,
+    approval_email_last_error: "",
+  },
+  {
+    id: 3,
+    full_name: "Abdullahi Omar",
+    email: "abdullahi.omar@example.com",
+    username: "",
+    status: "pending_email",
+    email_verified_at: "",
+    created_at: "2026-03-16 08:05 AM",
+    verification_email_status: "failed",
+    verification_email_tries: 2,
+    verification_email_last_error: "SMTP timeout",
+    approval_email_status: "pending",
+    approval_email_tries: 0,
+    approval_email_last_error: "",
+  },
+];

@@ -82,7 +82,7 @@ const SidebarDashboard = () => {
         },
         {
           name: "Students",
-          path: "/admin/dashboards/admin-reviews",
+          path: "/admin/dashboards/admin-students",
           icon: (
             <svg
               xmlns="http://www.w3.org/2000/svg"
@@ -101,7 +101,18 @@ const SidebarDashboard = () => {
               <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
             </svg>
           ),
+          subItems: [
+            {
+              name: "Students",
+              path: "/admin/dashboards/admin-students",
+            },
+            {
+              name: "Onboarding Queue",
+              path: "/admin/dashboards/admin-students/onboarding",
+            },
+          ],
         },
+
         {
           name: "Staff",
           path: "/admin/dashboards/admin-profile",
