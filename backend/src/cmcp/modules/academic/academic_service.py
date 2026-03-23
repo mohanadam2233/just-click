@@ -146,23 +146,49 @@ class AcademicService:
         obj = self.repo.faculties.get(faculty_id, company_id=company_id)
         if not obj:
             return False, ERR_FACULTY_NOT_FOUND, None
+
         linked = self.repo.faculties_with_departments([obj.id])
+
         if obj.id in linked:
-            return False, cannot_delete_linked("Faculty", "Departments"), None
-        return self.faculty_svc.delete(company_id=company_id, id=faculty_id, soft=soft)
+            self.faculty_svc.update(
+                company_id=company_id,
+                id=obj.id,
+                data={"is_enabled": False}
+            )
+            return True, "Faculty archived because it has linked departments.", {"id": obj.id}
+
+        return self.faculty_svc.delete(company_id=company_id, id=faculty_id, soft=False)
 
     def bulk_delete_faculties(self, *, company_id: int, ids: List[int], soft: bool = True):
         linked = self.repo.faculties_with_departments(ids)
-        return self._bulk_delete_with_link_guard(
-            company_id=company_id,
-            ids=ids,
-            model=Faculty,
-            base_svc=self.faculty_svc,
-            linked_ids=linked,
-            not_found_msg=ERR_FACULTY_NOT_FOUND,
-            linked_msg=cannot_delete_linked("Faculty", "Departments"),
-            soft=soft,
-        )
+
+        deleted = []
+        failed = []
+
+        for _id in ids:
+            obj = self.repo.faculties.get(_id, company_id=company_id)
+
+            if not obj:
+                failed.append({"id": _id, "error": ERR_FACULTY_NOT_FOUND})
+                continue
+
+            if _id in linked:
+                self.faculty_svc.update(
+                    company_id=company_id,
+                    id=_id,
+                    data={"is_enabled": False}
+                )
+                deleted.append(_id)
+            else:
+                self.faculty_svc.delete(
+                    company_id=company_id,
+                    id=_id,
+                    soft=False
+                )
+                deleted.append(_id)
+
+        return True, "Bulk delete processed.", {"deleted": deleted, "failed": failed}
+
     def get_faculty(self, *, company_id: int, faculty_id: int) -> Optional[Dict[str, Any]]:
         return self.faculty_svc.get_one(company_id=company_id, id=faculty_id)
 
@@ -222,23 +248,51 @@ class AcademicService:
         obj = self.repo.departments.get(department_id, company_id=company_id)
         if not obj:
             return False, ERR_DEPARTMENT_NOT_FOUND, None
+
         linked = self.repo.departments_with_courses([obj.id])
+
         if obj.id in linked:
-            return False, cannot_delete_linked("Department", "Courses"), None
-        return self.department_svc.delete(company_id=company_id, id=department_id, soft=soft)
+            # archive
+            self.department_svc.update(
+                company_id=company_id,
+                id=obj.id,
+                data={"is_enabled": False}
+            )
+            return True, "Department archived because it has linked courses.", {"id": obj.id}
+
+        # hard delete
+        return self.department_svc.delete(company_id=company_id, id=department_id, soft=False)
 
     def bulk_delete_departments(self, *, company_id: int, ids: List[int], soft: bool = True):
         linked = self.repo.departments_with_courses(ids)
-        return self._bulk_delete_with_link_guard(
-            company_id=company_id,
-            ids=ids,
-            model=Department,
-            base_svc=self.department_svc,
-            linked_ids=linked,
-            not_found_msg=ERR_DEPARTMENT_NOT_FOUND,
-            linked_msg=cannot_delete_linked("Department", "Courses"),
-            soft=soft,
-        )
+        deleted = []
+        failed = []
+
+        for _id in ids:
+            obj = self.repo.departments.get(_id, company_id=company_id)
+
+            if not obj:
+                failed.append({"id": _id, "error": ERR_DEPARTMENT_NOT_FOUND})
+                continue
+
+            if _id in linked:
+                # archive
+                self.department_svc.update(
+                    company_id=company_id,
+                    id=_id,
+                    data={"is_enabled": False}
+                )
+                deleted.append(_id)
+            else:
+                # hard delete
+                self.department_svc.delete(
+                    company_id=company_id,
+                    id=_id,
+                    soft=False
+                )
+                deleted.append(_id)
+
+        return True, "Bulk delete processed.", {"deleted": deleted, "failed": failed}
 
     def get_department(self, *, company_id: int, department_id: int) -> Optional[Dict[str, Any]]:
         rec = self.department_svc.get_one(company_id=company_id, id=department_id, eager_load=["faculty"])
@@ -671,24 +725,48 @@ class AcademicService:
         obj = self.repo.semesters.get(semester_id, company_id=company_id)
         if not obj:
             return False, ERR_SEMESTER_NOT_FOUND, None
+
         linked = self.repo.semesters_with_courses([obj.id])
+
         if obj.id in linked:
-            return False, cannot_delete_linked("Semester", "Courses"), None
-        return self.semester_svc.delete(company_id=company_id, id=semester_id, soft=soft)
+            self.semester_svc.update(
+                company_id=company_id,
+                id=obj.id,
+                data={"is_enabled": False}
+            )
+            return True, "Semester archived because it has linked courses.", {"id": obj.id}
+
+        return self.semester_svc.delete(company_id=company_id, id=semester_id, soft=False)
 
     def bulk_delete_semesters(self, *, company_id: int, ids: List[int], soft: bool = True):
         linked = self.repo.semesters_with_courses(ids)
-        return self._bulk_delete_with_link_guard(
-            company_id=company_id,
-            ids=ids,
-            model=Semester,
-            base_svc=self.semester_svc,
-            linked_ids=linked,
-            not_found_msg=ERR_SEMESTER_NOT_FOUND,
-            linked_msg=cannot_delete_linked("Semester", "Courses"),
-            soft=soft,
-        )
 
+        deleted = []
+        failed = []
+
+        for _id in ids:
+            obj = self.repo.semesters.get(_id, company_id=company_id)
+
+            if not obj:
+                failed.append({"id": _id, "error": ERR_SEMESTER_NOT_FOUND})
+                continue
+
+            if _id in linked:
+                self.semester_svc.update(
+                    company_id=company_id,
+                    id=_id,
+                    data={"is_enabled": False}
+                )
+                deleted.append(_id)
+            else:
+                self.semester_svc.delete(
+                    company_id=company_id,
+                    id=_id,
+                    soft=False
+                )
+                deleted.append(_id)
+
+        return True, "Bulk delete processed.", {"deleted": deleted, "failed": failed}
 
     def get_semester(self, *, company_id: int, semester_id: int) -> Optional[Dict[str, Any]]:
         rec = self.semester_svc.get_one(company_id=company_id, id=semester_id, eager_load=["academic_year"])
@@ -767,24 +845,48 @@ class AcademicService:
         obj = self.repo.courses.get(course_id, company_id=company_id)
         if not obj:
             return False, ERR_COURSE_NOT_FOUND, None
+
         linked = self.repo.courses_with_chapters([obj.id])
+
         if obj.id in linked:
-            return False, cannot_delete_linked("Course", "Chapters"), None
-        return self.course_svc.delete(company_id=company_id, id=course_id, soft=soft)
+            self.course_svc.update(
+                company_id=company_id,
+                id=obj.id,
+                data={"is_enabled": False}
+            )
+            return True, "Course archived because it has linked chapters.", {"id": obj.id}
+
+        return self.course_svc.delete(company_id=company_id, id=course_id, soft=False)
 
     def bulk_delete_courses(self, *, company_id: int, ids: List[int], soft: bool = True):
         linked = self.repo.courses_with_chapters(ids)
-        return self._bulk_delete_with_link_guard(
-            company_id=company_id,
-            ids=ids,
-            model=Course,
-            base_svc=self.course_svc,
-            linked_ids=linked,
-            not_found_msg=ERR_COURSE_NOT_FOUND,
-            linked_msg=cannot_delete_linked("Course", "Chapters"),
-            soft=soft,
-        )
 
+        deleted = []
+        failed = []
+
+        for _id in ids:
+            obj = self.repo.courses.get(_id, company_id=company_id)
+
+            if not obj:
+                failed.append({"id": _id, "error": ERR_COURSE_NOT_FOUND})
+                continue
+
+            if _id in linked:
+                self.course_svc.update(
+                    company_id=company_id,
+                    id=_id,
+                    data={"is_enabled": False}
+                )
+                deleted.append(_id)
+            else:
+                self.course_svc.delete(
+                    company_id=company_id,
+                    id=_id,
+                    soft=False
+                )
+                deleted.append(_id)
+
+        return True, "Bulk delete processed.", {"deleted": deleted, "failed": failed}
 
     def get_course(self, *, company_id: int, course_id: int) -> Optional[Dict[str, Any]]:
         rec = self.course_svc.get_one(company_id=company_id, id=course_id, eager_load=["department", "semester", "chapters"])

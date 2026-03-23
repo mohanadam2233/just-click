@@ -217,8 +217,16 @@ def update_department(company_id: int, department_id: int):
 @require_company_and_permission(doctype="Department", action="DELETE")
 def delete_department(company_id: int, department_id: int):
     try:
-        ok, msg, out = svc.delete_department(company_id=company_id, department_id=department_id, soft=True)
+        soft = request.args.get("soft", "true").lower() == "true"
+
+        ok, msg, out = svc.delete_department(
+            company_id=company_id,
+            department_id=department_id,
+            soft=soft
+        )
+
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
     except Exception as e:
         return api_error(str(e), status_code=400)
 
