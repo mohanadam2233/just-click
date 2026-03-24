@@ -837,7 +837,68 @@ def departments_dropdown(company_id: int):
 
 
 
+@bp.get("/courses/dropdown")
+@require_company_and_permission(doctype="Course", action="READ")
+def courses_dropdown(company_id: int):
+    try:
+        search, limit, offset, active_only, filters = dropdown_args(
+            parse_filters_func=_parse_filters,
+            parse_bool_func=_as_bool,
+        )
+
+        filters = dict(filters or {})
+
+        department_id = request.args.get("department_id", type=int)
+        semester_id = request.args.get("semester_id", type=int)
+        code = request.args.get("code", type=str)
+
+        if department_id is not None:
+            filters["department_id"] = department_id
+
+        if semester_id is not None:
+            filters["semester_id"] = semester_id
+
+        if code:
+            filters["code"] = code
+
+        data = svc.dropdown_courses(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            filters=filters,
+        )
+        return api_success(message="OK", data=data, status_code=200)
+    except Exception as e:
+        return api_error(str(e), status_code=400)
 
 
+@bp.get("/chapters/dropdown")
+@require_company_and_permission(doctype="Chapter", action="READ")
+def chapters_dropdown(company_id: int):
+    try:
+        search, limit, offset, active_only, filters = dropdown_args(
+            parse_filters_func=_parse_filters,
+            parse_bool_func=_as_bool,
+        )
 
+        filters = dict(filters or {})
+
+        course_id = request.args.get("course_id", type=int)
+
+        if course_id is not None:
+            filters["course_id"] = course_id
+
+        data = svc.dropdown_chapters(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            filters=filters,
+        )
+        return api_success(message="OK", data=data, status_code=200)
+    except Exception as e:
+        return api_error(str(e), status_code=400)
 

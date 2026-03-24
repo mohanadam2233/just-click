@@ -120,7 +120,7 @@ SessionBackend = Literal["cookie", "filesystem", "redis"]
 
 def _backend_root() -> Path:
     # backend/src/cmcp/config/settings.py -> backend/
-    return Path(__file__).resolve().parents[2]
+    return Path(__file__).resolve().parents[3]
 
 ENV_PATH = Path(os.getenv("CMCP_ENV_FILE", _backend_root() / ".env")).resolve()
 

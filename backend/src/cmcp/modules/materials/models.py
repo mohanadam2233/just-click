@@ -69,7 +69,17 @@ class Material(BaseModel, TenantMixin):
     # Global Analytics
     view_count: Mapped[int] = mapped_column(db.Integer, default=0)
     download_count: Mapped[int] = mapped_column(db.Integer, default=0)
+    course: Mapped["Course"] = db.relationship(
+        "Course",
+        back_populates="materials",
+        lazy="select",
+    )
 
+    chapter: Mapped[Optional["Chapter"]] = db.relationship(
+        "Chapter",
+        back_populates="materials",
+        lazy="select",
+    )
     interactions: Mapped[list["StudentMaterialInteraction"]] = db.relationship(
         "StudentMaterialInteraction",
         back_populates="material",

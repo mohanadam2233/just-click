@@ -1780,3 +1780,83 @@ class AcademicService:
 
         return True, "OK", {"data": data}
 
+    def dropdown_courses(
+        self,
+        *,
+        company_id: int,
+        search: str | None,
+        limit: int,
+        offset: int,
+        active_only: bool,
+        filters: dict | None,
+    ):
+        allowed_filters = {
+            "is_enabled": Course.is_enabled,
+            "department_id": Course.department_id,
+            "semester_id": Course.semester_id,
+            "code": Course.code,
+        }
+
+        sort_fields = {
+            "id": Course.id,
+            "title": Course.title,
+            "code": Course.code,
+            "created_at": getattr(Course, "created_at", Course.id),
+        }
+
+        return self.course_svc.dropdown(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            search_columns=[Course.title, Course.code],
+            filters=filters,
+            allowed_filters=allowed_filters,
+            sort_fields=sort_fields,
+            default_sort=[Course.title.asc()],
+            value_field="id",
+            label_fields=["code", "title"],
+            meta_fields=["code", "department_id", "semester_id", "is_enabled"],
+            strict_label=True,
+        )
+
+
+    def dropdown_chapters(
+        self,
+        *,
+        company_id: int,
+        search: str | None,
+        limit: int,
+        offset: int,
+        active_only: bool,
+        filters: dict | None,
+    ):
+        allowed_filters = {
+            "is_enabled": Chapter.is_enabled,
+            "course_id": Chapter.course_id,
+        }
+
+        sort_fields = {
+            "id": Chapter.id,
+            "number": Chapter.number,
+            "title": Chapter.title,
+            "created_at": getattr(Chapter, "created_at", Chapter.id),
+        }
+
+        return self.chapter_svc.dropdown(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            search_columns=[Chapter.title],
+            filters=filters,
+            allowed_filters=allowed_filters,
+            sort_fields=sort_fields,
+            default_sort=[Chapter.number.asc()],
+            value_field="id",
+            label_getter=lambda x: f"Chapter {x.number} - {x.title}" if x.title else f"Chapter {x.number}",
+            meta_fields=["number", "course_id", "is_enabled"],
+            strict_label=True,
+        )

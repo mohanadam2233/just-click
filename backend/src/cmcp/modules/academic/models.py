@@ -159,7 +159,12 @@ class Course(BaseModel, TenantMixin):
         lazy="select",
         order_by="Chapter.number.asc()",
     )
-
+    materials: Mapped[list["Material"]] = db.relationship(
+        "Material",
+        back_populates="course",
+        cascade="all, delete-orphan",
+        lazy="select",
+    )
     __table_args__ = (
         UniqueConstraint("company_id", "semester_id", "department_id", "title", name="uq_edu_course_scope_title"),
         UniqueConstraint("company_id", "code", name="uq_edu_courses_company_code"),
@@ -183,7 +188,11 @@ class Chapter(BaseModel, TenantMixin):
     is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=True, nullable=False, index=True)
 
     course: Mapped["Course"] = db.relationship("Course", back_populates="chapters", lazy="select")
-
+    materials: Mapped[list["Material"]] = db.relationship(
+        "Material",
+        back_populates="chapter",
+        lazy="select",
+    )
     __table_args__ = (
         UniqueConstraint("company_id", "course_id", "number", name="uq_edu_chapters_course_number"),
         CheckConstraint("number >= 1", name="ck_edu_chapters_number_min"),
