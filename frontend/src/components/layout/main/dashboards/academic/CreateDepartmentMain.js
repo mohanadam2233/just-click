@@ -2,7 +2,7 @@
 
 import FrappeForm from "@/components/shared/forms/FrappeForm";
 import useNotify from "@/hooks/useNotify";
-import { facultiesData } from "@/lib/mockAcademicData";
+import { useCreateDepartment, useFacultiesDropdown } from "@/features/academic/hooks";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { z } from "zod";
@@ -15,7 +15,11 @@ const departmentSchema = z.object({
 
 const CreateDepartmentMain = () => {
   const router = useRouter();
-  const notify = useNotify();
+  // Fetch dropdown data
+  const { data: facultiesRes, isLoading: isLoadingFaculties } = useFacultiesDropdown({ limit: 500 });
+  const facultiesOptions = Array.isArray(facultiesRes?.data) ? facultiesRes.data : (facultiesRes?.data?.data || []);const notify = useNotify();
+
+  const createMutation = useCreateDepartment();
 
   const [values, setValues] = useState({
     name: "",
@@ -24,7 +28,6 @@ const CreateDepartmentMain = () => {
   });
 
   const [errors, setErrors] = useState({});
-  const [isSaving, setIsSaving] = useState(false);
 
   const handleChange = (field, value) => {
     setValues((prev) => ({ ...prev, [field]: value }));
@@ -36,7 +39,6 @@ const CreateDepartmentMain = () => {
   const handleSave = (e) => {
     e.preventDefault();
     setErrors({});
-    setIsSaving(true);
 
     const result = departmentSchema.safeParse(values);
 
@@ -46,7 +48,6 @@ const CreateDepartmentMain = () => {
         fieldErrors[issue.path[0]] = issue.message;
       });
       setErrors(fieldErrors);
-      setIsSaving(false);
       notify.error("Please fix the highlighted fields");
       return;
     }
@@ -57,13 +58,15 @@ const CreateDepartmentMain = () => {
       faculty_id: Number(values.faculty_id),
     };
 
-    console.log("Create department payload:", payload);
-
-    setTimeout(() => {
-      setIsSaving(false);
-      notify.success("Document saved");
-      router.push("/admin/dashboards/admin-academic/departments");
-    }, 700);
+    createMutation.mutate(payload, {
+      onSuccess: () => {
+        notify.success("Department created successfully");
+        router.push("/admin/dashboards/admin-academic/departments");
+      },
+      onError: (err) => {
+        notify.error(err?.message || "Failed to create department");
+      }
+    });
   };
 
   const formFields = [
@@ -91,12 +94,8 @@ const CreateDepartmentMain = () => {
       layout: "half",
       placeholder: "Select faculty",
       dropdownProps: {
-        options: facultiesData.map((f) => ({
-          label: `${f.code} - ${f.name}`,
-          value: String(f.id),
-          meta: { code: f.code },
-        })),
-        isLoading: false,
+        options: facultiesOptions,
+        isLoading: isLoadingFaculties,
         hasMore: false,
         getSublabel: (opt) => (opt?.meta?.code ? `Code: ${opt.meta.code}` : ""),
       },
@@ -113,7 +112,7 @@ const CreateDepartmentMain = () => {
         errors={errors}
         onChange={handleChange}
         onSave={handleSave}
-        isSaving={isSaving}
+        isSaving={createMutation.isPending}
       />
     </div>
   );

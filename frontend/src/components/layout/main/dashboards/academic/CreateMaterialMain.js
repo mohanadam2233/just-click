@@ -1,15 +1,17 @@
 "use client";
 
 import FrappeForm from "@/components/shared/forms/FrappeForm";
-import { coursesData } from "@/lib/mockAcademicData";
+import useNotify from "@/hooks/useNotify";
+import { useCreateMaterial } from "@/features/materials/hooks";
+import { useCoursesDropdown, useChaptersDropdown } from "@/features/academic/hooks";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { z } from "zod";
 
 const materialSchema = z
   .object({
-    course_id: z.string().min(1, "Please select a Course"),
-    chapter_id: z.string().optional(),
+    course_id: z.coerce.string().min(1, "Please select a Course"),
+    chapter_id: z.coerce.string().optional(),
     title: z.string().min(1, "Title is required").max(200, "Title is too long"),
     material_type: z.string().min(1, "Material Type is required"),
     file: z.any().optional(),
@@ -54,15 +56,9 @@ const materialSchema = z
     }
   });
 
-const mockChapters = [
-  { id: 47, course_id: 16, title: "Introduction to Programming" },
-  { id: 48, course_id: 16, title: "Variables and Data Types" },
-  { id: 49, course_id: 16, title: "Control Flow" },
-  { id: 50, course_id: 17, title: "Database Basics" },
-];
-
 const CreateMaterialMain = () => {
   const router = useRouter();
+  const notify = useNotify();
 
   const [values, setValues] = useState({
     course_id: "",
@@ -80,21 +76,17 @@ const CreateMaterialMain = () => {
   });
 
   const [errors, setErrors] = useState({});
-  const [isSaving, setIsSaving] = useState(false);
 
-  const chapterOptions = useMemo(() => {
-    if (!values.course_id) return [];
+  const createMutation = useCreateMaterial();
 
-    return mockChapters
-      .filter(
-        (chapter) => String(chapter.course_id) === String(values.course_id),
-      )
-      .map((chapter) => ({
-        label: chapter.title,
-        value: String(chapter.id),
-      }));
-  }, [values.course_id]);
+  const { data: coursesRes, isLoading: isLoadingCourses } = useCoursesDropdown({ limit: 500 });
+  const coursesOptions = Array.isArray(coursesRes?.data) ? coursesRes.data : (coursesRes?.data?.data || []);
 
+  const { data: chaptersRes, isLoading: isLoadingChapters } = useChaptersDropdown(
+    { course_id: values.course_id, limit: 500 },
+    { enabled: !!values.course_id }
+  );
+  const chapterOptions = Array.isArray(chaptersRes?.data) ? chaptersRes.data : (chaptersRes?.data?.data || []);
   const handleChange = (field, value) => {
     setValues((prev) => {
       const next = { ...prev, [field]: value };
@@ -118,7 +110,6 @@ const CreateMaterialMain = () => {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    setIsSaving(true);
     setErrors({});
 
     const result = materialSchema.safeParse({
@@ -137,7 +128,7 @@ const CreateMaterialMain = () => {
         fieldErrors[issue.path[0]] = issue.message;
       });
       setErrors(fieldErrors);
-      setIsSaving(false);
+      notify.error("Please fix the highlighted fields");
       return;
     }
 
@@ -161,13 +152,19 @@ const CreateMaterialMain = () => {
       is_enabled: values.is_enabled,
     };
 
-    console.log("Material payload:", payload);
-
-    setTimeout(() => {
-      setIsSaving(false);
-      alert("Material saved successfully!");
-      router.push("/admin/dashboards/admin-academic/materials");
-    }, 1200);
+    createMutation.mutate(
+      { payload, file: values.file },
+      {
+        onSuccess: () => {
+          notify.success("Material saved successfully!");
+          router.push("/admin/dashboards/admin-academic/materials");
+        },
+        onError: (error) => {
+          const msg = error?.response?.data?.message || error?.message || "Failed to save material";
+          notify.error(String(msg));
+        }
+      }
+    );
   };
 
   const countField =
@@ -198,12 +195,8 @@ const CreateMaterialMain = () => {
       layout: "half",
       placeholder: "Select course",
       dropdownProps: {
-        options: coursesData.map((c) => ({
-          label: `${c.code} - ${c.name}`,
-          value: String(c.id),
-          meta: { code: c.code },
-        })),
-        isLoading: false,
+        options: coursesOptions,
+        isLoading: isLoadingCourses,
         hasMore: false,
         getSublabel: (opt) => (opt?.meta?.code ? `Code: ${opt.meta.code}` : ""),
       },
@@ -217,7 +210,7 @@ const CreateMaterialMain = () => {
       placeholder: values.course_id ? "Select chapter" : "Select course first",
       dropdownProps: {
         options: chapterOptions,
-        isLoading: false,
+        isLoading: isLoadingChapters,
         hasMore: false,
       },
     },
@@ -306,7 +299,7 @@ const CreateMaterialMain = () => {
         errors={errors}
         onChange={handleChange}
         onSave={handleSave}
-        isSaving={isSaving}
+        isSaving={createMutation.isPending}
       />
     </div>
   );

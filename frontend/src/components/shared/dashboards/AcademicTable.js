@@ -242,11 +242,13 @@ const AcademicTable = ({
               {actions.map((act, idx) => (
                 <button
                   key={idx}
-                  onClick={() =>
-                    alert(
-                      `Bulk action: ${act.label} on ${selectedIds.length} items`,
-                    )
-                  }
+                  onClick={() => {
+                    if (act.onClick) {
+                      act.onClick(selectedIds);
+                    } else {
+                      alert(`Bulk action: ${act.label} on ${selectedIds.length} items`);
+                    }
+                  }}
                   className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded hover:bg-gray-50"
                 >
                   {act.label}

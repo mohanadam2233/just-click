@@ -2,12 +2,13 @@
 
 import FrappeForm from "@/components/shared/forms/FrappeForm";
 import useNotify from "@/hooks/useNotify";
-import {
-  courseDetailsData,
-  departmentsData,
-  semestersData,
-} from "@/lib/mockAcademicData";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { 
+  useCourseDetail, 
+  useUpdateCourse, 
+  useDeleteCourse, 
+  useDepartmentsDropdown, 
+  useSemestersDropdown 
+} from "@/features/academic/hooks";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
@@ -39,8 +40,8 @@ const courseSchema = z.object({
 
 function normalizeCourseToForm(item) {
   return {
-    department_id: item?.department?.id ? String(item.department.id) : "",
-    semester_id: item?.semester?.id ? String(item.semester.id) : "",
+    department_id: item?.department?.id ? String(item.department.id) : (item?.department_id ? String(item.department_id) : ""),
+    semester_id: item?.semester?.id ? String(item.semester.id) : (item?.semester_id ? String(item.semester_id) : ""),
     title: item?.title || "",
     code: item?.code || "",
     description: item?.description || "",
@@ -57,51 +58,33 @@ function normalizeCourseToForm(item) {
 function getChangedFields(initialValues, currentValues) {
   const changed = {};
   TRACKED_FIELDS.forEach((key) => {
-    if (
-      JSON.stringify(initialValues[key]) !== JSON.stringify(currentValues[key])
-    ) {
+    if (JSON.stringify(initialValues[key]) !== JSON.stringify(currentValues[key])) {
       changed[key] = currentValues[key];
     }
   });
   return changed;
 }
 
-async function getCourseById(id) {
-  await new Promise((resolve) => setTimeout(resolve, 250));
-  const found = courseDetailsData.find(
-    (item) => String(item.id) === String(id),
-  );
-  if (!found) throw new Error("Course not found");
-  return found;
-}
-
-async function updateCourseById(id, payload) {
-  await new Promise((resolve) => setTimeout(resolve, 600));
-  return { id, ...payload };
-}
-
 const CourseDetailMain = ({ id }) => {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const notify = useNotify();
 
   const [values, setValues] = useState(null);
   const [initialValues, setInitialValues] = useState(null);
   const [errors, setErrors] = useState({});
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["course", id],
-    queryFn: () => getCourseById(id),
-    enabled: !!id,
-  });
+  const { data: response, isLoading, isError } = useCourseDetail(id);
+  const courseData = response?.data?.data || response?.data;
+
+
 
   useEffect(() => {
-    if (!data) return;
-    const normalized = normalizeCourseToForm(data);
+    if (!courseData) return;
+    const normalized = normalizeCourseToForm(courseData);
     setValues(normalized);
     setInitialValues(normalized);
     setErrors({});
-  }, [data]);
+  }, [courseData]);
 
   const changedFields = useMemo(() => {
     if (!values || !initialValues) return {};
@@ -110,52 +93,8 @@ const CourseDetailMain = ({ id }) => {
 
   const isDirty = Object.keys(changedFields).length > 0;
 
-  const semesterOptions = useMemo(() => {
-    return semestersData.map((s) => ({
-      label: `${s.name} (${s.academic_year_name})`,
-      value: String(s.id),
-      meta: { code: `No. ${s.number}` },
-    }));
-  }, []);
-
-  const updateMutation = useMutation({
-    mutationFn: async (payload) => updateCourseById(id, payload),
-    onSuccess: async (updated) => {
-      const merged = {
-        ...data,
-        ...updated,
-        department: updated.department_id
-          ? departmentsData.find(
-              (d) => String(d.id) === String(updated.department_id),
-            )
-          : data.department,
-        semester: updated.semester_id
-          ? semestersData.find(
-              (s) => String(s.id) === String(updated.semester_id),
-            )
-          : data.semester,
-        chapters: updated.chapters
-          ? updated.chapters.map((ch, index) => ({
-              id: ch.id || `temp-${index + 1}`,
-              number: index + 1,
-              title: ch.title,
-              is_enabled: ch.is_enabled,
-            }))
-          : data.chapters,
-      };
-
-      const normalized = normalizeCourseToForm(merged);
-      setValues(normalized);
-      setInitialValues(normalized);
-      setErrors({});
-      notify.success("Document saved");
-      await queryClient.invalidateQueries({ queryKey: ["course", id] });
-      await queryClient.invalidateQueries({ queryKey: ["courses"] });
-    },
-    onError: (error) => {
-      notify.error(error?.message || "Failed to save document");
-    },
-  });
+  const updateMutation = useUpdateCourse();
+  const deleteMutation = useDeleteCourse();
 
   const handleChange = (field, value) => {
     setValues((prev) => ({ ...prev, [field]: value }));
@@ -207,7 +146,13 @@ const CourseDetailMain = ({ id }) => {
         : {}),
     };
 
-    updateMutation.mutate(payload);
+    updateMutation.mutate(
+      { id, payload },
+      {
+        onSuccess: () => notify.success("Course updated successfully"),
+        onError: (err) => notify.error(err?.message || "Failed to update course")
+      }
+    );
   };
 
   const formFields = [
@@ -235,12 +180,8 @@ const CourseDetailMain = ({ id }) => {
       layout: "half",
       placeholder: "Select department",
       dropdownProps: {
-        options: departmentsData.map((d) => ({
-          label: d.name,
-          value: String(d.id),
-          meta: { code: d.code, description: d.faculty_name },
-        })),
-        isLoading: false,
+        options: departmentOptions,
+        isLoading: isLoadingDepts,
         hasMore: false,
         getSublabel: (opt) => (opt?.meta?.code ? `Code: ${opt.meta.code}` : ""),
       },
@@ -254,7 +195,7 @@ const CourseDetailMain = ({ id }) => {
       placeholder: "Select semester",
       dropdownProps: {
         options: semesterOptions,
-        isLoading: false,
+        isLoading: isLoadingSems,
         hasMore: false,
         getSublabel: (opt) => opt?.meta?.code || "",
       },
@@ -274,6 +215,11 @@ const CourseDetailMain = ({ id }) => {
       layout: "full",
       childTableProps: {
         editable: true,
+        allowAddRow: true,
+        allowDeleteSelected: true,
+        allowRowSelection: true,
+        showMoreAction: false,
+        useModal: false,
         addRowLabel: "Add Row",
         emptyMessage: "No chapters found.",
         titleField: "title",
@@ -293,6 +239,8 @@ const CourseDetailMain = ({ id }) => {
             required: true,
             placeholder: "e.g., Introduction",
             layout: "full",
+            editableInTable: true,
+            editableInModal: false,
           },
           {
             key: "is_enabled",
@@ -302,6 +250,8 @@ const CourseDetailMain = ({ id }) => {
             checkboxLabel: "Enabled",
             render: (val) => (val ? "Active" : "Inactive"),
             layout: "half",
+            editableInTable: true,
+            editableInModal: false,
           },
         ],
       },
@@ -313,14 +263,19 @@ const CourseDetailMain = ({ id }) => {
       label: "Delete",
       action: () => {
         if (confirm("Are you sure you want to delete this course?")) {
-          notify.success("Document deleted");
-          router.push("/admin/dashboards/admin-academic/courses");
+          deleteMutation.mutate(id, {
+            onSuccess: () => {
+              notify.success("Document deleted");
+              router.push("/admin/dashboards/admin-academic/courses");
+            },
+            onError: (err) => notify.error(err?.message || "Failed to delete course")
+          });
         }
       },
     },
   ];
 
-  const formTitle = data?.title ? `${id} - ${data.title}` : "Loading...";
+  const formTitle = courseData?.title ? `${id} - ${courseData.title}` : "Loading...";
   const formStatus = updateMutation.isPending
     ? "Saving..."
     : isDirty
@@ -328,17 +283,11 @@ const CourseDetailMain = ({ id }) => {
       : "Saved";
 
   if (isLoading || !values) {
-    return (
-      <div className="p-10 flex items-center justify-center">Loading...</div>
-    );
+    return <div className="p-10 flex items-center justify-center">Loading...</div>;
   }
 
   if (isError) {
-    return (
-      <div className="p-10 flex items-center justify-center text-red-500">
-        Failed to load course.
-      </div>
-    );
+    return <div className="p-10 flex items-center justify-center text-red-500">Failed to load course.</div>;
   }
 
   return (

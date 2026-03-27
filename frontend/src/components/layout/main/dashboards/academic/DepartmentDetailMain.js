@@ -2,12 +2,13 @@
 
 import FrappeForm from "@/components/shared/forms/FrappeForm";
 import useNotify from "@/hooks/useNotify";
-import {
-  departmentDetailsData,
-  facultiesData,
-  semestersData,
-} from "@/lib/mockAcademicData";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { 
+  useDepartmentDetail, 
+  useUpdateDepartment, 
+  useDeleteDepartment,
+  useFacultiesDropdown,
+  useSemestersDropdown
+} from "@/features/academic/hooks";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
@@ -33,14 +34,14 @@ function normalizeDepartmentToForm(item) {
   return {
     name: item?.name || "",
     code: item?.code || "",
-    faculty_id: item?.faculty?.id ? String(item.faculty.id) : "",
+    faculty_id: item?.faculty?.id ? String(item.faculty.id) : (item?.faculty_id ? String(item.faculty_id) : ""),
     courses_preview: (item?.courses_preview || []).map((course, index) => ({
       __id: `course-preview-${course.id || index}`,
       id: course.id || null,
       idx: index + 1,
-      title: course.title || "",
+      title: course.name || course.title || "", // API might return `name` instead of `title`
       code: course.code || "",
-      semester_label: course.semester_label || "",
+      semester_label: course.semester?.name || course.semester_label || "",
     })),
   };
 }
@@ -65,42 +66,26 @@ function getChangedFields(initialValues, currentValues) {
   return changed;
 }
 
-async function getDepartmentById(id) {
-  await new Promise((resolve) => setTimeout(resolve, 250));
-  const found = departmentDetailsData.find(
-    (item) => String(item.id) === String(id),
-  );
-  if (!found) throw new Error("Department not found");
-  return found;
-}
-
-async function updateDepartmentById(id, payload) {
-  await new Promise((resolve) => setTimeout(resolve, 600));
-  return { id, ...payload };
-}
-
 const DepartmentDetailMain = ({ id }) => {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const notify = useNotify();
 
   const [values, setValues] = useState(null);
   const [initialValues, setInitialValues] = useState(null);
   const [errors, setErrors] = useState({});
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["department", id],
-    queryFn: () => getDepartmentById(id),
-    enabled: !!id,
-  });
+  const { data: response, isLoading, isError } = useDepartmentDetail(id);
+  const departmentData = response?.data?.data || response?.data;
+
+
 
   useEffect(() => {
-    if (!data) return;
-    const normalized = normalizeDepartmentToForm(data);
+    if (!departmentData) return;
+    const normalized = normalizeDepartmentToForm(departmentData);
     setValues(normalized);
     setInitialValues(normalized);
     setErrors({});
-  }, [data]);
+  }, [departmentData]);
 
   const changedFields = useMemo(() => {
     if (!values || !initialValues) return {};
@@ -109,44 +94,8 @@ const DepartmentDetailMain = ({ id }) => {
 
   const isDirty = Object.keys(changedFields).length > 0;
 
-  const semesterOptions = useMemo(() => {
-    return semestersData.map((semester) => ({
-      label: `${semester.name} (${semester.academic_year_name})`,
-      value: `${semester.name} (${semester.academic_year_name})`,
-      meta: {
-        code: `No. ${semester.number}`,
-      },
-    }));
-  }, []);
-
-  const updateMutation = useMutation({
-    mutationFn: async (payload) => updateDepartmentById(id, payload),
-    onSuccess: async (updated) => {
-      const normalized = {
-        ...data,
-        ...updated,
-        faculty: updated.faculty_id
-          ? facultiesData.find(
-              (f) => String(f.id) === String(updated.faculty_id),
-            )
-          : data.faculty,
-        courses_preview: updated.courses_preview
-          ? updated.courses_preview
-          : data.courses_preview || [],
-      };
-
-      const formData = normalizeDepartmentToForm(normalized);
-      setValues(formData);
-      setInitialValues(formData);
-      setErrors({});
-      notify.success("Document saved");
-      await queryClient.invalidateQueries({ queryKey: ["department", id] });
-      await queryClient.invalidateQueries({ queryKey: ["departments"] });
-    },
-    onError: (error) => {
-      notify.error(error?.message || "Failed to save document");
-    },
-  });
+  const updateMutation = useUpdateDepartment();
+  const deleteMutation = useDeleteDepartment();
 
   const handleChange = (field, value) => {
     setValues((prev) => ({ ...prev, [field]: value }));
@@ -183,22 +132,15 @@ const DepartmentDetailMain = ({ id }) => {
       ...(changedFields.faculty_id
         ? { faculty_id: Number(changedFields.faculty_id) }
         : {}),
-      ...(changedFields.courses_preview
-        ? {
-            courses_preview: changedFields.courses_preview.map(
-              (course, index) => ({
-                id: course.id || null,
-                idx: index + 1,
-                title: course.title || "",
-                code: course.code || "",
-                semester_label: course.semester_label || "",
-              }),
-            ),
-          }
-        : {}),
     };
 
-    updateMutation.mutate(payload);
+    updateMutation.mutate(
+      { id, payload },
+      {
+        onSuccess: () => notify.success("Department updated successfully"),
+        onError: (err) => notify.error(err?.message || "Failed to save document")
+      }
+    );
   };
 
   const formFields = [
@@ -226,12 +168,8 @@ const DepartmentDetailMain = ({ id }) => {
       layout: "half",
       placeholder: "Select faculty",
       dropdownProps: {
-        options: facultiesData.map((f) => ({
-          label: `${f.code} - ${f.name}`,
-          value: String(f.id),
-          meta: { code: f.code },
-        })),
-        isLoading: false,
+        options: facultiesOptions,
+        isLoading: isLoadingFaculties,
         hasMore: false,
         getSublabel: (opt) => (opt?.meta?.code ? `Code: ${opt.meta.code}` : ""),
       },
@@ -242,17 +180,16 @@ const DepartmentDetailMain = ({ id }) => {
       type: "child-table",
       layout: "full",
       childTableProps: {
-        editable: true,
-        allowAddRow: true,
+        editable: false,
+        allowAddRow: false,
         allowDeleteSelected: false,
         allowRowSelection: false,
-        showRowSelection: true,
-        showAddRowButton: true,
+        showRowSelection: false,
+        showAddRowButton: false,
         showDeleteSelectedButton: false,
         showMoreAction: false,
         useModal: false,
-        showFooter: true,
-        addRowLabel: "Add Row",
+        showFooter: false,
         emptyMessage: "No courses found.",
         columns: [
           {
@@ -267,33 +204,21 @@ const DepartmentDetailMain = ({ id }) => {
             label: "Course Title",
             width: "min-w-[260px]",
             type: "text",
-            placeholder: "Enter course title",
-            editableInTable: (row) => !row?.id,
-            editableInModal: false,
+            readOnly: true,
           },
           {
             key: "code",
             label: "Code",
             width: "w-32",
             type: "text",
-            placeholder: "Enter code",
-            editableInTable: (row) => !row?.id,
-            editableInModal: false,
+            readOnly: true,
           },
           {
             key: "semester_label",
             label: "Semester",
             width: "min-w-[240px]",
-            type: "async-dropdown",
-            placeholder: "Select semester",
-            editableInTable: true,
-            editableInModal: false,
-            dropdownProps: {
-              options: semesterOptions,
-              isLoading: false,
-              hasMore: false,
-              getSublabel: (opt) => opt?.meta?.code || "",
-            },
+            type: "text",
+            readOnly: true,
           },
         ],
       },
@@ -305,14 +230,19 @@ const DepartmentDetailMain = ({ id }) => {
       label: "Delete",
       action: () => {
         if (confirm("Are you sure you want to delete this department?")) {
-          notify.success("Document deleted");
-          router.push("/admin/dashboards/admin-academic/departments");
+          deleteMutation.mutate(id, {
+            onSuccess: () => {
+              notify.success("Document deleted");
+              router.push("/admin/dashboards/admin-academic/departments");
+            },
+            onError: (err) => notify.error(err?.message || "Failed to delete department")
+          });
         }
       },
     },
   ];
 
-  const formTitle = data?.name ? `${id} - ${data.name}` : "Loading...";
+  const formTitle = departmentData?.name ? `${id} - ${departmentData.name}` : "Loading...";
   const formStatus = updateMutation.isPending
     ? "Saving..."
     : isDirty

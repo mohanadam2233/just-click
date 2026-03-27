@@ -2,12 +2,8 @@
 
 import FrappeForm from "@/components/shared/forms/FrappeForm";
 import useNotify from "@/hooks/useNotify";
-import {
-  chaptersData,
-  coursesData,
-  materialsData,
-} from "@/lib/mockAcademicData";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMaterialDetail, useUpdateMaterial, useDeleteMaterial } from "@/features/materials/hooks";
+import { useCoursesDropdown, useChaptersDropdown } from "@/features/academic/hooks";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
@@ -29,8 +25,8 @@ const TRACKED_FIELDS = [
 
 const materialSchema = z
   .object({
-    course_id: z.string().min(1, "Please select a Course"),
-    chapter_id: z.string().optional(),
+    course_id: z.coerce.string().min(1, "Please select a Course"),
+    chapter_id: z.coerce.string().optional(),
     title: z.string().min(1, "Title is required").max(200, "Title is too long"),
     material_type: z.string().min(1, "Material Type is required"),
     file: z.any().optional(),
@@ -77,8 +73,8 @@ const materialSchema = z
 
 function normalizeMaterialToForm(material) {
   return {
-    course_id: material?.course_id || "",
-    chapter_id: material?.chapter_id || "",
+    course_id: material?.course?.id ? String(material.course.id) : (material?.course_id ? String(material.course_id) : ""),
+    chapter_id: material?.chapter?.id ? String(material.chapter.id) : (material?.chapter_id ? String(material.chapter_id) : ""),
     title: material?.title || "",
     material_type: material?.material_type || "",
     file: material?.file_name || null,
@@ -135,8 +131,8 @@ function getChangedFields(initialValues, currentValues) {
 
 function buildMaterialPayload(values) {
   return {
-    course_id: values.course_id,
-    chapter_id: values.chapter_id || null,
+    course_id: Number(values.course_id),
+    chapter_id: values.chapter_id ? Number(values.chapter_id) : null,
     title: values.title,
     material_type: values.material_type,
     page_count:
@@ -162,65 +158,35 @@ function buildMaterialPayload(values) {
   };
 }
 
-// Mock fetch API
-async function getMaterialById(id) {
-  await new Promise((resolve) => setTimeout(resolve, 300));
-  const found = materialsData.find((m) => String(m.id) === String(id));
-  if (!found) {
-    throw new Error("Material not found");
-  }
-  return found;
-}
-
-// Mock update API
-async function updateMaterialById(id, payload) {
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  return {
-    id,
-    ...payload,
-    file_name:
-      typeof payload.file === "string"
-        ? payload.file
-        : payload.file?.name || null,
-  };
-}
-
 const MaterialDetailMain = ({ id }) => {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const notify = useNotify();
 
   const [values, setValues] = useState(null);
   const [initialValues, setInitialValues] = useState(null);
   const [errors, setErrors] = useState({});
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["material", id],
-    queryFn: () => getMaterialById(id),
-    enabled: !!id,
-  });
+  const { data: response, isLoading, isError } = useMaterialDetail(id);
+  const materialData = response?.data?.data || response?.data;
 
+  // Query Courses for the dropdown
+  const { data: coursesRes, isLoading: isLoadingCourses } = useCoursesDropdown({ limit: 500 });
+  const coursesOptions = Array.isArray(coursesRes?.data) ? coursesRes.data : (coursesRes?.data?.data || []);
+
+  // Fetch chapters for selected course
+  const { data: chaptersRes, isLoading: isLoadingChapters } = useChaptersDropdown(
+    { course_id: values?.course_id, limit: 500 },
+    { enabled: !!values?.course_id }
+  );
+  const chapterOptions = Array.isArray(chaptersRes?.data) ? chaptersRes.data : (chaptersRes?.data?.data || []);
   useEffect(() => {
-    if (!data) return;
+    if (!materialData) return;
 
-    const normalized = normalizeMaterialToForm(data);
+    const normalized = normalizeMaterialToForm(materialData);
     setValues(normalized);
     setInitialValues(normalized);
     setErrors({});
-  }, [data]);
-
-  const chapterOptions = useMemo(() => {
-    if (!values?.course_id) return [];
-
-    return chaptersData
-      .filter(
-        (chapter) => String(chapter.course_id) === String(values.course_id),
-      )
-      .map((chapter) => ({
-        label: chapter.title,
-        value: String(chapter.id),
-      }));
-  }, [values?.course_id]);
+  }, [materialData]);
 
   const changedFields = useMemo(() => {
     if (!values || !initialValues) return {};
@@ -229,38 +195,8 @@ const MaterialDetailMain = ({ id }) => {
 
   const isDirty = Object.keys(changedFields).length > 0;
 
-  const updateMutation = useMutation({
-    mutationFn: async (payload) => updateMaterialById(id, payload),
-
-    onSuccess: async (updated) => {
-      const normalized = normalizeMaterialToForm({
-        ...data,
-        ...updated,
-        file_name:
-          typeof values?.file === "string"
-            ? values.file
-            : values?.file?.name || data?.file_name || null,
-      });
-
-      setValues(normalized);
-      setInitialValues(normalized);
-      setErrors({});
-
-      notify.success("Document saved");
-
-      await queryClient.invalidateQueries({ queryKey: ["material", id] });
-      await queryClient.invalidateQueries({ queryKey: ["materials"] });
-    },
-
-    onError: (error) => {
-      const msg =
-        error?.response?.data?.message ||
-        error?.message ||
-        "Failed to save document";
-
-      notify.error(String(msg));
-    },
-  });
+  const updateMutation = useUpdateMaterial();
+  const deleteMutation = useDeleteMaterial();
 
   const handleChange = (field, value) => {
     setValues((prev) => {
@@ -320,50 +256,37 @@ const MaterialDetailMain = ({ id }) => {
     const fullPayload = buildMaterialPayload(values);
     const changedOnly = getChangedFields(initialValues, values);
 
-    const payload = {
-      ...changedOnly,
-      ...("course_id" in changedOnly
-        ? { course_id: fullPayload.course_id }
-        : {}),
-      ...("chapter_id" in changedOnly
-        ? { chapter_id: fullPayload.chapter_id }
-        : {}),
-      ...("title" in changedOnly ? { title: fullPayload.title } : {}),
-      ...("material_type" in changedOnly
-        ? {
-            material_type: fullPayload.material_type,
-            page_count: fullPayload.page_count,
-            slide_count: fullPayload.slide_count,
-          }
-        : {}),
-      ...("page_count" in changedOnly
-        ? { page_count: fullPayload.page_count }
-        : {}),
-      ...("slide_count" in changedOnly
-        ? { slide_count: fullPayload.slide_count }
-        : {}),
-      ...("file_size_mb" in changedOnly
-        ? { file_size_mb: fullPayload.file_size_mb }
-        : {}),
-      ...("learning_objectives" in changedOnly
-        ? { learning_objectives: fullPayload.learning_objectives }
-        : {}),
-      ...("description" in changedOnly
-        ? { description: fullPayload.description }
-        : {}),
-      ...("is_downloadable" in changedOnly
-        ? { is_downloadable: fullPayload.is_downloadable }
-        : {}),
-      ...("is_enabled" in changedOnly
-        ? { is_enabled: fullPayload.is_enabled }
-        : {}),
-    };
+    // Build the partial update payload
+    const payload = { ...changedOnly };
 
+    // Required fields logic: if they update the type or something dependent, just send the dependent fields alongside
+    if ("material_type" in changedOnly) {
+      payload.material_type = fullPayload.material_type;
+      payload.page_count = fullPayload.page_count;
+      payload.slide_count = fullPayload.slide_count;
+    }
+    
+    // Some fields need coercion
+    if ("course_id" in changedOnly) payload.course_id = fullPayload.course_id;
+    if ("chapter_id" in changedOnly) payload.chapter_id = fullPayload.chapter_id;
+    if ("file_size_mb" in changedOnly) payload.file_size_mb = fullPayload.file_size_mb;
+
+    let fileToUpload = undefined;
     if ("file" in changedOnly) {
-      payload.file = values.file;
+      fileToUpload = values.file;
+      delete payload.file;
     }
 
-    updateMutation.mutate(payload);
+    updateMutation.mutate(
+      { id, payload, file: fileToUpload },
+      {
+        onSuccess: () => notify.success("Material updated successfully"),
+        onError: (error) => {
+          const msg = error?.response?.data?.message || error?.message || "Failed to save material";
+          notify.error(String(msg));
+        }
+      }
+    );
   };
 
   const detailMenuOptions = [
@@ -375,8 +298,13 @@ const MaterialDetailMain = ({ id }) => {
       label: "Delete",
       action: () => {
         if (confirm("Are you sure you want to delete this material?")) {
-          notify.success("Document deleted");
-          router.push("/admin/dashboards/admin-academic/materials");
+          deleteMutation.mutate(id, {
+            onSuccess: () => {
+              notify.success("Document deleted");
+              router.push("/admin/dashboards/admin-academic/materials");
+            },
+            onError: (err) => notify.error(err?.message || "Failed to delete material")
+          });
         }
       },
     },
@@ -418,15 +346,8 @@ const MaterialDetailMain = ({ id }) => {
       layout: "half",
       placeholder: "Select course",
       dropdownProps: {
-        options: coursesData.map((c) => ({
-          label: `${c.code} - ${c.name}`,
-          value: String(c.id),
-          meta: {
-            code: c.code,
-            description: c.department,
-          },
-        })),
-        isLoading: false,
+        options: coursesOptions,
+        isLoading: isLoadingCourses,
         hasMore: false,
         getSublabel: (opt) => (opt?.meta?.code ? `Code: ${opt.meta.code}` : ""),
       },
@@ -440,7 +361,7 @@ const MaterialDetailMain = ({ id }) => {
       placeholder: values?.course_id ? "Select chapter" : "Select course first",
       dropdownProps: {
         options: chapterOptions,
-        isLoading: false,
+        isLoading: isLoadingChapters,
         hasMore: false,
       },
     },

@@ -2,7 +2,7 @@
 
 import FrappeForm from "@/components/shared/forms/FrappeForm";
 import useNotify from "@/hooks/useNotify";
-import { departmentsData, semestersData } from "@/lib/mockAcademicData";
+import { useCreateCourse, useDepartmentsDropdown, useSemestersDropdown } from "@/features/academic/hooks";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { z } from "zod";
@@ -27,6 +27,14 @@ const CreateCourseMain = () => {
   const router = useRouter();
   const notify = useNotify();
 
+  const createMutation = useCreateCourse();
+
+  // Dropdowns
+  const { data: deptsRes, isLoading: isLoadingDepts } = useDepartmentsDropdown({ limit: 500 });
+  const departmentOptions = Array.isArray(deptsRes?.data) ? deptsRes.data : (deptsRes?.data?.data || []);
+
+  const { data: semsRes, isLoading: isLoadingSems } = useSemestersDropdown({ limit: 500 });
+  const semesterOptions = Array.isArray(semsRes?.data) ? semsRes.data : (semsRes?.data?.data || []);
   const [values, setValues] = useState({
     department_id: "",
     semester_id: "",
@@ -37,35 +45,6 @@ const CreateCourseMain = () => {
   });
 
   const [errors, setErrors] = useState({});
-  const [isSaving, setIsSaving] = useState(false);
-
-  const semesterOptions = useMemo(() => {
-    return semestersData.map((s) => ({
-      label: `${s.name} (${s.academic_year_name})`,
-      value: String(s.id),
-      meta: { code: `No. ${s.number}` },
-    }));
-  }, []);
-
-  const chapterTitleOptions = useMemo(() => {
-    return [
-      {
-        label: "Introduction",
-        value: "Introduction",
-        meta: { code: "CH-01", description: "Course overview and basics" },
-      },
-      {
-        label: "Core Concepts",
-        value: "Core Concepts",
-        meta: { code: "CH-02", description: "Main theory and foundation" },
-      },
-      {
-        label: "Advanced Topics",
-        value: "Advanced Topics",
-        meta: { code: "CH-03", description: "Higher-level concepts" },
-      },
-    ];
-  }, []);
 
   const handleChange = (field, value) => {
     setValues((prev) => ({ ...prev, [field]: value }));
@@ -77,7 +56,6 @@ const CreateCourseMain = () => {
   const handleSave = (e) => {
     e.preventDefault();
     setErrors({});
-    setIsSaving(true);
 
     const result = courseSchema.safeParse(values);
 
@@ -88,7 +66,6 @@ const CreateCourseMain = () => {
         if (!fieldErrors[key]) fieldErrors[key] = issue.message;
       });
       setErrors(fieldErrors);
-      setIsSaving(false);
       notify.error("Please fix the highlighted fields");
       return;
     }
@@ -106,13 +83,15 @@ const CreateCourseMain = () => {
       })),
     };
 
-    console.log("Create course payload:", payload);
-
-    setTimeout(() => {
-      setIsSaving(false);
-      notify.success("Document saved");
-      router.push("/admin/dashboards/admin-academic/courses");
-    }, 700);
+    createMutation.mutate(payload, {
+      onSuccess: () => {
+        notify.success("Course created successfully");
+        router.push("/admin/dashboards/admin-academic/courses");
+      },
+      onError: (err) => {
+        notify.error(err?.message || "Failed to create course");
+      }
+    });
   };
 
   const formFields = [
@@ -140,12 +119,8 @@ const CreateCourseMain = () => {
       layout: "half",
       placeholder: "Select department",
       dropdownProps: {
-        options: departmentsData.map((d) => ({
-          label: d.name,
-          value: String(d.id),
-          meta: { code: d.code, description: d.faculty_name },
-        })),
-        isLoading: false,
+        options: departmentOptions,
+        isLoading: isLoadingDepts,
         hasMore: false,
         getSublabel: (opt) => (opt?.meta?.code ? `Code: ${opt.meta.code}` : ""),
       },
@@ -159,7 +134,7 @@ const CreateCourseMain = () => {
       placeholder: "Select semester",
       dropdownProps: {
         options: semesterOptions,
-        isLoading: false,
+        isLoading: isLoadingSems,
         hasMore: false,
         getSublabel: (opt) => opt?.meta?.code || "",
       },
@@ -199,21 +174,12 @@ const CreateCourseMain = () => {
             key: "title",
             label: "Chapter Title",
             width: "min-w-[280px]",
-            type: "async-dropdown",
+            type: "text",
             required: true,
-            placeholder: "Select chapter title",
+            placeholder: "e.g., Introduction",
             layout: "full",
             editableInTable: true,
             editableInModal: false,
-            dropdownProps: {
-              options: chapterTitleOptions,
-              isLoading: false,
-              hasMore: false,
-              getSublabel: (opt) =>
-                opt?.meta?.code
-                  ? `${opt.meta.code} • ${opt.meta.description}`
-                  : "",
-            },
           },
           {
             key: "is_enabled",
@@ -240,7 +206,7 @@ const CreateCourseMain = () => {
         errors={errors}
         onChange={handleChange}
         onSave={handleSave}
-        isSaving={isSaving}
+        isSaving={createMutation.isPending}
       />
     </div>
   );

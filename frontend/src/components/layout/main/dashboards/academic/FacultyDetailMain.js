@@ -2,8 +2,7 @@
 
 import FrappeForm from "@/components/shared/forms/FrappeForm";
 import useNotify from "@/hooks/useNotify";
-import { facultyDetailsData } from "@/lib/mockAcademicData";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useFacultyDetail, useUpdateFaculty, useDeleteFaculty } from "@/features/academic/hooks";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
@@ -19,6 +18,7 @@ function normalizeFacultyToForm(faculty) {
   return {
     name: faculty?.name || "",
     code: faculty?.code || "",
+    departments_preview: faculty?.departments_preview || [],
   };
 }
 
@@ -32,42 +32,24 @@ function getChangedFields(initialValues, currentValues) {
   return changed;
 }
 
-async function getFacultyById(id) {
-  await new Promise((resolve) => setTimeout(resolve, 250));
-  const found = facultyDetailsData.find(
-    (item) => String(item.id) === String(id),
-  );
-  if (!found) throw new Error("Faculty not found");
-  return found;
-}
-
-async function updateFacultyById(id, payload) {
-  await new Promise((resolve) => setTimeout(resolve, 600));
-  return { id, ...payload };
-}
-
 const FacultyDetailMain = ({ id }) => {
   const router = useRouter();
-  const queryClient = useQueryClient();
   const notify = useNotify();
 
   const [values, setValues] = useState(null);
   const [initialValues, setInitialValues] = useState(null);
   const [errors, setErrors] = useState({});
 
-  const { data, isLoading, isError } = useQuery({
-    queryKey: ["faculty", id],
-    queryFn: () => getFacultyById(id),
-    enabled: !!id,
-  });
+  const { data: response, isLoading, isError } = useFacultyDetail(id);
+  const facultyData = response?.data?.data || response?.data;
 
   useEffect(() => {
-    if (!data) return;
-    const normalized = normalizeFacultyToForm(data);
+    if (!facultyData) return;
+    const normalized = normalizeFacultyToForm(facultyData);
     setValues(normalized);
     setInitialValues(normalized);
     setErrors({});
-  }, [data]);
+  }, [facultyData]);
 
   const changedFields = useMemo(() => {
     if (!values || !initialValues) return {};
@@ -76,21 +58,8 @@ const FacultyDetailMain = ({ id }) => {
 
   const isDirty = Object.keys(changedFields).length > 0;
 
-  const updateMutation = useMutation({
-    mutationFn: async (payload) => updateFacultyById(id, payload),
-    onSuccess: async (updated) => {
-      const normalized = normalizeFacultyToForm({ ...data, ...updated });
-      setValues(normalized);
-      setInitialValues(normalized);
-      setErrors({});
-      notify.success("Document saved");
-      await queryClient.invalidateQueries({ queryKey: ["faculty", id] });
-      await queryClient.invalidateQueries({ queryKey: ["faculties"] });
-    },
-    onError: (error) => {
-      notify.error(error?.message || "Failed to save document");
-    },
-  });
+  const updateMutation = useUpdateFaculty();
+  const deleteMutation = useDeleteFaculty();
 
   const handleChange = (field, value) => {
     setValues((prev) => ({ ...prev, [field]: value }));
@@ -121,7 +90,13 @@ const FacultyDetailMain = ({ id }) => {
       return;
     }
 
-    updateMutation.mutate(changedFields);
+    updateMutation.mutate(
+      { id, payload: changedFields },
+      {
+        onSuccess: () => notify.success("Faculty updated successfully"),
+        onError: (err) => notify.error(err?.message || "Failed to update faculty"),
+      }
+    );
   };
 
   const formFields = [
@@ -141,6 +116,64 @@ const FacultyDetailMain = ({ id }) => {
       layout: "half",
       placeholder: "e.g., FCS",
     },
+    {
+      name: "departments_preview",
+      label: "Departments Preview",
+      type: "child-table",
+      layout: "full",
+      childTableProps: {
+        editable: false,
+        allowAddRow: false,
+        allowDeleteSelected: false,
+        allowRowSelection: false,
+        showMoreAction: false,
+        useModal: false,
+        emptyMessage: "No departments found for this faculty.",
+        columns: [
+          {
+            key: "idx",
+            label: "No.",
+            width: "w-16",
+            render: (_, __, rowIndex) => rowIndex + 1,
+            readOnly: true,
+          },
+          {
+            key: "name",
+            label: "Department Name",
+            type: "text",
+            required: true,
+            readOnly: true,
+          },
+          {
+            key: "code",
+            label: "Code",
+            type: "text",
+            width: "w-32",
+            readOnly: true,
+          },
+          {
+            key: "is_enabled",
+            label: "Status",
+            type: "select",
+            width: "w-32",
+            options: [
+              { label: "Active", value: true },
+              { label: "Inactive", value: false },
+            ],
+            readOnly: true,
+            render: (val) => (
+              <span
+                className={`text-xs px-2 py-1 rounded ${
+                  val ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-600"
+                }`}
+              >
+                {val ? "Active" : "Inactive"}
+              </span>
+            ),
+          },
+        ],
+      },
+    },
   ];
 
   const menuOptions = [
@@ -148,14 +181,19 @@ const FacultyDetailMain = ({ id }) => {
       label: "Delete",
       action: () => {
         if (confirm("Are you sure you want to delete this faculty?")) {
-          notify.success("Document deleted");
-          router.push("/admin/dashboards/admin-academic/faculties");
+          deleteMutation.mutate(id, {
+            onSuccess: () => {
+              notify.success("Document deleted");
+              router.push("/admin/dashboards/admin-academic/faculties");
+            },
+            onError: (err) => notify.error(err?.message || "Failed to delete"),
+          });
         }
       },
     },
   ];
 
-  const formTitle = data?.name ? `${id} - ${data.name}` : "Loading...";
+  const formTitle = facultyData?.name ? `${id} - ${facultyData.name}` : "Loading...";
   const formStatus = updateMutation.isPending
     ? "Saving..."
     : isDirty
@@ -163,17 +201,11 @@ const FacultyDetailMain = ({ id }) => {
       : "Saved";
 
   if (isLoading || !values) {
-    return (
-      <div className="p-10 flex items-center justify-center">Loading...</div>
-    );
+    return <div className="p-10 flex items-center justify-center">Loading...</div>;
   }
 
   if (isError) {
-    return (
-      <div className="p-10 flex items-center justify-center text-red-500">
-        Failed to load faculty.
-      </div>
-    );
+    return <div className="p-10 flex items-center justify-center text-red-500">Failed to load faculty.</div>;
   }
 
   return (
@@ -189,43 +221,6 @@ const FacultyDetailMain = ({ id }) => {
         isSaving={updateMutation.isPending}
         menuOptions={menuOptions}
       />
-
-      <div className="bg-white dark:bg-slate-900 border border-gray-100 dark:border-slate-800 rounded-sm shadow-sm p-6">
-        <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4">
-          Departments Preview
-        </h3>
-
-        {data.departments_preview?.length ? (
-          <div className="space-y-3">
-            {data.departments_preview.map((dept) => (
-              <div
-                key={dept.id}
-                className="flex items-center justify-between rounded border border-gray-100 dark:border-slate-800 px-4 py-3"
-              >
-                <div>
-                  <p className="font-medium text-gray-800 dark:text-gray-100">
-                    {dept.name}
-                  </p>
-                  <p className="text-xs text-gray-500 dark:text-gray-400">
-                    Code: {dept.code}
-                  </p>
-                </div>
-                <span
-                  className={`text-xs px-2 py-1 rounded ${
-                    dept.is_enabled
-                      ? "bg-green-50 text-green-700"
-                      : "bg-gray-100 text-gray-600"
-                  }`}
-                >
-                  {dept.is_enabled ? "Active" : "Inactive"}
-                </span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="text-sm text-gray-500">No departments found.</p>
-        )}
-      </div>
     </div>
   );
 };

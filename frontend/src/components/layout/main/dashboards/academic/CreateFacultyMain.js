@@ -2,6 +2,7 @@
 
 import FrappeForm from "@/components/shared/forms/FrappeForm";
 import useNotify from "@/hooks/useNotify";
+import { useCreateFaculty } from "@/features/academic/hooks";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { z } from "zod";
@@ -14,6 +15,7 @@ const facultySchema = z.object({
 const CreateFacultyMain = () => {
   const router = useRouter();
   const notify = useNotify();
+  const createMutation = useCreateFaculty();
 
   const [values, setValues] = useState({
     name: "",
@@ -21,7 +23,6 @@ const CreateFacultyMain = () => {
   });
 
   const [errors, setErrors] = useState({});
-  const [isSaving, setIsSaving] = useState(false);
 
   const handleChange = (field, value) => {
     setValues((prev) => ({ ...prev, [field]: value }));
@@ -33,7 +34,6 @@ const CreateFacultyMain = () => {
   const handleSave = (e) => {
     e.preventDefault();
     setErrors({});
-    setIsSaving(true);
 
     const result = facultySchema.safeParse(values);
 
@@ -43,7 +43,6 @@ const CreateFacultyMain = () => {
         fieldErrors[issue.path[0]] = issue.message;
       });
       setErrors(fieldErrors);
-      setIsSaving(false);
       notify.error("Please fix the highlighted fields");
       return;
     }
@@ -53,13 +52,15 @@ const CreateFacultyMain = () => {
       code: values.code,
     };
 
-    console.log("Create faculty payload:", payload);
-
-    setTimeout(() => {
-      setIsSaving(false);
-      notify.success("Document saved");
-      router.push("/admin/dashboards/admin-academic/faculties");
-    }, 700);
+    createMutation.mutate(payload, {
+      onSuccess: () => {
+        notify.success("Faculty created successfully");
+        router.push("/admin/dashboards/admin-academic/faculties");
+      },
+      onError: (err) => {
+        notify.error(err?.message || "Failed to create faculty");
+      }
+    });
   };
 
   const formFields = [
@@ -91,7 +92,7 @@ const CreateFacultyMain = () => {
         errors={errors}
         onChange={handleChange}
         onSave={handleSave}
-        isSaving={isSaving}
+        isSaving={createMutation.isPending}
       />
     </div>
   );
