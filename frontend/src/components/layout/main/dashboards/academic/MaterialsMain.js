@@ -1,11 +1,15 @@
 "use client";
 
 import AcademicTable from "@/components/shared/dashboards/AcademicTable";
-import { useMaterialsList, useBulkDeleteMaterials } from "@/features/materials/hooks";
-import { useRouter } from "next/navigation";
+import {
+  useBulkDeleteMaterials,
+  useMaterialsList,
+} from "@/features/materials/hooks";
 import useNotify from "@/hooks/useNotify";
+import { useRouter } from "next/navigation";
+import { useCallback, useMemo } from "react";
 
-const materialsColumns = [
+const baseMaterialsColumns = [
   { key: "title", label: "Title", width: "flex-1", linkRow: true },
   { key: "course_code", label: "Course", width: "w-24", align: "center" },
   { key: "material_type", label: "Type", width: "w-24" },
@@ -13,31 +17,54 @@ const materialsColumns = [
   { key: "is_enabled_label", label: "Status", width: "w-24" },
 ];
 
+function extractListRows(res) {
+  return res?.data?.data?.data ?? res?.data?.data ?? res?.data ?? [];
+}
+
 const MaterialsMain = () => {
   const router = useRouter();
   const notify = useNotify();
 
-  const { data, isLoading, isError } = useMaterialsList({ mode: "scroll", limit: 500, is_enabled: 1 });
+  const { data, isLoading, isError } = useMaterialsList({
+    mode: "scroll",
+    limit: 500,
+    is_enabled: 1,
+  });
+
   const bulkDeleteMutation = useBulkDeleteMaterials();
 
-  const handleBulkDelete = (selectedIds) => {
-    if (confirm(`Are you sure you want to delete ${selectedIds.length} materials?`)) {
-      bulkDeleteMutation.mutate(
-        { ids: selectedIds },
-        {
-          onSuccess: () => notify.success("Materials deleted successfully"),
-          onError: (err) => notify.error(err?.message || "Failed to delete materials")
-        }
-      );
-    }
-  };
+  const handleBulkDelete = useCallback(
+    (selectedIds) => {
+      if (!selectedIds?.length) return;
 
-  const actions = [
-    { label: "Delete", action: "delete", onClick: handleBulkDelete }
-  ];
+      if (
+        confirm(
+          `Are you sure you want to delete ${selectedIds.length} materials?`
+        )
+      ) {
+        bulkDeleteMutation.mutate(
+          { ids: selectedIds },
+          {
+            onSuccess: () => {
+              notify.success("Materials deleted successfully");
+            },
+            onError: (err) => {
+              notify.error(err?.message || "Failed to delete materials");
+            },
+          }
+        );
+      }
+    },
+    [bulkDeleteMutation, notify]
+  );
+
+  const actions = useMemo(
+    () => [{ label: "Delete", action: "delete", onClick: handleBulkDelete }],
+    [handleBulkDelete]
+  );
 
   const enrichedColumns = useMemo(() => {
-    return materialsColumns.map((col) => {
+    return baseMaterialsColumns.map((col) => {
       if (col.key === "material_type") {
         return {
           ...col,
@@ -57,21 +84,45 @@ const MaterialsMain = () => {
     });
   }, []);
 
+  const rawData = useMemo(() => {
+    const rows = extractListRows(data);
+    return Array.isArray(rows) ? rows : [];
+  }, [data]);
+
+  const materialsData = useMemo(() => {
+    return rawData.map((item) => ({
+      ...item,
+      course_code: item?.course?.code || item?.course_code || "—",
+      file_size_display:
+        item?.file_size_mb !== null && item?.file_size_mb !== undefined
+          ? `${item.file_size_mb} MB`
+          : "—",
+      is_enabled_label: item?.is_enabled ? "Active" : "Inactive",
+    }));
+  }, [rawData]);
+
+  const handleAddNew = useCallback(() => {
+    router.push("/admin/dashboards/admin-academic/materials/create");
+  }, [router]);
+
+  const handleRowClick = useCallback(
+    (row) => {
+      router.push(`/admin/dashboards/admin-academic/materials/${row.id}`);
+    },
+    [router]
+  );
+
   if (isLoading) {
     return <div className="p-10 text-center">Loading materials...</div>;
   }
 
   if (isError) {
-    return <div className="p-10 text-center text-red-500">Failed to load materials.</div>;
+    return (
+      <div className="p-10 text-center text-red-500">
+        Failed to load materials.
+      </div>
+    );
   }
-
-  const rawData = data?.data?.data || data?.data || [];
-  const materialsData = rawData.map(item => ({
-    ...item,
-    course_code: item.course?.code || item.course_code || "—",
-    file_size_display: item.file_size_mb ? `${item.file_size_mb} MB` : "—",
-    is_enabled_label: item.is_enabled ? "Active" : "Inactive"
-  }));
 
   return (
     <AcademicTable
@@ -79,8 +130,8 @@ const MaterialsMain = () => {
       columns={enrichedColumns}
       data={materialsData}
       addNewLabel="Upload Material"
-      onAddNew={() => router.push("/admin/dashboards/admin-academic/materials/create")}
-      onRowClick={(row) => router.push(`/admin/dashboards/admin-academic/materials/${row.id}`)}
+      onAddNew={handleAddNew}
+      onRowClick={handleRowClick}
       actions={actions}
     />
   );

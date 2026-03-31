@@ -1,8 +1,8 @@
 "use client";
 
 import FrappeForm from "@/components/shared/forms/FrappeForm";
-import useNotify from "@/hooks/useNotify";
 import { useCreateDepartment, useFacultiesDropdown } from "@/features/academic/hooks";
+import useNotify from "@/hooks/useNotify";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { z } from "zod";

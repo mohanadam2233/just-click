@@ -4,12 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import AsyncDropdown from "../inputs/AsyncDropdown";
 
 const EditIcon = () => (
-  <svg
-    className="w-3.5 h-3.5"
-    fill="none"
-    stroke="currentColor"
-    viewBox="0 0 24 24"
-  >
+  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -20,12 +15,7 @@ const EditIcon = () => (
 );
 
 const CloseIcon = () => (
-  <svg
-    className="w-5 h-5"
-    fill="none"
-    stroke="currentColor"
-    viewBox="0 0 24 24"
-  >
+  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -36,12 +26,7 @@ const CloseIcon = () => (
 );
 
 const TrashIcon = () => (
-  <svg
-    className="w-3.5 h-3.5"
-    fill="none"
-    stroke="currentColor"
-    viewBox="0 0 24 24"
-  >
+  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -52,12 +37,7 @@ const TrashIcon = () => (
 );
 
 const SettingsIcon = () => (
-  <svg
-    className="w-4 h-4 mx-auto text-gray-400"
-    fill="none"
-    stroke="currentColor"
-    viewBox="0 0 24 24"
-  >
+  <svg className="w-4 h-4 mx-auto text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
     <path
       strokeLinecap="round"
       strokeLinejoin="round"
@@ -73,9 +53,16 @@ const SettingsIcon = () => (
   </svg>
 );
 
+function createStableId() {
+  if (typeof crypto !== "undefined" && crypto.randomUUID) {
+    return `row-${crypto.randomUUID()}`;
+  }
+  return `row-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
 const defaultCreateRow = (columns = [], currentRows = []) => {
   const row = {
-    __id: `row-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    __id: createStableId(),
   };
 
   columns.forEach((col) => {
@@ -205,11 +192,7 @@ const ModalFieldInput = ({ column, value, onChange, row }) => {
         isLoading={column.dropdownProps?.isLoading}
         hasMore={column.dropdownProps?.hasMore}
         onLoadMore={column.dropdownProps?.loadMore}
-        onSearch={(query) => {
-          if (column.dropdownProps?.setSearch) {
-            column.dropdownProps.setSearch(query, row);
-          }
-        }}
+        onSearch={(query) => column.dropdownProps?.setSearch?.(query, row)}
         placeholder={column.placeholder || "Select..."}
         inputClassName={inputClass}
         getSublabel={column.dropdownProps?.getSublabel}
@@ -225,7 +208,7 @@ const ModalFieldInput = ({ column, value, onChange, row }) => {
         onChange(
           column.type === "number"
             ? normalizeNumberValue(e.target.value)
-            : e.target.value,
+            : e.target.value
         )
       }
       className={inputClass}
@@ -318,11 +301,7 @@ const InlineCellInput = ({ column, value, onChange, row, rowIndex }) => {
         isLoading={column.dropdownProps?.isLoading}
         hasMore={column.dropdownProps?.hasMore}
         onLoadMore={column.dropdownProps?.loadMore}
-        onSearch={(query) => {
-          if (column.dropdownProps?.setSearch) {
-            column.dropdownProps.setSearch(query, row);
-          }
-        }}
+        onSearch={(query) => column.dropdownProps?.setSearch?.(query, row)}
         placeholder={column.placeholder || "Select..."}
         inputClassName={baseClass}
         getSublabel={column.dropdownProps?.getSublabel}
@@ -362,21 +341,18 @@ const ChildRowModal = ({
   if (!open || !row) return null;
 
   const editableColumns = columns.filter((col) =>
-    canEditInModal(col, row, rowIndex),
+    canEditInModal(col, row, rowIndex)
   );
 
   const updateDraft = (key, nextValue) => {
     setDraft((prev) => {
-      const next = {
-        ...prev,
-        [key]: nextValue,
-      };
+      const next = { ...prev, [key]: nextValue };
       draftRef.current = next;
       return next;
     });
   };
 
-  const handleCloseAndApply = () => {
+  const handleApply = () => {
     onApply(draftRef.current);
     onClose();
   };
@@ -384,7 +360,7 @@ const ChildRowModal = ({
   return (
     <div
       className="fixed inset-0 z-[120] bg-black/40 flex items-center justify-center p-4"
-      onClick={handleCloseAndApply}
+      onClick={handleApply}
     >
       <div
         className="w-full max-w-4xl rounded-xl bg-white dark:bg-slate-900 shadow-2xl border border-gray-200 dark:border-slate-800 overflow-hidden"
@@ -396,15 +372,13 @@ const ChildRowModal = ({
               Editing Row #{rowIndex + 1}
             </h3>
             {title ? (
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-                {title}
-              </p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{title}</p>
             ) : null}
           </div>
 
           <button
             type="button"
-            onClick={handleCloseAndApply}
+            onClick={handleApply}
             className="p-2 rounded-md text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-800"
           >
             <CloseIcon />
@@ -417,9 +391,7 @@ const ChildRowModal = ({
               <div key={col.key} className={getModalFieldSpan(col.layout)}>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   {col.label}
-                  {col.required ? (
-                    <span className="text-red-500 ml-1">*</span>
-                  ) : null}
+                  {col.required ? <span className="text-red-500 ml-1">*</span> : null}
                 </label>
 
                 <ModalFieldInput
@@ -440,7 +412,7 @@ const ChildRowModal = ({
         <div className="px-6 py-4 border-t border-gray-100 dark:border-slate-800 flex items-center justify-end gap-3">
           <button
             type="button"
-            onClick={handleCloseAndApply}
+            onClick={handleApply}
             className="px-4 py-2 rounded-md border border-gray-200 dark:border-slate-700 text-sm font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-800"
           >
             Close
@@ -448,7 +420,7 @@ const ChildRowModal = ({
 
           <button
             type="button"
-            onClick={handleCloseAndApply}
+            onClick={handleApply}
             className="px-4 py-2 rounded-md bg-blue-600 text-white text-sm font-medium hover:bg-blue-700"
           >
             Apply
@@ -484,26 +456,32 @@ const FrappeChildTable = ({
 }) => {
   const rows = useMemo(() => {
     return (value || []).map((row, index) => ({
-      __id:
-        row.__id || `row-${index}-${Math.random().toString(36).slice(2, 8)}`,
       ...row,
+      __id: row.__id || createStableId(),
+      idx: row.idx ?? index + 1,
     }));
   }, [value]);
 
   const [selectedIds, setSelectedIds] = useState([]);
   const [editingIndex, setEditingIndex] = useState(null);
 
+  useEffect(() => {
+    setSelectedIds((prev) => prev.filter((id) => rows.some((row) => row.__id === id)));
+
+    if (editingIndex !== null && !rows[editingIndex]) {
+      setEditingIndex(null);
+    }
+  }, [rows, editingIndex]);
+
   const hasSelectionColumn = showRowSelection;
   const hasMoreColumn = showMoreAction && useModal;
   const addRowDisabled = !editable || !allowAddRow;
-  const deleteDisabled =
-    !editable || !allowDeleteSelected || !selectedIds.length;
+  const deleteDisabled = !editable || !allowDeleteSelected || !selectedIds.length;
 
   const syncRows = (nextRows) => {
     const normalized = nextRows.map((row, index) => ({
       ...row,
-      __id:
-        row.__id || `row-${index}-${Math.random().toString(36).slice(2, 8)}`,
+      __id: row.__id || createStableId(),
       idx: index + 1,
     }));
     onChange?.(normalized);
@@ -541,7 +519,7 @@ const FrappeChildTable = ({
   const handleRowSelect = (rowId, checked) => {
     if (!allowRowSelection) return;
     setSelectedIds((prev) =>
-      checked ? [...prev, rowId] : prev.filter((id) => id !== rowId),
+      checked ? [...new Set([...prev, rowId])] : prev.filter((id) => id !== rowId)
     );
   };
 
@@ -606,8 +584,7 @@ const FrappeChildTable = ({
                       checked={Boolean(isAllSelected)}
                       disabled={!allowRowSelection}
                       ref={(input) => {
-                        if (input)
-                          input.indeterminate = Boolean(isIndeterminate);
+                        if (input) input.indeterminate = Boolean(isIndeterminate);
                       }}
                       onChange={(e) => handleSelectAll(e.target.checked)}
                       className="rounded border-gray-300 text-blue-600 focus:ring-0 w-3.5 h-3.5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
@@ -621,9 +598,7 @@ const FrappeChildTable = ({
                     className={`px-3 py-2 text-left font-normal text-gray-600 dark:text-gray-400 border-r border-gray-200 dark:border-slate-700 last:border-r-0 ${col.width || ""}`}
                   >
                     {col.label}
-                    {col.required ? (
-                      <span className="text-red-500 ml-0.5">*</span>
-                    ) : null}
+                    {col.required ? <span className="text-red-500 ml-0.5">*</span> : null}
                   </th>
                 ))}
 
@@ -656,14 +631,10 @@ const FrappeChildTable = ({
                         <input
                           type="checkbox"
                           checked={
-                            allowRowSelection
-                              ? selectedIds.includes(row.__id)
-                              : false
+                            allowRowSelection ? selectedIds.includes(row.__id) : false
                           }
                           disabled={!allowRowSelection}
-                          onChange={(e) =>
-                            handleRowSelect(row.__id, e.target.checked)
-                          }
+                          onChange={(e) => handleRowSelect(row.__id, e.target.checked)}
                           className="rounded border-gray-300 text-blue-600 focus:ring-0 w-3.5 h-3.5 cursor-pointer disabled:cursor-not-allowed disabled:opacity-50"
                         />
                       </td>
