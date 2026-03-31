@@ -1,93 +1,65 @@
-// "use client";
-// import FooterNavList from "./FooterNavList";
-// import CopyRight from "./CopyRight";
-// import FooterTop from "./FooterTop";
-// import { usePathname } from "next/navigation";
-
-// const Footer = () => {
-//   const pathname = usePathname();
-//   const isHome8 = pathname === "/home-8" || pathname === "/home-8-dark";
-//   const isHome9 = pathname === "/home-9" || pathname === "/home-9-dark";
-//   const isHome10 = pathname === "/home-10" || pathname === "/home-10-dark";
-//   return (
-//     <footer
-//       className={`${
-//         isHome9
-//           ? "2xl:bg-[url(../assets/images/footer/footer_bg.png)]"
-//           : isHome10
-//           ? "2xl:bg-[url(../assets/images/footer/footer_bg_ai.png)] "
-//           : ""
-//       } bg-darkblack 2xl:bg-cover`}
-//     >
-//       <div
-//         className={`${
-//           isHome8 ? "container-fluid-2" : "container"
-//         }   pt-65px pb-5 lg:pb-10  `}
-//       >
-//         {/* footer top or subscription */}
-//         {/* <FooterTop /> */}
-//         {/* footer main */}
-//         <FooterNavList />
-
-//         {/* footer copyright  */}
-//         <CopyRight />
-//       </div>
-//     </footer>
-//   );
-// };
-
-// export default Footer;
-// components/layout/footer/Footer.jsx
 "use client";
+
+import BalbImage from "@/components/shared/animaited-images/BalbImage";
+
+import GlobImage from "@/components/shared/animaited-images/GlobImage";
+import TriangleImage from "@/components/shared/animaited-images/TriangleImage";
 import Link from "next/link";
-import Image from "next/image";
-import logo from "@/assets/images/logo/logo_1.png"; // adjust path if needed
 
 const Footer = () => {
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer className="bg-gray-50 dark:bg-gray-900 border-t border-gray-200 dark:border-gray-800 py-8 md:py-10">
-      <div className="container mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col md:flex-row justify-between items-center gap-6">
-          {/* Logo */}
-          <Link href="/" className="transition-opacity hover:opacity-80">
-            <Image
-              src={logo}
-              alt="CMCP Logo"
-              width={140}
-              height={48}
-              className="h-auto w-auto"
-              priority={false}
-            />
-          </Link>
+    <footer className="relative overflow-hidden border-t border-black/5 bg-lightGrey10 dark:bg-lightGrey10-dark dark:border-white/10">
+      {/* animated shapes */}
+      <div className="pointer-events-none">
+        <GlobImage type={"secondary"} />
+        <BalbImage type={"secondary"} />
+        <TriangleImage type={"secondary"} />
+      </div>
 
-          {/* Copyright */}
-          <p className="text-sm text-gray-600 dark:text-gray-400 order-3 md:order-2">
-            &copy; {currentYear} CMCP. All rights reserved.
-          </p>
+      <div className="relative z-10 mx-auto w-full max-w-[1400px] px-6 sm:px-8 lg:px-12">
+        <div className="flex flex-col gap-10 py-14 md:flex-row md:items-center md:justify-between md:gap-14 md:py-16 lg:py-20">
+          {/* left */}
+          <div className="flex min-w-0 flex-1 items-center">
+            <Link
+              href="/materials"
+              className="inline-flex items-center rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primaryColor"
+            >
+              <span className="text-[30px] md:text-[34px] font-extrabold tracking-[-0.03em] text-blackColor2 dark:text-blackColor2-dark transition-opacity hover:opacity-80">
+                Just<span className="text-primaryColor">Click</span>
+              </span>
+            </Link>
+          </div>
 
-          {/* Privacy & Terms Links */}
-          <div className="flex items-center gap-4 text-sm order-2 md:order-3">
+          {/* center */}
+          <div className="flex flex-wrap items-center justify-start gap-x-10 gap-y-3 md:flex-1 md:justify-center lg:gap-x-12">
             <Link
               href="/privacy"
-              className="text-gray-600 dark:text-gray-400 hover:text-primaryColor dark:hover:text-primaryColor transition-colors"
+              className="text-[15px] md:text-base font-medium text-contentColor dark:text-contentColor-dark hover:text-primaryColor dark:hover:text-primaryColor transition-colors"
             >
               Privacy
             </Link>
-            <span className="text-gray-300 dark:text-gray-700">|</span>
             <Link
               href="/terms"
-              className="text-gray-600 dark:text-gray-400 hover:text-primaryColor dark:hover:text-primaryColor transition-colors"
+              className="text-[15px] md:text-base font-medium text-contentColor dark:text-contentColor-dark hover:text-primaryColor dark:hover:text-primaryColor transition-colors"
             >
               Terms
             </Link>
+            <Link
+              href="/contact"
+              className="text-[15px] md:text-base font-medium text-contentColor dark:text-contentColor-dark hover:text-primaryColor dark:hover:text-primaryColor transition-colors"
+            >
+              Contact
+            </Link>
           </div>
-        </div>
 
-        {/* Optional small note or extra spacing */}
-        <div className="text-center mt-6 text-xs text-gray-400 dark:text-gray-600">
-          Centralized Class Materials Portal – IT Department
+          {/* right */}
+          <div className="flex min-w-0 flex-1 items-center md:justify-end">
+            <p className="text-[15px] md:text-base font-medium text-contentColor dark:text-contentColor-dark">
+              © {currentYear} JustClick
+            </p>
+          </div>
         </div>
       </div>
     </footer>

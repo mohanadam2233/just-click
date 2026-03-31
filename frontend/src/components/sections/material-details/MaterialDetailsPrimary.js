@@ -240,13 +240,32 @@ const MaterialDetailsPrimary = ({ id }) => {
   );
   const semesterBg = getSemesterBg(material?.semesterNumber || 1);
 
-  const previewHref = material?.file?.canPreviewInBrowser
-    ? material?.file?.readUrl
-    : `/materials/${material.id}/view`;
+  const readHref = material?.file?.readUrl || rawMaterial?.file?.read_url || "";
+  const downloadHref =
+    material?.file?.downloadUrl || rawMaterial?.file?.download_url || "";
 
-  const downloadHref = material?.file?.downloadUrl || "#";
+  const canPreviewInBrowser =
+    material?.file?.canPreviewInBrowser ??
+    rawMaterial?.file?.can_preview_in_browser ??
+    false;
 
-  const isDownloadable = material?.flags?.isDownloadable;
+  const isDownloadable =
+    material?.flags?.isDownloadable ??
+    rawMaterial?.flags?.is_downloadable ??
+    false;
+
+  const canReadFile = Boolean(readHref);
+  const canDownloadFile = Boolean(downloadHref) && isDownloadable;
+
+  const handleOpenRead = () => {
+    if (!canReadFile) return;
+    window.open(readHref, "_blank", "noopener,noreferrer");
+  };
+
+  const handleOpenDownload = () => {
+    if (!canDownloadFile) return;
+    window.open(downloadHref, "_blank", "noopener,noreferrer");
+  };
 
   return (
     <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors duration-300">
@@ -414,34 +433,32 @@ const MaterialDetailsPrimary = ({ id }) => {
                 </h3>
 
                 <div className="space-y-4 relative z-10">
-                  <a
-                    href={previewHref}
-                    target={
-                      material?.file?.canPreviewInBrowser ? "_blank" : undefined
-                    }
-                    rel={
-                      material?.file?.canPreviewInBrowser
-                        ? "noopener noreferrer"
-                        : undefined
-                    }
-                    className="w-full py-4 bg-secondaryColor hover:bg-white text-white hover:text-secondaryColor font-bold rounded-lg transition-all duration-300 flex items-center justify-center gap-2"
+                  <button
+                    type="button"
+                    onClick={handleOpenRead}
+                    disabled={!canReadFile}
+                    className={`w-full py-4 font-bold rounded-lg transition-all duration-300 flex items-center justify-center gap-2 ${
+                      canReadFile
+                        ? "bg-secondaryColor hover:bg-white text-white hover:text-secondaryColor"
+                        : "bg-secondaryColor/40 text-white/60 cursor-not-allowed"
+                    }`}
                   >
                     <i className="icofont-eye-alt"></i>
-                    {material?.file?.canPreviewInBrowser
-                      ? "Open Preview"
-                      : "Open Material"}
-                  </a>
+                    {canPreviewInBrowser ? "Open Preview" : "Open Material"}
+                  </button>
 
-                  <a
-                    href={isDownloadable ? downloadHref : "#"}
+                  <button
+                    type="button"
+                    onClick={handleOpenDownload}
+                    disabled={!canDownloadFile}
                     className={`w-full py-4 border font-bold rounded-lg transition-all duration-300 text-center block ${
-                      isDownloadable
+                      canDownloadFile
                         ? "bg-white/10 hover:bg-white/20 text-white border-white/20"
-                        : "bg-white/5 text-white/50 border-white/10 pointer-events-none"
+                        : "bg-white/5 text-white/50 border-white/10 cursor-not-allowed"
                     }`}
                   >
                     Download File
-                  </a>
+                  </button>
                 </div>
 
                 <div className="absolute -bottom-10 -right-10 w-32 h-32 bg-secondaryColor/20 rounded-full blur-3xl"></div>

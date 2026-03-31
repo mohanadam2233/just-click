@@ -1,22 +1,124 @@
 "use client";
 
-import { usePathname } from "next/navigation";
+import { useLogout, useMe } from "@/features/auth/hooks";
+import { usePathname, useRouter } from "next/navigation";
+import { useMemo } from "react";
 import ItemsDashboard from "./ItemsDashboard";
+
+const fallbackUser = {
+  username: "User",
+  userType: "user",
+  primaryRole: "No role",
+  initials: "U",
+  roles: [],
+};
+
+function getInitials(username) {
+  return (
+    username
+      ?.split(/[\s._-]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((part) => part[0]?.toUpperCase())
+      .join("") || "U"
+  );
+}
+
+function normalizeRole(role) {
+  return String(role || "")
+    .trim()
+    .toLowerCase();
+}
 
 const SidebarDashboard = () => {
   const pathname = usePathname();
+  const router = useRouter();
+
+  const { data: meData, isError: isMeError } = useMe();
+  const logoutMutation = useLogout();
 
   const isAdmin = pathname.startsWith("/admin/");
   const isInstructor = !isAdmin && pathname.includes("/instructor");
   const isStudent = !isAdmin && !isInstructor;
 
+  const apiUser = meData?.data?.user;
+
+  const safeUser = useMemo(() => {
+    if (isMeError || !apiUser) return fallbackUser;
+
+    const username = apiUser?.username || fallbackUser.username;
+    const userType = apiUser?.user_type || fallbackUser.userType;
+    const roles = Array.isArray(apiUser?.roles) ? apiUser.roles : [];
+    const primaryRole = roles[0] || fallbackUser.primaryRole;
+
+    return {
+      username,
+      userType,
+      primaryRole,
+      roles,
+      initials: getInitials(username),
+    };
+  }, [apiUser, isMeError]);
+
   const getUserLabel = () => {
-    if (isAdmin) return { name: "MICHELLE OBAMA", role: "Administrator" };
-    if (isInstructor) return { name: "MICHELLE OBAMA", role: "Instructor" };
-    return { name: "DOND TOND", role: "Student" };
+    const username = safeUser?.username || fallbackUser.username;
+    const roles = Array.isArray(safeUser?.roles) ? safeUser.roles : [];
+    const normalizedRoles = roles.map(normalizeRole);
+    const userType = normalizeRole(safeUser?.userType);
+    const primaryRole = safeUser?.primaryRole || fallbackUser.primaryRole;
+
+    if (isAdmin) {
+      return {
+        name: username,
+        role:
+          primaryRole && primaryRole !== "No role"
+            ? primaryRole
+            : normalizedRoles.includes("super admin")
+              ? "Administrator"
+              : userType === "admin"
+                ? "Administrator"
+                : "Administrator",
+      };
+    }
+
+    if (isInstructor) {
+      return {
+        name: username,
+        role:
+          primaryRole && primaryRole !== "No role"
+            ? primaryRole
+            : normalizedRoles.includes("teacher")
+              ? "Instructor"
+              : userType === "teacher"
+                ? "Instructor"
+                : "Instructor",
+      };
+    }
+
+    return {
+      name: username,
+      role:
+        primaryRole && primaryRole !== "No role"
+          ? primaryRole
+          : normalizedRoles.includes("student")
+            ? "Student"
+            : userType === "student"
+              ? "Student"
+              : "Student",
+    };
   };
 
   const user = getUserLabel();
+
+  const handleLogout = async () => {
+    try {
+      await logoutMutation.mutateAsync();
+      router.replace("/login");
+      router.refresh();
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+  };
 
   const adminItems = [
     {
@@ -260,7 +362,11 @@ const SidebarDashboard = () => {
       </nav>
 
       <div className="border-t border-gray-200/80 dark:border-slate-800 p-3">
-        <button className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30">
+        <button
+          onClick={handleLogout}
+          disabled={logoutMutation.isPending}
+          className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-red-600 transition-colors hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           <svg
             className="h-[18px] w-[18px]"
             fill="none"
@@ -274,7 +380,7 @@ const SidebarDashboard = () => {
               d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"
             />
           </svg>
-          Logout
+          {logoutMutation.isPending ? "Signing out..." : "Logout"}
         </button>
       </div>
     </div>
