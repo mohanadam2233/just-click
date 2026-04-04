@@ -114,4 +114,37 @@ export const materialsApi = {
       method: "POST",
       body: JSON.stringify({ ids }),
     }),
+
+  /**
+   * List favorite materials
+   */
+  getFavoritesList: (params = {}) =>
+    fetchJSON(`/materials/favorites/list${toQueryString(params)}`, {
+      method: "GET",
+    }),
+
+  /**
+   * Toggle material favorite status
+   */
+  setFavorite: ({ id, is_favorite }) =>
+    fetchJSON(`/materials/${id}/favorite`, {
+      method: "POST",
+      body: JSON.stringify({ is_favorite }),
+    }),
+
+  /**
+   * Track material view
+   */
+  trackView: (id, cooldown_seconds = 3600) =>
+    fetchJSON(`/materials/${id}/view?cooldown_seconds=${cooldown_seconds}`, {
+      method: "POST",
+    }),
+
+  /**
+   * Track material download
+   */
+  trackDownload: (id) =>
+    fetchJSON(`/materials/${id}/download`, {
+      method: "POST",
+    }),
 };

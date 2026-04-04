@@ -3,13 +3,19 @@
 import BalbImage from "@/components/shared/animaited-images/BalbImage";
 import BookImage from "@/components/shared/animaited-images/BookImage";
 import GlobImage from "@/components/shared/animaited-images/GlobImage";
-import { useMaterialDetail } from "@/features/materials/hooks";
+import {
+  useMaterialDetail,
+  useToggleMaterialFavorite,
+  useTrackMaterialDownload,
+  useTrackMaterialView,
+} from "@/features/materials/hooks";
 import { mapMaterialToCardModel } from "@/features/materials/utils";
 import { getFileIcon, getSemesterBg } from "@/utils/fileIcons";
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 
 /* -------------------------------------------------------------------------- */
-/*                                   Utils                                    */
+/* Utils                                  */
 /* -------------------------------------------------------------------------- */
 
 const formatFileSize = (sizeMb) => {
@@ -47,7 +53,7 @@ const getPagesOrSlidesLabel = (material) => {
 };
 
 /* -------------------------------------------------------------------------- */
-/*                                UI Blocks                                   */
+/* UI Blocks                                  */
 /* -------------------------------------------------------------------------- */
 
 const HeroSkeleton = () => (
@@ -165,7 +171,7 @@ const ErrorState = ({ title, message, showRetry = true }) => (
 );
 
 /* -------------------------------------------------------------------------- */
-/*                             Main Component                                 */
+/* Main Component                                 */
 /* -------------------------------------------------------------------------- */
 
 const MaterialDetailsPrimary = ({ id }) => {
@@ -176,6 +182,24 @@ const MaterialDetailsPrimary = ({ id }) => {
     refetchOnWindowFocus: false,
     staleTime: 1000 * 60,
   });
+
+  const { mutate: trackView } = useTrackMaterialView();
+  const { mutate: trackDownload } = useTrackMaterialDownload();
+  const { mutate: toggleFavorite } = useToggleMaterialFavorite();
+
+  const hasTrackedViewRef = useRef(false);
+
+  // Extract rawMaterial here so we can pass it to useEffect before the early returns
+  const rawMaterial = data?.data?.data;
+
+  // Move useEffect ABOVE all early return statements
+  useEffect(() => {
+    if (!numericId || !rawMaterial) return;
+    if (hasTrackedViewRef.current) return;
+
+    hasTrackedViewRef.current = true;
+    trackView({ id: numericId, cooldown: 3600 });
+  }, [numericId, rawMaterial, trackView]);
 
   if (!id || Number.isNaN(numericId)) {
     return (
@@ -218,8 +242,6 @@ const MaterialDetailsPrimary = ({ id }) => {
     );
   }
 
-  const rawMaterial = data?.data?.data;
-
   if (!rawMaterial) {
     return (
       <ErrorState
@@ -234,6 +256,9 @@ const MaterialDetailsPrimary = ({ id }) => {
     ...mapMaterialToCardModel(rawMaterial),
     learningObjectives: rawMaterial?.learning_objectives || [],
   };
+
+  const isFavorite =
+    material?.isFavorite ?? rawMaterial?.user_state?.is_favorite ?? false;
 
   const fileIconClass = getFileIcon(
     material?.file?.extension || material?.materialType,
@@ -264,6 +289,7 @@ const MaterialDetailsPrimary = ({ id }) => {
 
   const handleOpenDownload = () => {
     if (!canDownloadFile) return;
+    trackDownload(numericId);
     window.open(downloadHref, "_blank", "noopener,noreferrer");
   };
 
@@ -458,6 +484,28 @@ const MaterialDetailsPrimary = ({ id }) => {
                     }`}
                   >
                     Download File
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      toggleFavorite({
+                        id: numericId,
+                        is_favorite: !isFavorite,
+                      })
+                    }
+                    className={`w-full py-4 font-bold rounded-lg transition-all duration-300 flex items-center justify-center gap-2 ${
+                      isFavorite
+                        ? "bg-red-500/20 text-red-500 border border-red-500/30 hover:bg-red-500 hover:text-white"
+                        : "bg-white/5 text-white/80 border border-white/10 hover:bg-white/10"
+                    }`}
+                  >
+                    <i
+                      className={
+                        isFavorite ? "icofont-heart" : "icofont-heart-alt"
+                      }
+                    ></i>
+                    {isFavorite ? "Saved to Favorites" : "Save to Favorites"}
                   </button>
                 </div>
 

@@ -13,4 +13,13 @@ export const authApi = {
     fetchJSON(
       `/auth/verify-email?username=${encodeURIComponent(username)}&token=${encodeURIComponent(token)}`
     ),
+
+  getMyProfilePage: () =>
+    fetchJSON("/auth/me/profile-page"),
+
+  updateMyProfilePage: (payload) =>
+    fetchJSON("/auth/me/profile-page/update", {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    }),
 };

@@ -64,6 +64,7 @@ export function useInfiniteMaterialsList(baseParams = {}, options = {}) {
     ...options,
   });
 }
+
 /**
  * Materials filter options
  * Example:
@@ -78,6 +79,7 @@ export function useMaterialFilterOptions(params = {}, options = {}) {
     ...options,
   });
 }
+
 /**
  * Create material
  */
@@ -159,6 +161,90 @@ export function useBulkDeleteMaterials(options = {}) {
 
       if (options.onSuccess) {
         options.onSuccess(data, variables, context);
+      }
+    },
+    ...options,
+  });
+}
+
+/**
+ * Normal paginated list for favorites
+ */
+export function useMaterialsFavoritesList(params = {}, options = {}) {
+  return useQuery({
+    queryKey: materialsKeys.list({ ...params, type: "favorites" }),
+    queryFn: () => materialsApi.getFavoritesList(params),
+    ...options,
+  });
+}
+
+/**
+ * Toggle favorite
+ */
+export function useToggleMaterialFavorite(options = {}) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: materialsApi.setFavorite,
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: materialsKeys.lists() });
+
+      if (variables?.id) {
+        queryClient.invalidateQueries({
+          queryKey: materialsKeys.detail(variables.id),
+        });
+      }
+
+      if (options.onSuccess) {
+        options.onSuccess(data, variables, context);
+      }
+    },
+    ...options,
+  });
+}
+
+/**
+ * Track material view
+ */
+export function useTrackMaterialView(options = {}) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ id, cooldown }) => materialsApi.trackView(id, cooldown),
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: materialsKeys.lists() });
+
+      if (variables?.id) {
+        queryClient.invalidateQueries({
+          queryKey: materialsKeys.detail(variables.id),
+        });
+      }
+
+      if (options.onSuccess) {
+        options.onSuccess(data, variables, context);
+      }
+    },
+    ...options,
+  });
+}
+
+/**
+ * Track material download
+ */
+export function useTrackMaterialDownload(options = {}) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: materialsApi.trackDownload,
+    onSuccess: (data, id, context) => {
+      queryClient.invalidateQueries({ queryKey: materialsKeys.lists() });
+
+      if (id) {
+        queryClient.invalidateQueries({ queryKey: materialsKeys.detail(id) });
+      }
+
+      if (options.onSuccess) {
+        options.onSuccess(data, id, context);
       }
     },
     ...options,

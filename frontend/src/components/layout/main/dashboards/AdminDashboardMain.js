@@ -9,50 +9,7 @@ import {
   Image as ImageIcon, Video
 } from "lucide-react";
 
-// Mock Data provided by user
-const mockData = {
-  success: true,
-  message: "Dashboard data fetched successfully",
-  data: {
-    summary_cards: {
-      total_users: {
-        value: 2450,
-        change_percent: 8.4,
-        trend: "up",
-        meta: { students: 2280, lecturers: 150, admins: 20 }
-      },
-      pending_user_approvals: {
-        value: 38,
-        change_percent: 12.5,
-        trend: "up",
-        meta: { students: 31, lecturers: 5, admins: 2, approval_stages: { pending_email_verification: 14, pending_admin_approval: 24 } }
-      },
-      total_materials: {
-        value: 1875,
-        change_percent: 10.2,
-        trend: "up",
-        meta: { pdf: 920, ppt: 450, doc: 210, image: 140, video: 155 }
-      },
-      global_material_analytics: {
-        value: 6650,
-        change_percent: 14.1,
-        trend: "up",
-        meta: { total_views: 5420, total_downloads: 1230 }
-      }
-    },
-    charts: {
-      user_growth: [
-        { label: "Jan", new_users: 4, students: 3, lecturers: 1, admins: 0 },
-        { label: "Feb", new_users: 2, students: 2, lecturers: 0, admins: 0 },
-        { label: "Mar", new_users: 6, students: 4, lecturers: 2, admins: 0 },
-        { label: "Apr", new_users: 3, students: 2, lecturers: 1, admins: 0 }
-      ]
-    }
-  },
-  meta: {
-    generated_at: "2026-04-04T12:00:00Z"
-  }
-};
+import { useAdminDashboardSummary } from "@/features/dashboard/hooks";
 
 const Card = ({ title, value, change, trend, icon: Icon, meta, metaIcons }) => {
   return (
@@ -199,7 +156,17 @@ const MaterialBreakdown = ({ data }) => {
 };
 
 const AdminDashboardMain = () => {
-  const { summary_cards, charts } = mockData.data;
+  const { data: apiResponse, isLoading, isError } = useAdminDashboardSummary();
+
+  if (isLoading) {
+    return <div className="p-10 text-center text-slate-500 animate-pulse">Loading dashboard summary...</div>;
+  }
+  if (isError || !apiResponse?.data) {
+    return <div className="p-10 text-center text-red-500">Failed to load dashboard data.</div>;
+  }
+
+  const { summary_cards, charts } = apiResponse.data;
+  const meta = apiResponse.meta || { generated_at: new Date().toISOString() };
 
   // Icon mapping for meta data
   const metaIcons = {
@@ -225,7 +192,7 @@ const AdminDashboardMain = () => {
           </h1>
           <p className="text-slate-500 dark:text-slate-400 flex items-center gap-2 text-sm">
             <Clock className="w-4 h-4 text-blue-500" />
-            Last updated: {new Date(mockData.meta.generated_at).toLocaleString()}
+            Last updated: {new Date(meta.generated_at).toLocaleString()}
           </p>
         </div>
         

@@ -1,6 +1,6 @@
 "use client";
 
-import { useWishlistContext } from "@/contexts/WshlistContext";
+import { useToggleMaterialFavorite, useTrackMaterialView, useTrackMaterialDownload } from "@/features/materials/hooks";
 import { getFileIcon, getSemesterBg } from "@/utils/fileIcons";
 import Link from "next/link";
 
@@ -14,7 +14,9 @@ const formatFileSize = (sizeMb) => {
 };
 
 const MaterialListItem = ({ material }) => {
-  const { addProductToWishlist } = useWishlistContext();
+  const { mutate: toggleFavorite } = useToggleMaterialFavorite();
+  const { mutate: trackView } = useTrackMaterialView();
+  const { mutate: trackDownload } = useTrackMaterialDownload();
 
   const id = material?.id;
   const title = material?.title || "Untitled Material";
@@ -117,23 +119,21 @@ const MaterialListItem = ({ material }) => {
         <div className="flex items-center justify-end gap-3">
           <button
             type="button"
-            onClick={() =>
-              addProductToWishlist({
-                ...material,
-                isMaterial: true,
-                quantity: 1,
-              })
-            }
+            onClick={(e) => {
+              e.preventDefault();
+              toggleFavorite({ id, is_favorite: !material?.isFavorite });
+            }}
             className="text-contentColor hover:text-red-500 transition-colors"
-            aria-label="Add to wishlist"
+            aria-label={material?.isFavorite ? "Remove from favorites" : "Add to favorites"}
           >
-            <i className="icofont-heart-alt"></i>
+            <i className={material?.isFavorite ? "icofont-heart text-red-500" : "icofont-heart-alt"}></i>
           </button>
 
           <a
             href={canPreviewInBrowser ? readUrl : `/materials/${id}/view`}
             target={canPreviewInBrowser ? "_blank" : undefined}
             rel={canPreviewInBrowser ? "noopener noreferrer" : undefined}
+            onClick={() => trackView({ id, cooldown: 3600 })}
             className="text-xs font-bold text-primaryColor hover:underline"
           >
             View
@@ -141,6 +141,7 @@ const MaterialListItem = ({ material }) => {
 
           <a
             href={downloadUrl}
+            onClick={() => trackDownload(id)}
             className="bg-primaryColor/10 text-primaryColor hover:bg-primaryColor hover:text-whiteColor px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
           >
             Download

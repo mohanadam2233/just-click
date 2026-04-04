@@ -6,6 +6,7 @@ import NoData from "@/components/shared/others/NoData";
 import {
   useInfiniteMaterialsList,
   useMaterialFilterOptions,
+  useToggleMaterialFavorite,
 } from "@/features/materials/hooks";
 import {
   flattenInfiniteMaterials,
@@ -18,13 +19,13 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 /* -------------------------------------------------------------------------- */
-/*                                Constants                                   */
+/* Constants                                                                  */
 /* -------------------------------------------------------------------------- */
 
 const sortInputs = ["Sort by New", "Title Ascending", "Title Descending"];
 
 /* -------------------------------------------------------------------------- */
-/*                             Skeleton Loaders                               */
+/* Skeleton Loaders                                                           */
 /* -------------------------------------------------------------------------- */
 
 const GridCardSkeleton = () => (
@@ -74,7 +75,7 @@ const ListSkeleton = ({ count = 5 }) => (
 );
 
 /* -------------------------------------------------------------------------- */
-/*                             Filter Components                              */
+/* Filter Components                                                          */
 /* -------------------------------------------------------------------------- */
 
 const formatCount = (count) => (count < 10 ? `0${count}` : `${count}`);
@@ -158,7 +159,7 @@ const ViewToggle = ({ currentIdx, onChange }) => (
 );
 
 /* -------------------------------------------------------------------------- */
-/*                              Main Component                                */
+/* Main Component                                                             */
 /* -------------------------------------------------------------------------- */
 
 const CoursesPrimary = ({ isNotSidebar, isList }) => {
@@ -167,7 +168,13 @@ const CoursesPrimary = ({ isNotSidebar, isList }) => {
   const searchParams = useSearchParams();
   const { currentIdx, setCurrentIdx } = useTab();
 
+  const favoriteMutation = useToggleMaterialFavorite();
+
   const [isMobileFilterOpen, setIsMobileFilterOpen] = useState(false);
+  const [favoriteOverrides, setFavoriteOverrides] = useState({});
+  const [favoriteOnly, setFavoriteOnly] = useState(
+    searchParams.get("favorite") === "true",
+  );
 
   const [selectedSemester, setSelectedSemester] = useState(
     searchParams.get("sem") ? Number(searchParams.get("sem")) : null,
@@ -212,6 +219,7 @@ const CoursesPrimary = ({ isNotSidebar, isList }) => {
       ch: selectedChapter,
       q: searchString || null,
       sort: sortInput !== "Sort by New" ? sortInput : null,
+      favorite: favoriteOnly ? "true" : null,
     });
   }, [
     selectedSemester,
@@ -219,6 +227,7 @@ const CoursesPrimary = ({ isNotSidebar, isList }) => {
     selectedChapter,
     searchString,
     sortInput,
+    favoriteOnly,
     updateURL,
   ]);
 
@@ -252,8 +261,15 @@ const CoursesPrimary = ({ isNotSidebar, isList }) => {
       chapter_id: selectedChapter || undefined,
       search: searchString || undefined,
       is_enabled: true,
+      is_favorite: favoriteOnly || undefined,
     }),
-    [selectedSemester, selectedCourse, selectedChapter, searchString],
+    [
+      selectedSemester,
+      selectedCourse,
+      selectedChapter,
+      searchString,
+      favoriteOnly,
+    ],
   );
 
   const {
@@ -269,24 +285,55 @@ const CoursesPrimary = ({ isNotSidebar, isList }) => {
 
   const materials = useMemo(() => {
     const raw = flattenInfiniteMaterials(data?.pages || []);
-    const mapped = raw.map(mapMaterialToCardModel);
-    return sortMaterials(mapped, sortInput);
-  }, [data?.pages, sortInput]);
+
+    const mapped = raw.map((item) => {
+      const base = mapMaterialToCardModel(item);
+
+      const apiIsFavorite =
+        item?.user_state?.is_favorite ??
+        item?.is_favorite ??
+        base?.isFavorite ??
+        false;
+
+      const finalIsFavorite =
+        favoriteOverrides[item.id] !== undefined
+          ? favoriteOverrides[item.id]
+          : apiIsFavorite;
+
+      return {
+        ...base,
+        id: item.id,
+        isFavorite: finalIsFavorite,
+        userState: item?.user_state || null,
+        rawItem: item,
+      };
+    });
+
+    const visibleMaterials = favoriteOnly
+      ? mapped.filter((item) => item.isFavorite)
+      : mapped;
+
+    return sortMaterials(visibleMaterials, sortInput);
+  }, [data?.pages, sortInput, favoriteOverrides, favoriteOnly]);
 
   const totalCount =
-    data?.pages?.[0]?.data?.meta?.total_count ?? materials.length;
+    data?.pages?.[0]?.data?.meta?.total_count ??
+    data?.pages?.[0]?.data?.pagination?.total_count ??
+    materials.length;
 
   const hasActiveFilters =
     !!selectedSemester ||
     !!selectedCourse ||
     !!selectedChapter ||
-    !!searchString;
+    !!searchString ||
+    !!favoriteOnly;
 
   const activeFilterCount = [
     selectedSemester,
     selectedCourse,
     selectedChapter,
     searchString,
+    favoriteOnly ? "favorite" : null,
   ].filter(Boolean).length;
 
   const handleSemesterChange = (semId) => {
@@ -313,6 +360,7 @@ const CoursesPrimary = ({ isNotSidebar, isList }) => {
     setSelectedChapter(null);
     setSearchString("");
     setSortInput("Sort by New");
+    setFavoriteOnly(false);
     setIsMobileFilterOpen(false);
     router.replace(pathname, { scroll: false });
   };
@@ -320,6 +368,45 @@ const CoursesPrimary = ({ isNotSidebar, isList }) => {
   const handleViewChange = (idx) => {
     setCurrentIdx(idx);
   };
+
+  const handleToggleFavoriteFilter = () => {
+    setFavoriteOnly((prev) => !prev);
+  };
+
+  const handleToggleFavorite = useCallback(
+    async (material) => {
+      if (!material?.id) return;
+
+      const currentFavorite = !!material.isFavorite;
+      const nextFavorite = !currentFavorite;
+
+      setFavoriteOverrides((prev) => ({
+        ...prev,
+        [material.id]: nextFavorite,
+      }));
+
+      try {
+        if (typeof favoriteMutation?.mutateAsync === "function") {
+          await favoriteMutation.mutateAsync({
+            materialId: material.id,
+            is_favorite: nextFavorite,
+          });
+        } else if (typeof favoriteMutation?.mutate === "function") {
+          favoriteMutation.mutate({
+            materialId: material.id,
+            is_favorite: nextFavorite,
+          });
+        }
+      } catch (error) {
+        setFavoriteOverrides((prev) => ({
+          ...prev,
+          [material.id]: currentFavorite,
+        }));
+        console.error("Favorite toggle failed:", error);
+      }
+    },
+    [favoriteMutation],
+  );
 
   const loadMoreRef = useIntersectionLoadMore({
     enabled: true,
@@ -484,6 +571,21 @@ const CoursesPrimary = ({ isNotSidebar, isList }) => {
           <div className="flex items-center flex-wrap gap-2">
             <button
               type="button"
+              onClick={handleToggleFavoriteFilter}
+              className={`px-4 py-2 rounded-xl border text-sm font-medium transition-all ${
+                favoriteOnly
+                  ? "bg-red-50 dark:bg-red-500/10 text-red-500 border-red-200 dark:border-red-500/20"
+                  : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-100 dark:border-gray-700 hover:text-red-500 hover:border-red-200 dark:hover:border-red-500/20"
+              }`}
+            >
+              <span className="inline-flex items-center gap-2">
+                <i className="icofont-heart-alt" />
+                My Favorites
+              </span>
+            </button>
+
+            <button
+              type="button"
               onClick={() => setIsMobileFilterOpen(true)}
               className="lg:hidden flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 rounded-xl border border-gray-100 dark:border-gray-700 text-sm font-medium shadow-sm hover:shadow-md transition-all"
             >
@@ -524,6 +626,19 @@ const CoursesPrimary = ({ isNotSidebar, isList }) => {
 
         {hasActiveFilters && (
           <div className="flex flex-wrap gap-2 mb-6">
+            {favoriteOnly && (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm text-xs text-gray-700 dark:text-gray-300">
+                Favorites
+                <button
+                  type="button"
+                  onClick={() => setFavoriteOnly(false)}
+                  className="ml-1 text-gray-400 hover:text-red-500"
+                >
+                  <i className="icofont-close-line text-sm" />
+                </button>
+              </span>
+            )}
+
             {selectedSemester && (
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-gray-800 rounded-lg border border-gray-100 dark:border-gray-700 shadow-sm text-xs text-gray-700 dark:text-gray-300">
                 <span className="font-semibold text-primaryColor">
@@ -605,9 +720,13 @@ const CoursesPrimary = ({ isNotSidebar, isList }) => {
                     <CoursesGrid
                       isNotSidebar={isNotSidebar}
                       materials={materials}
+                      onToggleFavorite={handleToggleFavorite}
                     />
                   ) : (
-                    <CoursesList materials={materials} />
+                    <CoursesList
+                      materials={materials}
+                      onToggleFavorite={handleToggleFavorite}
+                    />
                   )}
                 </div>
 
@@ -627,7 +746,13 @@ const CoursesPrimary = ({ isNotSidebar, isList }) => {
                 )}
               </div>
             ) : (
-              <NoData message="No materials found matching your filters." />
+              <NoData
+                message={
+                  favoriteOnly
+                    ? "No favorite materials found."
+                    : "No materials found matching your filters."
+                }
+              />
             )}
 
             {isFetching && !isLoading && !isFetchingNextPage && (
@@ -670,6 +795,21 @@ const CoursesPrimary = ({ isNotSidebar, isList }) => {
           </div>
 
           <div className="p-5 overflow-y-auto h-[calc(100%-73px)]">
+            <div className="mb-4">
+              <button
+                type="button"
+                onClick={handleToggleFavoriteFilter}
+                className={`w-full flex items-center justify-center gap-2 px-4 py-2 rounded-xl border text-sm font-medium transition-all ${
+                  favoriteOnly
+                    ? "bg-red-50 dark:bg-red-500/10 text-red-500 border-red-200 dark:border-red-500/20"
+                    : "bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-200 border-gray-100 dark:border-gray-700"
+                }`}
+              >
+                <i className="icofont-heart-alt" />
+                <span>My Favorites</span>
+              </button>
+            </div>
+
             <SidebarContent mobile />
             {hasActiveFilters && (
               <button

@@ -4,6 +4,27 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authApi } from "./api";
 import { authKeys } from "./keys";
 
+export function useMyProfilePage(opts = {}) {
+  return useQuery({
+    queryKey: [...authKeys.me(), "profile-page"],
+    queryFn: authApi.getMyProfilePage,
+    staleTime: 5 * 60 * 1000,
+    ...opts,
+  });
+}
+
+export function useUpdateMyProfilePage(opts = {}) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: authApi.updateMyProfilePage,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: [...authKeys.me(), "profile-page"] });
+      qc.invalidateQueries({ queryKey: authKeys.me() });
+    },
+    ...opts,
+  });
+}
+
 export function useMe(opts = {}) {
   return useQuery({
     queryKey: authKeys.me(),
