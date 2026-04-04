@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 
 class LoginRequest(BaseModel):
@@ -43,3 +43,58 @@ class UserProfileOut(BaseModel):
     roles: List[str] = []
     permissions: List[str] = []
     is_company_admin: bool = False
+class ProfileFacultyOut(BaseModel):
+    id: int
+    name: str
+
+
+class ProfileDepartmentOut(BaseModel):
+    id: int
+    name: str
+
+
+class ProfileClassroomOut(BaseModel):
+    id: int
+    name: str
+    room_number: Optional[str] = None
+
+
+class UserProfilePageOut(BaseModel):
+    # IMPORTANT:
+    # id = profile id (student_profiles.id OR staff_profiles.id)
+    id: Optional[int] = None
+    user_id: int
+
+    username: str
+    email: str
+    status: str
+
+    user_is_enabled: bool
+    profile_is_enabled: Optional[bool] = None
+
+    profile_type: Optional[str] = None  # "student" | "staff"
+
+    full_name: Optional[str] = None
+    student_id: Optional[str] = None
+    staff_id: Optional[str] = None
+
+    faculty: Optional[ProfileFacultyOut] = None
+    department: Optional[ProfileDepartmentOut] = None
+    classroom: Optional[ProfileClassroomOut] = None
+
+    roles: List[str] = []
+
+
+class UpdateMyProfilePageRequest(BaseModel):
+    email: Optional[EmailStr] = None
+    status: Optional[str] = None
+    user_is_enabled: Optional[bool] = None
+    profile_is_enabled: Optional[bool] = None
+
+    full_name: Optional[str] = None
+    faculty_id: Optional[int] = None
+    department_id: Optional[int] = None
+    classroom_id: Optional[int] = None
+
+    student_id: Optional[str] = None
+    staff_id: Optional[str] = None

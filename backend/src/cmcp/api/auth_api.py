@@ -12,18 +12,19 @@ from cmcp.modules.auth.deps import get_current_user
 from cmcp.modules.auth.schemas import (
     LoginRequest,
     ChangeMyPasswordRequest,
-    ResetPasswordRequest,
+    ResetPasswordRequest, UserProfilePageOut, UpdateMyProfilePageRequest,
 )
 from cmcp.modules.auth.service.auth_service import AuthService
+from cmcp.modules.auth.service.user_profile_page import UserProfilePageService
 from cmcp.modules.auth.service.user_service import UserService
 from cmcp.modules.education_people.service import EducationPeopleService
-from cmcp.security.rbac_guards import require_permission
+from cmcp.security.rbac_guards import require_permission, require_company_and_permission
 
 bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 auth_svc = AuthService()
 user_svc = UserService()
 edu_svc = EducationPeopleService()
-
+profile_page_svc = UserProfilePageService()
 @bp.post("/login")
 @public
 @rate_limit(key_prefix="login", limit=5, window=60, include_username=True)
@@ -121,6 +122,61 @@ def verify_email():
     if ok:
         return api_success(message=msg, data={"username": username}, status_code=200)
     return api_error(message=msg, status_code=400)
+
+@bp.get("/me/profile-page")
+@require_company_and_permission(doctype="User", action="READ")
+def my_profile_page(company_id: int):
+    user = get_current_user()
+
+    try:
+        data = profile_page_svc.get_my_profile_page(
+            user_id=int(user["user_id"]),
+            active_company_id=int(company_id),
+            roles=user.get("roles") or [],
+        )
+
+        out = UserProfilePageOut(**data)
+
+        return api_success(
+            message="OK",
+            data={"profile": out.model_dump()},
+            status_code=200,
+        )
+    except HTTPException as e:
+        return api_error(e.description or str(e), status_code=e.code or 400)
+    except Exception as e:
+        return api_error(f"Unexpected error: {e}", status_code=500)
+
+@bp.patch("/me/profile-page/update")
+@require_company_and_permission(doctype="User", action="UPDATE")
+def update_my_profile_page(company_id: int):
+    user = get_current_user()
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        req = UpdateMyProfilePageRequest(**payload)
+
+        data = profile_page_svc.update_my_profile_page(
+            user_id=int(user["user_id"]),
+            active_company_id=int(company_id),
+            data=req.model_dump(exclude_unset=True),
+            roles=user.get("roles") or [],
+        )
+
+        out = UserProfilePageOut(**data)
+
+        return api_success(
+            message="Profile updated successfully.",
+            data={"profile": out.model_dump()},
+            status_code=200,
+        )
+    except ValidationError as e:
+        return api_error(f"Invalid request: {e}", status_code=400)
+    except HTTPException as e:
+        return api_error(e.description or str(e), status_code=e.code or 400)
+    except Exception as e:
+        return api_error(f"Unexpected error: {e}", status_code=500)
+
 
 # @bp.get("/materials")
 # @require_company_and_permission(doctype="Material", action="READ")
