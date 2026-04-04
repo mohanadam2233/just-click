@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from typing import List, Optional
-
+from typing import Any, Dict
 from pydantic import BaseModel, ConfigDict, Field
 
 class BulkDeleteIn(BaseModel):
@@ -80,3 +80,43 @@ class StudentAdminUpdateIn(_BaseIn):
 class StudentSelfUpdateIn(_BaseIn):
     # safest
     full_name: Optional[str] = Field(None, min_length=2, max_length=200)
+
+
+# -------------------------
+# Dashboard
+# -------------------------
+class DashboardCardOut(BaseModel):
+    value: int
+    change_percent: float
+    trend: str
+    meta: Dict[str, Any] = Field(default_factory=dict)
+
+
+class UserGrowthPointOut(BaseModel):
+    label: str
+    new_users: int
+    students: int
+    lecturers: int
+    staff: int
+    admins: int
+
+
+class DashboardSummaryCardsOut(BaseModel):
+    total_users: DashboardCardOut
+    pending_user_approvals: DashboardCardOut
+    total_materials: DashboardCardOut
+    global_material_analytics: DashboardCardOut
+
+
+class DashboardChartsOut(BaseModel):
+    user_growth: List[UserGrowthPointOut]
+
+
+class AdminDashboardDataOut(BaseModel):
+    summary_cards: DashboardSummaryCardsOut
+    charts: DashboardChartsOut
+
+
+class AdminDashboardResponseOut(BaseModel):
+    data: AdminDashboardDataOut
+    generated_at: str

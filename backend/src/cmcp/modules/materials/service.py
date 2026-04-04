@@ -553,3 +553,155 @@ class MaterialsService:
         )
 
         return True, "OK", out
+
+
+    # =========================================================
+    # TRACK VIEW / DOWNLOAD
+    # =========================================================
+    def track_view(
+        self,
+        *,
+        company_id: int,
+        material_id: int,
+        cooldown_seconds: int = 3600,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        user_id = self.repo._current_user_id()
+        if not user_id:
+            return False, "Authentication required.", {}
+
+        try:
+            with self.s.begin_nested():
+                result = self.repo.increment_view(
+                    company_id=company_id,
+                    material_id=material_id,
+                    user_id=int(user_id),
+                    cooldown_seconds=int(cooldown_seconds),
+                )
+
+            message = "View tracked successfully." if result["counted"] else (result.get("reason") or "View not counted.")
+            return True, message, {
+                "tracking": {
+                    "material_id": int(result["material_id"]),
+                    "user_id": int(user_id),
+                    "event": "view",
+                    "counted": bool(result["counted"]),
+                    "reason": result.get("reason"),
+                    "global_view_count": int(result["global_view_count"]),
+                    "global_download_count": int(result["global_download_count"]),
+                    "user_view_count": int(result["user_view_count"]),
+                    "user_download_count": int(result["user_download_count"]),
+                    "last_viewed_at": result.get("last_viewed_at"),
+                    "last_downloaded_at": result.get("last_downloaded_at"),
+                }
+            }
+        except Exception as e:
+            return False, f"Failed to track view: {e}", {}
+
+    def track_download(
+        self,
+        *,
+        company_id: int,
+        material_id: int,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        user_id = self.repo._current_user_id()
+        if not user_id:
+            return False, "Authentication required.", {}
+
+        try:
+            with self.s.begin_nested():
+                result = self.repo.increment_download(
+                    company_id=company_id,
+                    material_id=material_id,
+                    user_id=int(user_id),
+                )
+
+            if not result["counted"]:
+                return False, result.get("reason") or "Download not counted.", {}
+
+            return True, "Download tracked successfully.", {
+                "tracking": {
+                    "material_id": int(result["material_id"]),
+                    "user_id": int(user_id),
+                    "event": "download",
+                    "counted": bool(result["counted"]),
+                    "reason": result.get("reason"),
+                    "global_view_count": int(result["global_view_count"]),
+                    "global_download_count": int(result["global_download_count"]),
+                    "user_view_count": int(result["user_view_count"]),
+                    "user_download_count": int(result["user_download_count"]),
+                    "last_viewed_at": result.get("last_viewed_at"),
+                    "last_downloaded_at": result.get("last_downloaded_at"),
+                }
+            }
+        except Exception as e:
+            return False, f"Failed to track download: {e}", {}
+
+
+    def set_favorite(
+        self,
+        *,
+        company_id: int,
+        material_id: int,
+        is_favorite: bool,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        user_id = self.repo._current_user_id()
+        if not user_id:
+            return False, "Authentication required.", {}
+
+        try:
+            with self.s.begin_nested():
+                result = self.repo.set_favorite(
+                    company_id=company_id,
+                    material_id=material_id,
+                    user_id=int(user_id),
+                    is_favorite=bool(is_favorite),
+                )
+
+            if not result["counted"]:
+                return False, result.get("reason") or "Favorite not updated.", {}
+
+            return True, "Favorite updated successfully.", {
+                "favorite": {
+                    "material_id": int(result["material_id"]),
+                    "user_id": int(user_id),
+                    "is_favorite": bool(result["is_favorite"]),
+                    "user_view_count": int(result["user_view_count"]),
+                    "user_download_count": int(result["user_download_count"]),
+                    "last_viewed_at": result.get("last_viewed_at"),
+                    "last_downloaded_at": result.get("last_downloaded_at"),
+                }
+            }
+        except Exception as e:
+            return False, f"Failed to update favorite: {e}", {}
+
+    def list_my_favorites_page(
+        self,
+        *,
+        company_id: int,
+        page: int,
+        per_page: int,
+        external_base: str,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        user_id = self.repo._current_user_id()
+        if not user_id:
+            return False, "Authentication required.", {}
+
+        try:
+            rows, total, pages = self.repo.list_favorite_materials_page(
+                company_id=company_id,
+                user_id=int(user_id),
+                page=page,
+                per_page=per_page,
+                external_base=external_base,
+            )
+            return True, "OK", {
+                "data": rows,
+                "pagination": {
+                    "page": int(page),
+                    "per_page": int(per_page),
+                    "pages": int(pages),
+                    "total_count": int(total),
+                },
+            }
+        except Exception as e:
+            return False, f"Failed to load favorites: {e}", {}

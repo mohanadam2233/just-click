@@ -9,7 +9,7 @@ from cmcp.common.api_response import api_success, api_error
 from cmcp.common.cache import bump_detail, bump_list
 from cmcp.config.database import db
 from cmcp.core.exceptions import BusinessValidationError, NotFoundError
-from cmcp.modules.materials.schemas import MaterialCreateIn, MaterialUpdateIn
+from cmcp.modules.materials.schemas import MaterialCreateIn, MaterialUpdateIn, MaterialFavoriteIn
 from cmcp.modules.materials.service import MaterialsService
 from cmcp.security.rbac_guards import require_company_and_permission
 
@@ -258,5 +258,112 @@ def get_material_filter_options(company_id: int):
 
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
 
+    except Exception as e:
+        return _handle_error(e)
+
+
+
+# ------------------------------
+# TRACK VIEW
+# ------------------------------
+@bp.post("/<int:material_id>/view")
+@require_company_and_permission(doctype="Material", action="READ")
+def track_material_view(company_id: int, material_id: int):
+    """
+    Count view only when user intentionally opens the material.
+    Uses cooldown to avoid duplicate refresh spam.
+    Optional query param: ?cooldown_seconds=3600
+    """
+    try:
+        cooldown_seconds = request.args.get("cooldown_seconds", type=int) or 3600
+
+        ok, msg, out = svc.track_view(
+            company_id=company_id,
+            material_id=material_id,
+            cooldown_seconds=cooldown_seconds,
+        )
+        _commit_ok(ok)
+
+        if ok:
+            bump_detail("materials:detail", company_id, int(material_id))
+            bump_list("materials:list", company_id)
+            return api_success(message=msg, data=out, status_code=200)
+
+        return api_error(msg, status_code=400)
+    except Exception as e:
+        return _handle_error(e)
+
+
+# ------------------------------
+# TRACK DOWNLOAD
+# ------------------------------
+@bp.post("/<int:material_id>/download")
+@require_company_and_permission(doctype="Material", action="DOWNLOAD")
+def track_material_download(company_id: int, material_id: int):
+    """
+    Count download when user explicitly clicks download.
+    """
+    try:
+        ok, msg, out = svc.track_download(
+            company_id=company_id,
+            material_id=material_id,
+        )
+        _commit_ok(ok)
+
+        if ok:
+            bump_detail("materials:detail", company_id, int(material_id))
+            bump_list("materials:list", company_id)
+            return api_success(message=msg, data=out, status_code=200)
+
+        return api_error(msg, status_code=400)
+    except Exception as e:
+        return _handle_error(e)
+
+
+# ------------------------------
+# FAVORITE TOGGLE
+# ------------------------------
+@bp.post("/<int:material_id>/favorite")
+@require_company_and_permission(doctype="Material", action="READ")
+def set_material_favorite(company_id: int, material_id: int):
+    try:
+        payload = MaterialFavoriteIn.model_validate(request.get_json(silent=True) or {})
+
+        ok, msg, out = svc.set_favorite(
+            company_id=company_id,
+            material_id=material_id,
+            is_favorite=payload.is_favorite,
+        )
+        _commit_ok(ok)
+
+        if ok:
+            bump_detail("materials:detail", company_id, int(material_id))
+            bump_list("materials:list", company_id)
+            return api_success(message=msg, data=out, status_code=200)
+
+        return api_error(msg, status_code=400)
+    except Exception as e:
+        return _handle_error(e)
+
+
+# ------------------------------
+# MY FAVORITES
+# ------------------------------
+@bp.get("/favorites/list")
+@require_company_and_permission(doctype="Material", action="READ")
+def list_my_favorites(company_id: int):
+    try:
+        q = request.args
+        page = q.get("page", type=int) or 1
+        per_page = q.get("per_page", type=int) or 20
+
+        ok, msg, out = svc.list_my_favorites_page(
+            company_id=company_id,
+            page=page,
+            per_page=per_page,
+            external_base=_external_base(),
+        )
+
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
     except Exception as e:
         return _handle_error(e)

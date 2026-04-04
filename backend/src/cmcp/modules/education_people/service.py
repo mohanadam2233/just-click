@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import timedelta
+
+from datetime import timedelta, datetime, timezone
 from typing import Any, Dict, Optional, Tuple, List
 from flask import g
 from sqlalchemy.orm import Session
@@ -11,7 +12,7 @@ from cmcp.common.cache import cached_list
 from cmcp.common.email.outbox_model import EmailOutboxStatus
 from cmcp.config.database import db
 from cmcp.core.base_service import BaseService
-
+import calendar as py_calendar
 from cmcp.modules.auth.models import User, UserAffiliation, UserStatusEnum, UserTypeEnum, LinkedEntityTypeEnum
 from cmcp.modules.education_people.models import StudentProfile, Classroom, StaffProfile
 from cmcp.modules.academic.models import Faculty, Department
@@ -522,3 +523,257 @@ class EducationPeopleService:
         )
 
         return True, "OK", out
+
+
+
+
+    # =========================================================
+    # DASHBOARD HELPERS
+    # =========================================================
+    def _trend_payload(self, *, current: int, previous: int) -> Dict[str, Any]:
+        current = int(current or 0)
+        previous = int(previous or 0)
+
+        if previous <= 0 and current <= 0:
+            return {"change_percent": 0.0, "trend": "flat"}
+
+        if previous <= 0 and current > 0:
+            return {"change_percent": 100.0, "trend": "up"}
+
+        pct = ((current - previous) / previous) * 100.0
+        trend = "up" if pct > 0 else "down" if pct < 0 else "flat"
+        return {
+            "change_percent": round(abs(pct), 1),
+            "trend": trend,
+        }
+
+    def _month_start(self, dt: datetime) -> datetime:
+        return dt.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+
+    def _add_months(self, dt: datetime, months: int) -> datetime:
+        year = dt.year + ((dt.month - 1 + months) // 12)
+        month = ((dt.month - 1 + months) % 12) + 1
+        return dt.replace(year=year, month=month, day=1)
+
+    # =========================================================
+    # DASHBOARD
+    # =========================================================
+    def get_admin_dashboard(self, *, company_id: int, months: int = 4) -> Tuple[bool, str, Dict[str, Any]]:
+        """
+        Dashboard summary for admin.
+        - cards use current totals
+        - trend compares last 30 days vs previous 30 days
+        - user growth chart uses monthly buckets
+        """
+        now = datetime.now(timezone.utc)
+
+        current_period_start = now - timedelta(days=30)
+        previous_period_start = now - timedelta(days=60)
+        previous_period_end = current_period_start
+
+        # -------------------------
+        # users
+        # -------------------------
+        user_type_counts = self.repo.dashboard_user_type_counts(company_id=company_id)
+        total_users = self.repo.dashboard_total_users(company_id=company_id)
+
+        current_new_users = self.repo.dashboard_new_user_counts_between(
+            company_id=company_id,
+            start_dt=current_period_start,
+            end_dt=now,
+        )
+        previous_new_users = self.repo.dashboard_new_user_counts_between(
+            company_id=company_id,
+            start_dt=previous_period_start,
+            end_dt=previous_period_end,
+        )
+        total_users_trend = self._trend_payload(
+            current=current_new_users["total"],
+            previous=previous_new_users["total"],
+        )
+
+        # -------------------------
+        # pending approvals
+        # -------------------------
+        pending = self.repo.dashboard_pending_approval_counts(company_id=company_id)
+
+        current_pending_new = self.repo.dashboard_pending_new_between(
+            company_id=company_id,
+            start_dt=current_period_start,
+            end_dt=now,
+        )
+        previous_pending_new = self.repo.dashboard_pending_new_between(
+            company_id=company_id,
+            start_dt=previous_period_start,
+            end_dt=previous_period_end,
+        )
+        pending_trend = self._trend_payload(
+            current=current_pending_new,
+            previous=previous_pending_new,
+        )
+
+        # -------------------------
+        # materials
+        # -------------------------
+        material_type_counts = self.repo.dashboard_material_type_counts(company_id=company_id)
+        total_materials = self.repo.dashboard_total_materials(company_id=company_id)
+
+        current_new_materials = self.repo.dashboard_new_materials_between(
+            company_id=company_id,
+            start_dt=current_period_start,
+            end_dt=now,
+        )
+        previous_new_materials = self.repo.dashboard_new_materials_between(
+            company_id=company_id,
+            start_dt=previous_period_start,
+            end_dt=previous_period_end,
+        )
+        materials_trend = self._trend_payload(
+            current=current_new_materials,
+            previous=previous_new_materials,
+        )
+
+        analytics = self.repo.dashboard_global_material_analytics(company_id=company_id)
+        analytics_value = int(analytics["total_views"] + analytics["total_downloads"])
+
+        # NOTE:
+        # This trend is a best-effort proxy from recent interaction timestamps.
+        # For true monthly views/downloads trend, use an event log or daily snapshot table.
+        current_activity_proxy = self.repo.dashboard_recent_material_activity_proxy_between(
+            company_id=company_id,
+            start_dt=current_period_start,
+            end_dt=now,
+        )
+        previous_activity_proxy = self.repo.dashboard_recent_material_activity_proxy_between(
+            company_id=company_id,
+            start_dt=previous_period_start,
+            end_dt=previous_period_end,
+        )
+        analytics_trend = self._trend_payload(
+            current=current_activity_proxy,
+            previous=previous_activity_proxy,
+        )
+
+        # -------------------------
+        # chart: user growth
+        # -------------------------
+        months = max(1, min(int(months or 4), 12))
+        chart_start = self._add_months(self._month_start(now), -(months - 1))
+        chart_end = self._add_months(self._month_start(now), 1)
+
+        growth_rows = self.repo.dashboard_user_growth_monthly(
+            company_id=company_id,
+            start_dt=chart_start,
+            end_dt=chart_end,
+        )
+
+        growth_map: Dict[str, Dict[str, int]] = {}
+        for row in growth_rows:
+            month_key = row["month_start"].strftime("%Y-%m")
+            if month_key not in growth_map:
+                growth_map[month_key] = {
+                    "students": 0,
+                    "lecturers": 0,
+                    "staff": 0,
+                    "admins": 0,
+                    "new_users": 0,
+                }
+
+            total = int(row["total"] or 0)
+            growth_map[month_key]["new_users"] += total
+
+            if row["user_type"] == UserTypeEnum.STUDENT.value:
+                growth_map[month_key]["students"] += total
+            elif row["user_type"] == UserTypeEnum.TEACHER.value:
+                growth_map[month_key]["lecturers"] += total
+            elif row["user_type"] == UserTypeEnum.STAFF.value:
+                growth_map[month_key]["staff"] += total
+            elif row["user_type"] == UserTypeEnum.ADMIN.value:
+                growth_map[month_key]["admins"] += total
+
+        chart_points = []
+        cur = chart_start
+        while cur < chart_end:
+            key = cur.strftime("%Y-%m")
+            item = growth_map.get(key, {
+                "students": 0,
+                "lecturers": 0,
+                "staff": 0,
+                "admins": 0,
+                "new_users": 0,
+            })
+
+            chart_points.append({
+                "label": py_calendar.month_abbr[cur.month],
+                "new_users": int(item["new_users"]),
+                "students": int(item["students"]),
+                "lecturers": int(item["lecturers"]),
+                "staff": int(item["staff"]),
+                "admins": int(item["admins"]),
+            })
+            cur = self._add_months(cur, 1)
+
+        data = {
+            "summary_cards": {
+                "total_users": {
+                    "value": int(total_users),
+                    "change_percent": total_users_trend["change_percent"],
+                    "trend": total_users_trend["trend"],
+                    "meta": {
+                        "students": int(user_type_counts["students"]),
+                        "lecturers": int(user_type_counts["lecturers"]),
+                        "staff": int(user_type_counts["staff"]),
+                        "admins": int(user_type_counts["admins"]),
+                    },
+                },
+                "pending_user_approvals": {
+                    "value": int(pending["value"]),
+                    "change_percent": pending_trend["change_percent"],
+                    "trend": pending_trend["trend"],
+                    "meta": {
+                        "students": int(pending["students"]),
+                        "lecturers": int(pending["lecturers"]),
+                        "staff": int(pending["staff"]),
+                        "admins": int(pending["admins"]),
+                        "approval_stages": {
+                            "pending_email_verification": int(
+                                pending["approval_stages"]["pending_email_verification"]
+                            ),
+                            "pending_admin_approval": int(
+                                pending["approval_stages"]["pending_admin_approval"]
+                            ),
+                        },
+                    },
+                },
+                "total_materials": {
+                    "value": int(total_materials),
+                    "change_percent": materials_trend["change_percent"],
+                    "trend": materials_trend["trend"],
+                    "meta": {
+                        "slides": int(material_type_counts["slides"]),
+                        "pdf": int(material_type_counts["pdf"]),
+                        "doc": int(material_type_counts["doc"]),
+                        "video": int(material_type_counts["video"]),
+                        "link": int(material_type_counts["link"]),
+                        "other": int(material_type_counts["other"]),
+                    },
+                },
+                "global_material_analytics": {
+                    "value": int(analytics_value),
+                    "change_percent": analytics_trend["change_percent"],
+                    "trend": analytics_trend["trend"],
+                    "meta": {
+                        "total_views": int(analytics["total_views"]),
+                        "total_downloads": int(analytics["total_downloads"]),
+                    },
+                },
+            },
+            "charts": {
+                "user_growth": chart_points,
+            },
+        }
+
+        return True, "Dashboard data fetched successfully", {
+            "data": data,
+            "generated_at": now.isoformat(),
+        }

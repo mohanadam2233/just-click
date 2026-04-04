@@ -3,12 +3,15 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from operator import or_
+
+
 from typing import Optional, Any, Dict, Tuple, List
 from flask import g
-from sqlalchemy import exists, func, select, and_, case, literal
+from sqlalchemy import exists, func, select, and_, case, literal, update, or_
 from sqlalchemy.orm import Session
-
+from datetime import datetime, timezone, timedelta
+from sqlalchemy import update, or_ as sa_or
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from cmcp.config.database import db
 from cmcp.core.base_repo import BaseRepository
 
@@ -927,3 +930,344 @@ class MaterialsRepo:
                 "department_id": int(scope["department_id"]) if scope.get("department_id") else None,
             },
         }
+
+
+
+    # ----------------------------
+    # tracking helpers
+    # ----------------------------
+    def _material_exists_for_event(
+        self,
+        *,
+        company_id: int,
+        material_id: int,
+        require_downloadable: bool = False,
+    ) -> bool:
+        stmt = select(exists().where(
+            Material.company_id == int(company_id),
+            Material.id == int(material_id),
+            Material.is_enabled.is_(True),
+            *( [Material.is_downloadable.is_(True)] if require_downloadable else [] ),
+        ))
+        return bool(self.s.scalar(stmt))
+
+    def _interaction_snapshot(
+        self,
+        *,
+        company_id: int,
+        material_id: int,
+        user_id: int,
+    ) -> Dict[str, Any]:
+        row = self.s.execute(
+            select(
+                Material.id.label("material_id"),
+                Material.view_count.label("global_view_count"),
+                Material.download_count.label("global_download_count"),
+                func.coalesce(StudentMaterialInteraction.view_count, 0).label("user_view_count"),
+                func.coalesce(StudentMaterialInteraction.download_count, 0).label("user_download_count"),
+                StudentMaterialInteraction.last_viewed_at.label("last_viewed_at"),
+                StudentMaterialInteraction.last_downloaded_at.label("last_downloaded_at"),
+            )
+            .select_from(Material)
+            .outerjoin(
+                StudentMaterialInteraction,
+                and_(
+                    StudentMaterialInteraction.company_id == Material.company_id,
+                    StudentMaterialInteraction.material_id == Material.id,
+                    StudentMaterialInteraction.user_id == int(user_id),
+                ),
+            )
+            .where(
+                Material.company_id == int(company_id),
+                Material.id == int(material_id),
+            )
+            .limit(1)
+        ).first()
+
+        if not row:
+            return {
+                "material_id": int(material_id),
+                "global_view_count": 0,
+                "global_download_count": 0,
+                "user_view_count": 0,
+                "user_download_count": 0,
+                "last_viewed_at": None,
+                "last_downloaded_at": None,
+            }
+
+        d = row._asdict()
+        return {
+            "material_id": int(d["material_id"]),
+            "global_view_count": int(d["global_view_count"] or 0),
+            "global_download_count": int(d["global_download_count"] or 0),
+            "user_view_count": int(d["user_view_count"] or 0),
+            "user_download_count": int(d["user_download_count"] or 0),
+            "last_viewed_at": d["last_viewed_at"].isoformat() if d["last_viewed_at"] else None,
+            "last_downloaded_at": d["last_downloaded_at"].isoformat() if d["last_downloaded_at"] else None,
+        }
+
+    def increment_view(
+        self,
+        *,
+        company_id: int,
+        material_id: int,
+        user_id: int,
+        cooldown_seconds: int = 3600,
+    ) -> Dict[str, Any]:
+        """
+        Count a view only if:
+        - material exists and is enabled
+        - the user's last_viewed_at is older than cooldown window
+        """
+        if not self._material_exists_for_event(
+            company_id=company_id,
+            material_id=material_id,
+            require_downloadable=False,
+        ):
+            return {
+                "counted": False,
+                "reason": "Material not found or disabled.",
+                **self._interaction_snapshot(
+                    company_id=company_id,
+                    material_id=material_id,
+                    user_id=user_id,
+                ),
+            }
+
+        cutoff_dt = datetime.now(timezone.utc) - timedelta(seconds=int(cooldown_seconds))
+
+        stmt_user = pg_insert(StudentMaterialInteraction).values(
+            company_id=int(company_id),
+            user_id=int(user_id),
+            material_id=int(material_id),
+            is_favorite=False,
+            view_count=1,
+            download_count=0,
+            last_viewed_at=func.now(),
+        )
+
+        stmt_user = stmt_user.on_conflict_do_update(
+            index_elements=["company_id", "user_id", "material_id"],
+            set_={
+                "view_count": StudentMaterialInteraction.view_count + 1,
+                "last_viewed_at": func.now(),
+            },
+            where=sa_or(
+                StudentMaterialInteraction.last_viewed_at.is_(None),
+                StudentMaterialInteraction.last_viewed_at < cutoff_dt,
+            ),
+        ).returning(StudentMaterialInteraction.material_id)
+
+        user_row = self.s.execute(stmt_user).first()
+
+        # cooldown active => do not increment global counter
+        if not user_row:
+            return {
+                "counted": False,
+                "reason": "Cooldown active.",
+                **self._interaction_snapshot(
+                    company_id=company_id,
+                    material_id=material_id,
+                    user_id=user_id,
+                ),
+            }
+
+        stmt_global = (
+            update(Material)
+            .where(
+                Material.company_id == int(company_id),
+                Material.id == int(material_id),
+                Material.is_enabled.is_(True),
+            )
+            .values(view_count=Material.view_count + 1)
+        )
+        self.s.execute(stmt_global)
+        self.s.flush()
+
+        return {
+            "counted": True,
+            "reason": None,
+            **self._interaction_snapshot(
+                company_id=company_id,
+                material_id=material_id,
+                user_id=user_id,
+            ),
+        }
+
+    def increment_download(
+        self,
+        *,
+        company_id: int,
+        material_id: int,
+        user_id: int,
+    ) -> Dict[str, Any]:
+        """
+        Always count download when user explicitly clicks download.
+        """
+        if not self._material_exists_for_event(
+            company_id=company_id,
+            material_id=material_id,
+            require_downloadable=True,
+        ):
+            return {
+                "counted": False,
+                "reason": "Material not found, disabled, or not downloadable.",
+                **self._interaction_snapshot(
+                    company_id=company_id,
+                    material_id=material_id,
+                    user_id=user_id,
+                ),
+            }
+
+        stmt_user = pg_insert(StudentMaterialInteraction).values(
+            company_id=int(company_id),
+            user_id=int(user_id),
+            material_id=int(material_id),
+            is_favorite=False,
+            view_count=0,
+            download_count=1,
+            last_downloaded_at=func.now(),
+        )
+
+        stmt_user = stmt_user.on_conflict_do_update(
+            index_elements=["company_id", "user_id", "material_id"],
+            set_={
+                "download_count": StudentMaterialInteraction.download_count + 1,
+                "last_downloaded_at": func.now(),
+            },
+        ).returning(StudentMaterialInteraction.material_id)
+
+        self.s.execute(stmt_user)
+
+        stmt_global = (
+            update(Material)
+            .where(
+                Material.company_id == int(company_id),
+                Material.id == int(material_id),
+                Material.is_enabled.is_(True),
+                Material.is_downloadable.is_(True),
+            )
+            .values(download_count=Material.download_count + 1)
+        )
+        self.s.execute(stmt_global)
+        self.s.flush()
+
+        return {
+            "counted": True,
+            "reason": None,
+            **self._interaction_snapshot(
+                company_id=company_id,
+                material_id=material_id,
+                user_id=user_id,
+            ),
+        }
+
+
+
+
+    def set_favorite(
+        self,
+        *,
+        company_id: int,
+        material_id: int,
+        user_id: int,
+        is_favorite: bool,
+    ) -> Dict[str, Any]:
+        if not self._material_exists_for_event(
+            company_id=company_id,
+            material_id=material_id,
+            require_downloadable=False,
+        ):
+            return {
+                "counted": False,
+                "reason": "Material not found or disabled.",
+                **self._interaction_snapshot(
+                    company_id=company_id,
+                    material_id=material_id,
+                    user_id=user_id,
+                ),
+            }
+
+        stmt_user = pg_insert(StudentMaterialInteraction).values(
+            company_id=int(company_id),
+            user_id=int(user_id),
+            material_id=int(material_id),
+            is_favorite=bool(is_favorite),
+            view_count=0,
+            download_count=0,
+            last_viewed_at=None,
+            last_downloaded_at=None,
+        )
+
+        stmt_user = stmt_user.on_conflict_do_update(
+            index_elements=["company_id", "user_id", "material_id"],
+            set_={
+                "is_favorite": bool(is_favorite),
+            },
+        ).returning(StudentMaterialInteraction.material_id)
+
+        self.s.execute(stmt_user)
+        self.s.flush()
+
+        snap = self._interaction_snapshot(
+            company_id=company_id,
+            material_id=material_id,
+            user_id=user_id,
+        )
+
+        return {
+            "counted": True,
+            "reason": None,
+            "is_favorite": bool(is_favorite),
+            **snap,
+        }
+
+    def list_favorite_materials_page(
+        self,
+        *,
+        company_id: int,
+        user_id: int,
+        page: int,
+        per_page: int,
+        external_base: str,
+    ) -> Tuple[List[Dict[str, Any]], int, int]:
+        page = max(int(page or 1), 1)
+        allowed = {10, 20, 50, 500}
+        per_page = per_page if int(per_page or 20) in allowed else 20
+
+        base = (
+            select(Material.id)
+            .select_from(StudentMaterialInteraction)
+            .join(
+                Material,
+                and_(
+                    Material.id == StudentMaterialInteraction.material_id,
+                    Material.company_id == int(company_id),
+                ),
+            )
+            .where(
+                StudentMaterialInteraction.company_id == int(company_id),
+                StudentMaterialInteraction.user_id == int(user_id),
+                StudentMaterialInteraction.is_favorite.is_(True),
+                Material.is_enabled.is_(True),
+            )
+            .order_by(StudentMaterialInteraction.updated_at.desc(), Material.id.desc())
+        )
+
+        count_stmt = select(func.count()).select_from(base.order_by(None).subquery())
+        total = int(self.s.scalar(count_stmt) or 0)
+        pages = max((total + per_page - 1) // per_page, 1)
+        page = min(page, pages)
+        offset = (page - 1) * per_page
+
+        material_ids = list(
+            self.s.scalars(base.offset(offset).limit(per_page)).all()
+        )
+
+        rows: List[Dict[str, Any]] = []
+        for mid in material_ids:
+            detail_row = self.get_material_detail(company_id=company_id, material_id=int(mid))
+            if detail_row:
+                rows.append(self.shape_material_list_row(detail_row, external_base=external_base))
+
+        return rows, total, pages

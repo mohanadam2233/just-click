@@ -435,3 +435,32 @@ def list_students(company_id: int):
 
     except Exception as e:
         return _handle_error(e)
+
+
+
+
+# =========================================================
+# DASHBOARD
+# =========================================================
+@bp.get("/dashboard/admin-summary")
+@require_company_and_permission(doctype="User", action="READ")
+def admin_dashboard_summary(company_id: int):
+    try:
+        months = request.args.get("months", type=int) or 4
+
+        ok, msg, out = svc.get_admin_dashboard(
+            company_id=company_id,
+            months=months,
+        )
+
+        if not ok:
+            return api_error(msg, status_code=400)
+
+        return api_success(
+            message=msg,
+            data=out["data"],
+            meta={"generated_at": out["generated_at"]},
+            status_code=200,
+        )
+    except Exception as e:
+        return _handle_error(e)

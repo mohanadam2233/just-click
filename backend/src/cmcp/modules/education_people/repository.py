@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional, Set, List, Dict, Any, Tuple
 
 from sqlalchemy import exists, func, select, and_
@@ -8,10 +9,12 @@ from sqlalchemy.orm import Session
 
 from cmcp.config.database import db
 from cmcp.core.base_repo import BaseRepository
-
-from cmcp.modules.auth.models import User
+import calendar as py_calendar
+from cmcp.modules.auth.models import User, UserAffiliation, UserStatusEnum, UserTypeEnum
 from cmcp.modules.education_people.models import StudentProfile, Classroom, StaffProfile
 from cmcp.modules.academic.models import Faculty, Department
+from cmcp.modules.materials.models import StudentMaterialInteraction, Material
+
 
 @dataclass
 class StudentListRow:
@@ -236,3 +239,301 @@ class EducationPeopleRepo:
             "department_name": r.department_name,
             "is_enabled": bool(r.is_enabled),
         }
+
+
+    # =========================================================
+    # DASHBOARD - USERS
+    # =========================================================
+    def dashboard_user_type_counts(self, *, company_id: int) -> Dict[str, int]:
+        rows = self.s.execute(
+            select(
+                User.user_type.label("user_type"),
+                func.count(User.id).label("total"),
+            )
+            .select_from(UserAffiliation)
+            .join(User, User.id == UserAffiliation.user_id)
+            .where(UserAffiliation.company_id == int(company_id))
+            .group_by(User.user_type)
+        ).all()
+
+        out = {
+            "students": 0,
+            "lecturers": 0,   # maps from teacher
+            "staff": 0,
+            "admins": 0,
+        }
+
+        for r in rows:
+            utype = getattr(r.user_type, "value", str(r.user_type))
+            total = int(r.total or 0)
+
+            if utype == UserTypeEnum.STUDENT.value:
+                out["students"] = total
+            elif utype == UserTypeEnum.TEACHER.value:
+                out["lecturers"] = total
+            elif utype == UserTypeEnum.STAFF.value:
+                out["staff"] = total
+            elif utype == UserTypeEnum.ADMIN.value:
+                out["admins"] = total
+
+        return out
+
+    def dashboard_total_users(self, *, company_id: int) -> int:
+        stmt = (
+            select(func.count(User.id))
+            .select_from(UserAffiliation)
+            .join(User, User.id == UserAffiliation.user_id)
+            .where(UserAffiliation.company_id == int(company_id))
+        )
+        return int(self.s.scalar(stmt) or 0)
+
+    def dashboard_new_user_counts_between(
+        self,
+        *,
+        company_id: int,
+        start_dt: datetime,
+        end_dt: datetime,
+    ) -> Dict[str, int]:
+        rows = self.s.execute(
+            select(
+                User.user_type.label("user_type"),
+                func.count(User.id).label("total"),
+            )
+            .select_from(UserAffiliation)
+            .join(User, User.id == UserAffiliation.user_id)
+            .where(
+                UserAffiliation.company_id == int(company_id),
+                User.created_at >= start_dt,
+                User.created_at < end_dt,
+            )
+            .group_by(User.user_type)
+        ).all()
+
+        out = {
+            "students": 0,
+            "lecturers": 0,
+            "staff": 0,
+            "admins": 0,
+            "total": 0,
+        }
+
+        for r in rows:
+            utype = getattr(r.user_type, "value", str(r.user_type))
+            total = int(r.total or 0)
+            out["total"] += total
+
+            if utype == UserTypeEnum.STUDENT.value:
+                out["students"] = total
+            elif utype == UserTypeEnum.TEACHER.value:
+                out["lecturers"] = total
+            elif utype == UserTypeEnum.STAFF.value:
+                out["staff"] = total
+            elif utype == UserTypeEnum.ADMIN.value:
+                out["admins"] = total
+
+        return out
+
+    def dashboard_pending_approval_counts(self, *, company_id: int) -> Dict[str, Any]:
+        rows = self.s.execute(
+            select(
+                User.user_type.label("user_type"),
+                User.status.label("status"),
+                func.count(User.id).label("total"),
+            )
+            .select_from(UserAffiliation)
+            .join(User, User.id == UserAffiliation.user_id)
+            .where(
+                UserAffiliation.company_id == int(company_id),
+                User.status.in_([
+                    UserStatusEnum.PENDING_EMAIL,
+                    UserStatusEnum.PENDING_APPROVAL,
+                ]),
+            )
+            .group_by(User.user_type, User.status)
+        ).all()
+
+        out = {
+            "value": 0,
+            "students": 0,
+            "lecturers": 0,
+            "staff": 0,
+            "admins": 0,
+            "approval_stages": {
+                "pending_email_verification": 0,
+                "pending_admin_approval": 0,
+            },
+        }
+
+        for r in rows:
+            utype = getattr(r.user_type, "value", str(r.user_type))
+            status = getattr(r.status, "value", str(r.status))
+            total = int(r.total or 0)
+
+            out["value"] += total
+
+            if utype == UserTypeEnum.STUDENT.value:
+                out["students"] += total
+            elif utype == UserTypeEnum.TEACHER.value:
+                out["lecturers"] += total
+            elif utype == UserTypeEnum.STAFF.value:
+                out["staff"] += total
+            elif utype == UserTypeEnum.ADMIN.value:
+                out["admins"] += total
+
+            if status == UserStatusEnum.PENDING_EMAIL.value:
+                out["approval_stages"]["pending_email_verification"] += total
+            elif status == UserStatusEnum.PENDING_APPROVAL.value:
+                out["approval_stages"]["pending_admin_approval"] += total
+
+        return out
+
+    def dashboard_pending_new_between(
+        self,
+        *,
+        company_id: int,
+        start_dt: datetime,
+        end_dt: datetime,
+    ) -> int:
+        stmt = (
+            select(func.count(User.id))
+            .select_from(UserAffiliation)
+            .join(User, User.id == UserAffiliation.user_id)
+            .where(
+                UserAffiliation.company_id == int(company_id),
+                User.created_at >= start_dt,
+                User.created_at < end_dt,
+                User.status.in_([
+                    UserStatusEnum.PENDING_EMAIL,
+                    UserStatusEnum.PENDING_APPROVAL,
+                ]),
+            )
+        )
+        return int(self.s.scalar(stmt) or 0)
+
+    def dashboard_user_growth_monthly(
+        self,
+        *,
+        company_id: int,
+        start_dt: datetime,
+        end_dt: datetime,
+    ) -> List[Dict[str, Any]]:
+        rows = self.s.execute(
+            select(
+                func.date_trunc("month", User.created_at).label("month_start"),
+                User.user_type.label("user_type"),
+                func.count(User.id).label("total"),
+            )
+            .select_from(UserAffiliation)
+            .join(User, User.id == UserAffiliation.user_id)
+            .where(
+                UserAffiliation.company_id == int(company_id),
+                User.created_at >= start_dt,
+                User.created_at < end_dt,
+            )
+            .group_by(func.date_trunc("month", User.created_at), User.user_type)
+            .order_by(func.date_trunc("month", User.created_at).asc())
+        ).all()
+
+        return [
+            {
+                "month_start": r.month_start,
+                "user_type": getattr(r.user_type, "value", str(r.user_type)),
+                "total": int(r.total or 0),
+            }
+            for r in rows
+        ]
+
+    # =========================================================
+    # DASHBOARD - MATERIALS
+    # =========================================================
+    def dashboard_material_type_counts(self, *, company_id: int) -> Dict[str, int]:
+        rows = self.s.execute(
+            select(
+                Material.material_type.label("material_type"),
+                func.count(Material.id).label("total"),
+            )
+            .where(Material.company_id == int(company_id))
+            .group_by(Material.material_type)
+        ).all()
+
+        out = {
+            "slides": 0,
+            "pdf": 0,
+            "doc": 0,
+            "video": 0,
+            "link": 0,
+            "other": 0,
+        }
+
+        for r in rows:
+            mtype = getattr(r.material_type, "value", str(r.material_type)).lower()
+            if mtype in out:
+                out[mtype] = int(r.total or 0)
+
+        return out
+
+    def dashboard_total_materials(self, *, company_id: int) -> int:
+        stmt = select(func.count(Material.id)).where(Material.company_id == int(company_id))
+        return int(self.s.scalar(stmt) or 0)
+
+    def dashboard_new_materials_between(
+        self,
+        *,
+        company_id: int,
+        start_dt: datetime,
+        end_dt: datetime,
+    ) -> int:
+        stmt = (
+            select(func.count(Material.id))
+            .where(
+                Material.company_id == int(company_id),
+                Material.created_at >= start_dt,
+                Material.created_at < end_dt,
+            )
+        )
+        return int(self.s.scalar(stmt) or 0)
+
+    def dashboard_global_material_analytics(self, *, company_id: int) -> Dict[str, int]:
+        row = self.s.execute(
+            select(
+                func.coalesce(func.sum(Material.view_count), 0).label("total_views"),
+                func.coalesce(func.sum(Material.download_count), 0).label("total_downloads"),
+            )
+            .where(Material.company_id == int(company_id))
+        ).first()
+
+        return {
+            "total_views": int(getattr(row, "total_views", 0) or 0),
+            "total_downloads": int(getattr(row, "total_downloads", 0) or 0),
+        }
+
+    def dashboard_recent_material_activity_proxy_between(
+        self,
+        *,
+        company_id: int,
+        start_dt: datetime,
+        end_dt: datetime,
+    ) -> int:
+        """
+        Best-effort proxy trend only.
+        Accurate per-period analytics needs an event log table.
+        """
+        view_hits = int(self.s.scalar(
+            select(func.count(StudentMaterialInteraction.id)).where(
+                StudentMaterialInteraction.company_id == int(company_id),
+                StudentMaterialInteraction.last_viewed_at.isnot(None),
+                StudentMaterialInteraction.last_viewed_at >= start_dt,
+                StudentMaterialInteraction.last_viewed_at < end_dt,
+            )
+        ) or 0)
+
+        download_hits = int(self.s.scalar(
+            select(func.count(StudentMaterialInteraction.id)).where(
+                StudentMaterialInteraction.company_id == int(company_id),
+                StudentMaterialInteraction.last_downloaded_at.isnot(None),
+                StudentMaterialInteraction.last_downloaded_at >= start_dt,
+                StudentMaterialInteraction.last_downloaded_at < end_dt,
+            )
+        ) or 0)
+
+        return view_hits + download_hits

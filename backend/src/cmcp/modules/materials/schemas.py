@@ -46,3 +46,26 @@ class MaterialUpdateIn(_BaseIn):
 
     page_count: Optional[int] = None
     slide_count: Optional[int] = None
+
+
+
+class MaterialTrackEventOut(BaseModel):
+    material_id: int
+    user_id: int
+    event: str  # "view" | "download"
+    counted: bool
+    reason: Optional[str] = None
+
+    global_view_count: int
+    global_download_count: int
+
+    user_view_count: int
+    user_download_count: int
+
+    last_viewed_at: Optional[str] = None
+    last_downloaded_at: Optional[str] = None
+
+
+
+class MaterialFavoriteIn(_BaseIn):
+    is_favorite: bool
