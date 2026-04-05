@@ -1,17 +1,20 @@
 "use client";
 
 import FrappeForm from "@/components/shared/forms/FrappeForm";
-import useNotify from "@/hooks/useNotify";
+import {
+  useChaptersDropdown,
+  useCoursesDropdown,
+} from "@/features/academic/hooks";
 import { useCreateMaterial } from "@/features/materials/hooks";
-import { useCoursesDropdown, useChaptersDropdown } from "@/features/academic/hooks";
+import useNotify from "@/hooks/useNotify";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { z } from "zod";
 
 const materialSchema = z
   .object({
-    course_id: z.coerce.string().min(1, "Please select a Course"),
-    chapter_id: z.coerce.string().optional(),
+    course_id: z.string().min(1, "Please select a Course"),
+    chapter_id: z.string().optional(),
     title: z.string().min(1, "Title is required").max(200, "Title is too long"),
     material_type: z.string().min(1, "Material Type is required"),
     file: z.any().optional(),
@@ -56,9 +59,25 @@ const materialSchema = z
     }
   });
 
+function normalizeDropdownValue(value) {
+  if (value == null) return "";
+
+  if (typeof value === "string" || typeof value === "number") {
+    return String(value);
+  }
+
+  if (typeof value === "object") {
+    if (value.value != null) return String(value.value);
+    if (value.id != null) return String(value.id);
+  }
+
+  return "";
+}
+
 const CreateMaterialMain = () => {
   const router = useRouter();
   const notify = useNotify();
+  const createMutation = useCreateMaterial();
 
   const [values, setValues] = useState({
     course_id: "",
@@ -77,16 +96,26 @@ const CreateMaterialMain = () => {
 
   const [errors, setErrors] = useState({});
 
-  const createMutation = useCreateMaterial();
-
-  const { data: coursesRes, isLoading: isLoadingCourses } = useCoursesDropdown({ limit: 500 });
-  const coursesOptions = Array.isArray(coursesRes?.data) ? coursesRes.data : (coursesRes?.data?.data || []);
-
-  const { data: chaptersRes, isLoading: isLoadingChapters } = useChaptersDropdown(
-    { course_id: values.course_id, limit: 500 },
-    { enabled: !!values.course_id }
+  const { data: coursesRes, isLoading: isLoadingCourses } = useCoursesDropdown(
+    { limit: 500 },
+    { staleTime: 60_000 },
   );
-  const chapterOptions = Array.isArray(chaptersRes?.data) ? chaptersRes.data : (chaptersRes?.data?.data || []);
+
+  const coursesOptions = Array.isArray(coursesRes?.data)
+    ? coursesRes.data
+    : coursesRes?.data?.data || [];
+
+  const normalizedCourseId = normalizeDropdownValue(values.course_id);
+
+  const { data: chaptersRes, isLoading: isLoadingChapters } =
+    useChaptersDropdown(
+      { course_id: normalizedCourseId, limit: 500 },
+      { enabled: !!normalizedCourseId, staleTime: 60_000 },
+    );
+  const chapterOptions = Array.isArray(chaptersRes?.data)
+    ? chaptersRes.data
+    : chaptersRes?.data?.data || [];
+
   const handleChange = (field, value) => {
     setValues((prev) => {
       const next = { ...prev, [field]: value };
@@ -108,12 +137,19 @@ const CreateMaterialMain = () => {
     }
   };
 
-  const handleSave = async (e) => {
-    e.preventDefault();
+  const handleSave = (e) => {
+    e?.preventDefault?.();
     setErrors({});
+
+    const courseId = normalizeDropdownValue(values.course_id);
+    const chapterId = normalizeDropdownValue(values.chapter_id);
+    const materialType = normalizeDropdownValue(values.material_type);
 
     const result = materialSchema.safeParse({
       ...values,
+      course_id: courseId,
+      chapter_id: chapterId,
+      material_type: materialType,
       file_size_mb:
         values.file_size_mb === "" ? undefined : Number(values.file_size_mb),
       page_count:
@@ -125,7 +161,8 @@ const CreateMaterialMain = () => {
     if (!result.success) {
       const fieldErrors = {};
       result.error.issues.forEach((issue) => {
-        fieldErrors[issue.path[0]] = issue.message;
+        const key = issue.path?.[0];
+        if (key) fieldErrors[key] = issue.message;
       });
       setErrors(fieldErrors);
       notify.error("Please fix the highlighted fields");
@@ -133,42 +170,57 @@ const CreateMaterialMain = () => {
     }
 
     const payload = {
-      course_id: Number(values.course_id),
-      chapter_id: values.chapter_id ? Number(values.chapter_id) : null,
-      title: values.title,
-      material_type: values.material_type,
+      course_id: Number(courseId),
+      chapter_id: chapterId ? Number(chapterId) : null,
+      title: String(values.title || "").trim(),
+      material_type: materialType,
       page_count:
-        values.material_type === "pdf" ? Number(values.page_count || 0) : null,
-      slide_count:
-        values.material_type === "slides"
-          ? Number(values.slide_count || 0)
+        materialType === "pdf" && values.page_count !== ""
+          ? Number(values.page_count)
           : null,
-      file_size_mb: values.file_size_mb ? Number(values.file_size_mb) : null,
-      learning_objectives: values.learning_objectives?.length
-        ? values.learning_objectives
+      slide_count:
+        materialType === "slides" && values.slide_count !== ""
+          ? Number(values.slide_count)
+          : null,
+      file_size_mb:
+        values.file_size_mb !== "" ? Number(values.file_size_mb) : null,
+      learning_objectives: Array.isArray(values.learning_objectives)
+        ? values.learning_objectives.filter(Boolean)
         : [],
-      description: values.description || "",
-      is_downloadable: values.is_downloadable,
-      is_enabled: values.is_enabled,
+      description: String(values.description || "").trim(),
+      is_downloadable: Boolean(values.is_downloadable),
+      is_enabled: Boolean(values.is_enabled),
     };
 
+    console.log("CreateMaterialMain final payload:", payload);
+    console.log("CreateMaterialMain final file:", values.file);
+
     createMutation.mutate(
-      { payload, file: values.file },
+      {
+        payload,
+        file: values.file || null,
+      },
       {
         onSuccess: () => {
           notify.success("Material saved successfully!");
           router.push("/admin/dashboards/admin-academic/materials");
         },
         onError: (error) => {
-          const msg = error?.response?.data?.message || error?.message || "Failed to save material";
+          const msg =
+            error?.info?.message ||
+            error?.response?.data?.message ||
+            error?.message ||
+            "Failed to save material";
+
+          console.error("Create material error:", error);
           notify.error(String(msg));
-        }
-      }
+        },
+      },
     );
   };
 
   const countField =
-    values.material_type === "pdf"
+    normalizeDropdownValue(values.material_type) === "pdf"
       ? {
           name: "page_count",
           label: "Page Count",
@@ -176,7 +228,7 @@ const CreateMaterialMain = () => {
           layout: "half",
           placeholder: "e.g., 120",
         }
-      : values.material_type === "slides"
+      : normalizeDropdownValue(values.material_type) === "slides"
         ? {
             name: "slide_count",
             label: "Slide Count",
@@ -207,7 +259,9 @@ const CreateMaterialMain = () => {
       type: "async-dropdown",
       required: false,
       layout: "half",
-      placeholder: values.course_id ? "Select chapter" : "Select course first",
+      placeholder: normalizedCourseId
+        ? "Select chapter"
+        : "Select course first",
       dropdownProps: {
         options: chapterOptions,
         isLoading: isLoadingChapters,
@@ -247,6 +301,10 @@ const CreateMaterialMain = () => {
       required: false,
       layout: "half",
       sizeField: "file_size_mb",
+      fileProps: {
+        buttonLabel: "Choose File",
+        helperText: "Upload material file",
+      },
     },
     {
       name: "file_size_mb",
@@ -267,7 +325,6 @@ const CreateMaterialMain = () => {
       name: "description",
       label: "Description",
       type: "textarea",
-      required: false,
       layout: "full",
       placeholder: "Short summary...",
     },

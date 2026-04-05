@@ -8,39 +8,70 @@ export class APIError extends Error {
 }
 
 function tryParse(s) {
-  try { return JSON.parse(s); } catch { return s; }
+  try {
+    return JSON.parse(s);
+  } catch {
+    return s;
+  }
 }
 
-// Next proxy base (NOT flask)
 const API_BASE = "/api/backend";
 
 function norm(path) {
   return `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
-/**
- * Your backend envelope:
- * { success:boolean, message:string, data:any, meta?, error_code? }
- * We treat "success:false" as error even if HTTP status is 200 (some APIs do that).
- */
 function assertEnvelopeOk(body, httpStatus) {
   if (!body || typeof body !== "object") return;
+
   if (body.success === false) {
-    const status = body?.meta?.status_code || body?.error_code || httpStatus || 400;
+    const status =
+      body?.meta?.status_code || body?.error_code || httpStatus || 400;
+
     throw new APIError(body?.message || `HTTP ${status}`, status, body);
   }
+}
+
+function isFormDataBody(body) {
+  if (!body || typeof body !== "object") return false;
+
+  if (typeof FormData !== "undefined" && body instanceof FormData) {
+    return true;
+  }
+
+  const tag = Object.prototype.toString.call(body);
+  if (tag === "[object FormData]") {
+    return true;
+  }
+
+  return (
+    typeof body.append === "function" &&
+    typeof body.get === "function" &&
+    typeof body.entries === "function"
+  );
 }
 
 export async function fetchJSON(path, init = {}) {
   const method = (init.method || "GET").toUpperCase();
   const url = norm(path);
+  const body = init.body;
 
-  const hasBody = init.body != null && method !== "GET" && method !== "HEAD";
-  const headers = {
-    Accept: "application/json",
-    ...(init.headers || {}),
-  };
-  if (hasBody && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
+  const hasBody = body != null && method !== "GET" && method !== "HEAD";
+  const isFormData = isFormDataBody(body);
+
+  const headers = new Headers(init.headers || {});
+  if (!headers.has("Accept")) {
+    headers.set("Accept", "application/json");
+  }
+
+  if (hasBody) {
+    if (isFormData) {
+      headers.delete("Content-Type");
+      headers.delete("content-type");
+    } else if (!headers.has("Content-Type") && !headers.has("content-type")) {
+      headers.set("Content-Type", "application/json");
+    }
+  }
 
   const res = await fetch(url, {
     ...init,
@@ -50,14 +81,17 @@ export async function fetchJSON(path, init = {}) {
   });
 
   const text = await res.text();
-  const body = text ? tryParse(text) : null;
+  const parsed = text ? tryParse(text) : null;
 
   if (!res.ok) {
-    throw new APIError(body?.message || `HTTP ${res.status}`, res.status, body);
+    throw new APIError(
+      parsed?.message || `HTTP ${res.status}`,
+      res.status,
+      parsed,
+    );
   }
 
-  // ✅ handle your success:false envelope
-  assertEnvelopeOk(body, res.status);
+  assertEnvelopeOk(parsed, res.status);
 
-  return body ?? {};
+  return parsed ?? {};
 }

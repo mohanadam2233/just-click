@@ -23,8 +23,6 @@ export function useMaterialDetail(id, options = {}) {
 
 /**
  * Normal paginated list
- * Example:
- * useMaterialsList({ mode: "page", page: 1, per_page: 10, search: "python" })
  */
 export function useMaterialsList(params = {}, options = {}) {
   return useQuery({
@@ -36,8 +34,6 @@ export function useMaterialsList(params = {}, options = {}) {
 
 /**
  * Infinite / cursor list
- * Example:
- * useInfiniteMaterialsList({ mode: "cursor", limit: 10, course_id: 5 })
  */
 export function useInfiniteMaterialsList(baseParams = {}, options = {}) {
   return useInfiniteQuery({
@@ -50,7 +46,7 @@ export function useInfiniteMaterialsList(baseParams = {}, options = {}) {
       materialsApi.getMaterialsList({
         ...baseParams,
         mode: "cursor",
-        limit: 10,
+        limit: baseParams.limit || 10,
         cursor: pageParam || undefined,
       }),
     initialPageParam: "",
@@ -67,10 +63,6 @@ export function useInfiniteMaterialsList(baseParams = {}, options = {}) {
 
 /**
  * Materials filter options
- * Example:
- * useMaterialFilterOptions()
- * useMaterialFilterOptions({ semester_id: 4 })
- * useMaterialFilterOptions({ semester_id: 4, course_id: 16 })
  */
 export function useMaterialFilterOptions(params = {}, options = {}) {
   return useQuery({
@@ -90,6 +82,7 @@ export function useCreateMaterial(options = {}) {
     mutationFn: materialsApi.createMaterial,
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: materialsKeys.lists() });
+
       if (options.onSuccess) {
         options.onSuccess(data, variables, context);
       }
@@ -133,7 +126,10 @@ export function useDeleteMaterial(options = {}) {
     mutationFn: materialsApi.deleteMaterial,
     onSuccess: (data, id, context) => {
       queryClient.invalidateQueries({ queryKey: materialsKeys.lists() });
-      queryClient.removeQueries({ queryKey: materialsKeys.detail(id) });
+
+      if (id) {
+        queryClient.removeQueries({ queryKey: materialsKeys.detail(id) });
+      }
 
       if (options.onSuccess) {
         options.onSuccess(data, id, context);
@@ -168,7 +164,7 @@ export function useBulkDeleteMaterials(options = {}) {
 }
 
 /**
- * Normal paginated list for favorites
+ * Favorites list
  */
 export function useMaterialsFavoritesList(params = {}, options = {}) {
   return useQuery({
@@ -210,7 +206,8 @@ export function useTrackMaterialView(options = {}) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({ id, cooldown }) => materialsApi.trackView(id, cooldown),
+    mutationFn: ({ id, cooldown_seconds }) =>
+      materialsApi.trackView(id, cooldown_seconds),
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: materialsKeys.lists() });
 
