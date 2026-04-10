@@ -1048,6 +1048,43 @@ class AcademicService:
             strict_label=True,   # <- module controls behavior
         )
 
+    def dropdown_faculties_public(
+            self,
+            *,
+            company_id: int,
+            search: str | None,
+            limit: int,
+            offset: int,
+            filters: dict | None,
+    ):
+        allowed_filters = {
+            "name": Faculty.name,
+            "code": Faculty.code,
+        }
+
+        sort_fields = {
+            "id": Faculty.id,
+            "name": Faculty.name,
+            "code": Faculty.code,
+            "created_at": getattr(Faculty, "created_at", Faculty.id),
+        }
+
+        return self.faculty_svc.dropdown(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=True,  # always true for public
+            search_columns=[Faculty.name, Faculty.code],
+            filters=filters,
+            allowed_filters=allowed_filters,
+            sort_fields=sort_fields,
+            default_sort=[Faculty.name.asc()],
+            value_field="id",
+            label_fields=["code", "name"],
+            meta_fields=["code"],  # keep public response minimal
+            strict_label=True,
+        )
     def dropdown_semesters(
         self,
         *,
@@ -1193,6 +1230,55 @@ class AcademicService:
             strict_label=True,
             # ---- NEW HOOK ----
             extra_where=[dept_exists],
+        )
+
+    def dropdown_faculties_with_departments_public(
+            self,
+            *,
+            company_id: int,
+            faculty_id: int | None,  # ✅ Accept faculty_id
+            search: str | None,
+            limit: int,
+            offset: int,
+            filters: dict | None,
+    ):
+        # ✅ Change all of these to Department instead of Faculty
+        allowed_filters = {
+            "name": Department.name,
+            "code": Department.code,
+        }
+
+        sort_fields = {
+            "id": Department.id,
+            "name": Department.name,
+            "code": Department.code,
+        }
+
+        # ✅ Enforce the faculty_id filter securely
+        extra_where = []
+        if faculty_id is not None:
+            extra_where.append(Department.faculty_id == int(faculty_id))
+
+        # Optional: ensure we only return active departments for public view
+        extra_where.append(Department.is_enabled.is_(True))
+
+        # ✅ Query department_svc so we return Departments, not Faculties
+        return self.department_svc.dropdown(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=True,  # Always True for public registration
+            search_columns=[Department.name, Department.code],
+            filters=filters,
+            allowed_filters=allowed_filters,
+            sort_fields=sort_fields,
+            default_sort=[Department.name.asc()],
+            value_field="id",
+            label_fields=["code", "name"],
+            meta_fields=["code", "faculty_id"],  # Good for debugging frontend
+            strict_label=True,
+            extra_where=extra_where,  # Apply the filters here
         )
 
     def list_faculties_cursor(

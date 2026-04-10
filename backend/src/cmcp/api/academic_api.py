@@ -7,7 +7,10 @@ from flask import Blueprint, request
 
 from cmcp import db
 from cmcp.common.api_response import api_success, api_error
+from cmcp.common.decorators import rate_limit
+from cmcp.core.auth import public
 from cmcp.core.exceptions import NotFoundError, BusinessValidationError
+from cmcp.core.tenant_resolver import resolve_company_id_for_public
 from cmcp.security.rbac_guards import require_company_and_permission
 
 from cmcp.modules.academic.schemas import (
@@ -773,6 +776,42 @@ def faculties_dropdown(company_id: int):
     except Exception as e:
         return api_error(str(e), status_code=400)
 
+@bp.get("/public/faculties/dropdown")
+@public
+@rate_limit(key_prefix="public_faculties_dropdown", limit=60, window=60)
+def public_faculties_dropdown():
+    try:
+        company_id = resolve_company_id_for_public()
+
+        search, limit, offset, _, filters = dropdown_args(
+            parse_filters_func=_parse_filters,
+            parse_bool_func=_as_bool,
+        )
+
+        # force only enabled records for public usage
+        data = svc.dropdown_faculties_public(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            filters=filters,
+        )
+
+        return api_success(message="OK", data=data, status_code=200)
+    except Exception as e:
+        return api_error(str(e), status_code=400)
+
+
+
+
+
+
+
+
+
+
+
+
 
 @bp.get("/semesters/dropdown")
 @require_company_and_permission(doctype="Academic Term", action="READ")
@@ -834,8 +873,32 @@ def departments_dropdown(company_id: int):
     except Exception as e:
         return api_error(str(e), status_code=400)
 
+@bp.get("/public/faculties/with-departments/dropdown")
+@public
+@rate_limit(key_prefix="public_faculties_with_departments_dropdown", limit=60, window=60)
+def public_faculties_with_departments_dropdown():
+    try:
+        company_id = resolve_company_id_for_public()
 
+        search, limit, offset, _, filters = dropdown_args(
+            parse_filters_func=_parse_filters,
+            parse_bool_func=_as_bool,
+        )
 
+        # ✅ Extract the faculty_id from the frontend request params
+        faculty_id = request.args.get("faculty_id", type=int)
+
+        data = svc.dropdown_faculties_with_departments_public(
+            company_id=company_id,
+            faculty_id=faculty_id,  # ✅ Pass it to the service
+            search=search,
+            limit=limit,
+            offset=offset,
+            filters=filters,
+        )
+        return api_success(message="OK", data=data, status_code=200)
+    except Exception as e:
+        return api_error(str(e), status_code=400)
 
 @bp.get("/courses/dropdown")
 @require_company_and_permission(doctype="Course", action="READ")
