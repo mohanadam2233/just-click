@@ -1,5 +1,7 @@
 "use client";
 
+import Preloader from "@/components/shared/others/Preloader";
+
 import FrappeForm from "@/components/shared/forms/FrappeForm";
 import {
   useChaptersDropdown,
@@ -97,7 +99,7 @@ const CreateMaterialMain = () => {
   const [errors, setErrors] = useState({});
 
   const { data: coursesRes, isLoading: isLoadingCourses } = useCoursesDropdown(
-    { limit: 500 },
+    { limit: 20 },
     { staleTime: 60_000 },
   );
 
@@ -109,7 +111,7 @@ const CreateMaterialMain = () => {
 
   const { data: chaptersRes, isLoading: isLoadingChapters } =
     useChaptersDropdown(
-      { course_id: normalizedCourseId, limit: 500 },
+      { course_id: normalizedCourseId, limit: 20 },
       { enabled: !!normalizedCourseId, staleTime: 60_000 },
     );
   const chapterOptions = Array.isArray(chaptersRes?.data)

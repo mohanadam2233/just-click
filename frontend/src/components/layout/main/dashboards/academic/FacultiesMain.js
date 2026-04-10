@@ -1,5 +1,7 @@
 "use client";
 
+import Preloader from "@/components/shared/others/Preloader";
+
 import AcademicTable from "@/components/shared/dashboards/AcademicTable";
 import { useFacultiesList, useBulkDeleteFaculties } from "@/features/academic/hooks";
 import { useRouter } from "next/navigation";
@@ -16,7 +18,7 @@ const FacultiesMain = () => {
   const router = useRouter();
   const notify = useNotify();
 
-  const { data, isLoading, isError } = useFacultiesList({ mode: "scroll", limit: 500 });
+  const { data, isLoading, isError } = useFacultiesList({ mode: "scroll", limit: 20 });
   const bulkDeleteMutation = useBulkDeleteFaculties();
 
   const handleBulkDelete = (selectedIds) => {
@@ -36,7 +38,7 @@ const FacultiesMain = () => {
   ];
 
   if (isLoading) {
-    return <div className="p-10 text-center">Loading faculties...</div>;
+    return <Preloader />;
   }
 
   if (isError) {

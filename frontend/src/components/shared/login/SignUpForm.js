@@ -1,9 +1,8 @@
-
 "use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { FiInfo, FiMail, FiUser } from "react-icons/fi";
 import { HiOutlineIdentification } from "react-icons/hi";
@@ -17,77 +16,103 @@ const SignUpForm = () => {
   const router = useRouter();
   const registerMut = useRegisterStudent();
 
-  // faculty selected value (ID)
-  const [selectedFaculty, setSelectedFaculty] = useState(null);
+  const [selectedFaculty, setSelectedFaculty] = useState("");
 
   const [form, setForm] = useState({
     student_id: "",
     full_name: "",
     student_email: "",
-
     department_id: "",
     classroom_id: "",
     room_number: "",
-
     accept_terms: false,
   });
 
   const onChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setForm((p) => ({
-      ...p,
+    setForm((prev) => ({
+      ...prev,
       [name]: type === "checkbox" ? checked : value,
     }));
   };
 
-  // ----------------------------
-  // Dropdown data (REAL API)
-  // ----------------------------
   const facultyDD = useDropdown({
-    cacheKey: "faculties",
-    endpoint: "/academic/faculties/dropdown",
+    cacheKey: "public-faculties",
+    endpoint: "/academic/public/faculties/dropdown",
     enabled: true,
-    limit: 10,
+    limit: 20,
   });
 
   const deptDD = useDropdown({
     cacheKey: `departments-faculty-${selectedFaculty || "none"}`,
-    endpoint: "/academic/departments/dropdown",
+    endpoint: "/academic/public/faculties/with-departments/dropdown",
     enabled: !!selectedFaculty,
     limit: 10,
-    params: { faculty_id: selectedFaculty || "" }, // ✅ your API param
+    params: { faculty_id: selectedFaculty || "" },
   });
 
   const classroomDD = useDropdown({
     cacheKey: "classrooms",
     endpoint: "/academic/classrooms/dropdown",
     enabled: true,
-    limit: 10,
+    limit: 20,
   });
 
-  const handleFacultyPick = (val) => {
-    const fid = Number(val);
-    setSelectedFaculty(fid);
+  const facultyOptions = useMemo(
+    () => (Array.isArray(facultyDD.options) ? facultyDD.options : []),
+    [facultyDD.options],
+  );
 
-    // reset dependent field
-    setForm((p) => ({
-      ...p,
+  const departmentOptions = useMemo(
+    () => (Array.isArray(deptDD.options) ? deptDD.options : []),
+    [deptDD.options],
+  );
+
+  const classroomOptions = useMemo(
+    () => (Array.isArray(classroomDD.options) ? classroomDD.options : []),
+    [classroomDD.options],
+  );
+
+  const handleFacultyPick = (val) => {
+    const facultyId = String(val || "");
+    setSelectedFaculty(facultyId);
+    setForm((prev) => ({
+      ...prev,
       department_id: "",
     }));
-
-    // reset dept query
-    deptDD.setSearch("");
+    deptDD.reset?.();
   };
+
+  const trimmedStudentId = form.student_id.trim();
+  const trimmedFullName = form.full_name.trim();
+  const trimmedEmail = form.student_email.trim();
+  const trimmedRoomNumber = form.room_number.trim();
+
+  const isFormValid =
+    !!trimmedStudentId &&
+    !!trimmedFullName &&
+    !!trimmedEmail &&
+    !!selectedFaculty &&
+    !!form.department_id &&
+    !!form.accept_terms;
+
+  const isSubmitting = registerMut.isPending;
+  const isSubmitDisabled = !isFormValid || isSubmitting;
 
   const onSubmit = async (e) => {
     e.preventDefault();
+
+    if (isSubmitting) {
+      console.log("Already submitting, ignoring click");
+      return;
+    }
 
     if (!form.accept_terms) {
       toast.error("Please accept terms.");
       return;
     }
 
-    if (!form.student_id.trim() || !form.full_name.trim() || !form.student_email.trim()) {
+    if (!trimmedStudentId || !trimmedFullName || !trimmedEmail) {
       toast.error("Please fill Student ID, Full name, and Email.");
       return;
     }
@@ -99,20 +124,24 @@ const SignUpForm = () => {
 
     try {
       const payload = {
-        student_id: form.student_id.trim(),
-        email: form.student_email.trim(),
-        full_name: form.full_name.trim(),
+        student_id: trimmedStudentId,
+        email: trimmedEmail,
+        full_name: trimmedFullName,
         faculty_id: Number(selectedFaculty),
         department_id: Number(form.department_id),
-
         classroom_id: form.classroom_id ? Number(form.classroom_id) : undefined,
-        room_number: form.room_number?.trim() || undefined,
+        room_number: trimmedRoomNumber || undefined,
       };
+
+      console.log("Submitting payload:", payload);
 
       const res = await registerMut.mutateAsync(payload);
 
+      console.log("Registration response:", res);
+
       const msg =
-        res?.message || "Registration submitted. Please check your email to verify your address.";
+        res?.message ||
+        "Registration submitted. Please check your email to verify your address.";
       const d = res?.data || {};
 
       const qs = new URLSearchParams({
@@ -124,11 +153,23 @@ const SignUpForm = () => {
 
       router.replace(`/signup/success?${qs.toString()}`);
     } catch (err) {
-      toast.error(err?.message || "Registration failed");
+      console.error("Registration error details:", err);
+
+      // Better error message handling
+      let errorMessage = "Registration failed";
+      if (err?.message) {
+        errorMessage = err.message;
+      } else if (err?.response?.data?.message) {
+        errorMessage = err.response.data.message;
+      } else if (err?.response?.data?.errors) {
+        const errors = err.response.data.errors;
+        errorMessage = Object.values(errors).flat().join(", ");
+      }
+
+      toast.error(errorMessage);
     }
   };
 
-  // --- UI classes (UNCHANGED from your style) ---
   const labelCls =
     "block text-[13px] font-semibold text-gray-700 dark:text-gray-300 mb-2";
 
@@ -151,28 +192,28 @@ const SignUpForm = () => {
     "bg-white/70 dark:bg-gray-900/40 text-gray-900 dark:text-white " +
     "focus:outline-none focus:border-primaryColor/40 focus:ring-4 focus:ring-primaryColor/10 transition appearance-none";
 
-  const isSubmitting = registerMut.isPending;
-
   return (
     <div className="transition-all duration-150 ease-linear">
-      {/* Header */}
       <div className="text-center mb-7">
         <h2 className="text-2xl md:text-3xl font-semibold text-gray-900 dark:text-white tracking-tight">
           Create account
         </h2>
         <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
           Already registered?{" "}
-          <Link href="/login" className="text-primaryColor font-semibold hover:underline">
+          <Link
+            href="/login"
+            className="text-primaryColor font-semibold hover:underline"
+          >
             Sign in
           </Link>
         </p>
       </div>
 
-      {/* Passwordless info banner */}
       <div className="mb-7 px-4 py-3 rounded-2xl border border-primaryColor/15 bg-primaryColor/5 flex items-start gap-3">
         <FiInfo className="text-primaryColor text-lg mt-0.5 flex-shrink-0" />
         <p className="text-sm text-gray-700 dark:text-gray-200">
-          No password needed – we&apos;ll email you a secure link to activate your account.
+          No password needed – we&apos;ll email you a secure link to activate
+          your account.
         </p>
       </div>
 
@@ -233,7 +274,6 @@ const SignUpForm = () => {
           </div>
         </div>
 
-        {/* Faculty & Department */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className={labelCls}>
@@ -242,15 +282,14 @@ const SignUpForm = () => {
 
             <AsyncDropdown
               value={selectedFaculty}
-              onChange={(val) => handleFacultyPick(val)}
-              options={facultyDD.options} // {label,value,meta}
+              onChange={handleFacultyPick}
+              options={facultyOptions}
               isLoading={facultyDD.isLoading}
               hasMore={facultyDD.hasMore}
               onLoadMore={facultyDD.loadMore}
               onSearch={facultyDD.setSearch}
               placeholder="Select faculty"
               inputClassName={selectCls}
-              // ✅ label-only: don't pass getSublabel
               disabled={isSubmitting}
             />
           </div>
@@ -261,30 +300,41 @@ const SignUpForm = () => {
             </label>
 
             <AsyncDropdown
+              key={`department-${selectedFaculty || "none"}`}
               value={form.department_id}
-              onChange={(val) => setForm((p) => ({ ...p, department_id: String(val) }))}
-              options={deptDD.options}
+              onChange={(val) =>
+                setForm((prev) => ({
+                  ...prev,
+                  department_id: String(val || ""),
+                }))
+              }
+              options={departmentOptions}
               isLoading={deptDD.isLoading}
               hasMore={deptDD.hasMore}
               onLoadMore={deptDD.loadMore}
               onSearch={deptDD.setSearch}
-              placeholder={selectedFaculty ? "Select department" : "Select faculty first"}
+              placeholder={
+                selectedFaculty ? "Select department" : "Select faculty first"
+              }
               inputClassName={selectCls}
-              // ✅ label-only: don't pass getSublabel
               disabled={!selectedFaculty || isSubmitting}
             />
           </div>
         </div>
 
-        {/* Classroom + Room number */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <label className={labelCls}>Classroom (optional)</label>
 
             <AsyncDropdown
               value={form.classroom_id}
-              onChange={(val) => setForm((p) => ({ ...p, classroom_id: String(val) }))}
-              options={classroomDD.options}
+              onChange={(val) =>
+                setForm((prev) => ({
+                  ...prev,
+                  classroom_id: String(val || ""),
+                }))
+              }
+              options={classroomOptions}
               isLoading={classroomDD.isLoading}
               hasMore={classroomDD.hasMore}
               onLoadMore={classroomDD.loadMore}
@@ -312,7 +362,6 @@ const SignUpForm = () => {
           </div>
         </div>
 
-        {/* Terms */}
         <div className="flex items-start gap-3 pt-1">
           <input
             type="checkbox"
@@ -323,13 +372,22 @@ const SignUpForm = () => {
             className="w-5 h-5 mt-0.5 rounded-md border-gray-300 text-primaryColor focus:ring-primaryColor/20"
             disabled={isSubmitting}
           />
-          <label htmlFor="terms" className="text-sm text-gray-600 dark:text-gray-400">
+          <label
+            htmlFor="terms"
+            className="text-sm text-gray-600 dark:text-gray-400"
+          >
             I agree to the{" "}
-            <a href="#" className="text-primaryColor font-semibold hover:underline">
+            <a
+              href="#"
+              className="text-primaryColor font-semibold hover:underline"
+            >
               Terms
             </a>{" "}
             and{" "}
-            <a href="#" className="text-primaryColor font-semibold hover:underline">
+            <a
+              href="#"
+              className="text-primaryColor font-semibold hover:underline"
+            >
               Privacy Policy
             </a>
             .
@@ -338,9 +396,14 @@ const SignUpForm = () => {
 
         <button
           type="submit"
-          disabled={isSubmitting}
-          className="w-full h-12 rounded-2xl bg-primaryColor hover:bg-primaryColor/90 text-white text-sm font-semibold
-                     transition shadow-sm focus:outline-none focus:ring-4 focus:ring-primaryColor/20 disabled:opacity-60"
+          disabled={isSubmitDisabled}
+          aria-disabled={isSubmitDisabled}
+          className={
+            "w-full h-12 rounded-2xl text-white text-sm font-semibold transition shadow-sm focus:outline-none focus:ring-4 " +
+            (isSubmitDisabled
+              ? "bg-gray-300 dark:bg-gray-700 cursor-not-allowed focus:ring-gray-200"
+              : "bg-primaryColor hover:bg-primaryColor/90 focus:ring-primaryColor/20")
+          }
         >
           {isSubmitting ? "Submitting..." : "Create account"}
         </button>

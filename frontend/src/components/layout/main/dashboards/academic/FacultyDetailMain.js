@@ -1,5 +1,7 @@
 "use client";
 
+import Preloader from "@/components/shared/others/Preloader";
+
 import FrappeForm from "@/components/shared/forms/FrappeForm";
 import useNotify from "@/hooks/useNotify";
 import { useFacultyDetail, useUpdateFaculty, useDeleteFaculty } from "@/features/academic/hooks";
@@ -201,7 +203,7 @@ const FacultyDetailMain = ({ id }) => {
       : "Saved";
 
   if (isLoading || !values) {
-    return <div className="p-10 flex items-center justify-center">Loading...</div>;
+    return <Preloader />;
   }
 
   if (isError) {

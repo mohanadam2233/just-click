@@ -1,5 +1,7 @@
 "use client";
 
+import Preloader from "@/components/shared/others/Preloader";
+
 import FrappeForm from "@/components/shared/forms/FrappeForm";
 import {
   useDeleteDepartment,
@@ -107,7 +109,7 @@ const DepartmentDetailMain = ({ id }) => {
 
   const { data: facultiesRes, isLoading: isLoadingFaculties } =
     useFacultiesDropdown({
-      limit: 500,
+      limit: 20,
       offset: 0,
       active_only: true,
     });
@@ -340,7 +342,7 @@ const DepartmentDetailMain = ({ id }) => {
 
   if (isLoading || !values) {
     return (
-      <div className="p-10 flex items-center justify-center">Loading...</div>
+      <Preloader />
     );
   }
 

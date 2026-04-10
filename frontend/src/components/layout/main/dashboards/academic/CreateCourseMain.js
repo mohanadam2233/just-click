@@ -1,5 +1,7 @@
 "use client";
 
+import Preloader from "@/components/shared/others/Preloader";
+
 import FrappeForm from "@/components/shared/forms/FrappeForm";
 import useNotify from "@/hooks/useNotify";
 import { useCreateCourse, useDepartmentsDropdown, useSemestersDropdown } from "@/features/academic/hooks";
@@ -30,10 +32,10 @@ const CreateCourseMain = () => {
   const createMutation = useCreateCourse();
 
   // Dropdowns
-  const { data: deptsRes, isLoading: isLoadingDepts } = useDepartmentsDropdown({ limit: 500 });
+  const { data: deptsRes, isLoading: isLoadingDepts } = useDepartmentsDropdown({ limit: 20 });
   const departmentOptions = Array.isArray(deptsRes?.data) ? deptsRes.data : (deptsRes?.data?.data || []);
 
-  const { data: semsRes, isLoading: isLoadingSems } = useSemestersDropdown({ limit: 500 });
+  const { data: semsRes, isLoading: isLoadingSems } = useSemestersDropdown({ limit: 20 });
   const semesterOptions = Array.isArray(semsRes?.data) ? semsRes.data : (semsRes?.data?.data || []);
   const [values, setValues] = useState({
     department_id: "",

@@ -223,11 +223,15 @@ const SidebarDashboard = () => {
           subItems: [
             {
               name: "Students",
-              path: "/admin/dashboards/admin-students",
+              path: "/admin/dashboards/admin-people/students",
+            },
+            {
+              name: "Staff",
+              path: "/admin/dashboards/admin-people/staff",
             },
             {
               name: "Onboarding Queue",
-              path: "/admin/dashboards/admin-students/onboarding",
+              path: "/admin/dashboards/admin-people/onboarding",
             },
           ],
         },

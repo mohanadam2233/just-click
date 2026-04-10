@@ -1,5 +1,7 @@
 "use client";
 
+import Preloader from "@/components/shared/others/Preloader";
+
 import FrappeForm from "@/components/shared/forms/FrappeForm";
 import {
   useCourseDetail,
@@ -130,14 +132,14 @@ const CourseDetailMain = ({ id }) => {
 
   const { data: departmentsResponse, isLoading: isLoadingDepts } =
     useDepartmentsDropdown({
-      limit: 100,
+      limit: 20,
       offset: 0,
       active_only: true,
     });
 
   const { data: semestersResponse, isLoading: isLoadingSems } =
     useSemestersDropdown({
-      limit: 100,
+      limit: 20,
       offset: 0,
       active_only: true,
     });

@@ -1,5 +1,7 @@
 "use client";
 
+import Preloader from "@/components/shared/others/Preloader";
+
 import FrappeForm from "@/components/shared/forms/FrappeForm";
 import {
   useChaptersDropdown,
@@ -254,7 +256,7 @@ const MaterialDetailMain = ({ id }) => {
   const materialData = useMemo(() => extractDetailRecord(response), [response]);
 
   const { data: coursesRes, isLoading: isLoadingCourses } = useCoursesDropdown({
-    limit: 500,
+    limit: 20,
     offset: 0,
     active_only: true,
   });
@@ -272,7 +274,7 @@ const MaterialDetailMain = ({ id }) => {
     useChaptersDropdown(
       {
         course_id: values?.course_id,
-        limit: 500,
+        limit: 20,
         offset: 0,
         active_only: true,
       },
@@ -764,7 +766,7 @@ const MaterialDetailMain = ({ id }) => {
 
   if (isLoading || !values) {
     return (
-      <div className="p-10 flex items-center justify-center">Loading...</div>
+      <Preloader />
     );
   }
 

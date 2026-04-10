@@ -1,5 +1,7 @@
 "use client";
 
+import Preloader from "@/components/shared/others/Preloader";
+
 import FrappeForm from "@/components/shared/forms/FrappeForm";
 import { useCreateDepartment, useFacultiesDropdown } from "@/features/academic/hooks";
 import useNotify from "@/hooks/useNotify";
@@ -16,7 +18,7 @@ const departmentSchema = z.object({
 const CreateDepartmentMain = () => {
   const router = useRouter();
   // Fetch dropdown data
-  const { data: facultiesRes, isLoading: isLoadingFaculties } = useFacultiesDropdown({ limit: 500 });
+  const { data: facultiesRes, isLoading: isLoadingFaculties } = useFacultiesDropdown({ limit: 20 });
   const facultiesOptions = Array.isArray(facultiesRes?.data) ? facultiesRes.data : (facultiesRes?.data?.data || []);const notify = useNotify();
 
   const createMutation = useCreateDepartment();

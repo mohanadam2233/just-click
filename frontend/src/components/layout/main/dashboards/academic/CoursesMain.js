@@ -1,5 +1,7 @@
 "use client";
 
+import Preloader from "@/components/shared/others/Preloader";
+
 import AcademicTable from "@/components/shared/dashboards/AcademicTable";
 import { useCoursesList, useBulkDeleteCourses, useDepartmentsDropdown } from "@/features/academic/hooks";
 import { useRouter } from "next/navigation";
@@ -16,7 +18,7 @@ const coursesColumns = [
 const CoursesMain = () => {
   const router = useRouter();
   const notify = useNotify();
-  const { data: deptsRes, isLoading: isLoadingDepts } = useDepartmentsDropdown({ limit: 500 });
+  const { data: deptsRes, isLoading: isLoadingDepts } = useDepartmentsDropdown({ limit: 20 });
   const departmentsData = Array.isArray(deptsRes?.data) ? deptsRes.data : (deptsRes?.data?.data || []);
   const departmentsOptions = departmentsData.map((d) => ({
     label: d.name,
@@ -40,7 +42,7 @@ const CoursesMain = () => {
     });
   }, [departmentsOptions, isLoadingDepts]);
 
-  const { data, isLoading, isError } = useCoursesList({ mode: "scroll", limit: 500 });
+  const { data, isLoading, isError } = useCoursesList({ mode: "scroll", limit: 20 });
   const bulkDeleteMutation = useBulkDeleteCourses();
 
   const handleBulkDelete = (selectedIds) => {
@@ -60,7 +62,7 @@ const CoursesMain = () => {
   ];
 
   if (isLoading) {
-    return <div className="p-10 text-center">Loading courses...</div>;
+    return <Preloader />;
   }
 
   if (isError) {

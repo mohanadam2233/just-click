@@ -1,6 +1,6 @@
 import ButtonPrimary from "@/components/shared/buttons/ButtonPrimary";
 import AsyncDropdown from "@/components/shared/inputs/AsyncDropdown";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 
 // ─── SVG Icons used in Frappe UI ──────────────────────────────────────────────
 
@@ -168,6 +168,49 @@ const AcademicTable = ({
   const [filters, setFilters] = useState({});
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+
+  // Column resizing state
+  const [colWidths, setColWidths] = useState({});
+  const [resizingCol, setResizingCol] = useState(null);
+  const [startX, setStartX] = useState(0);
+  const [startWidth, setStartWidth] = useState(0);
+
+  useEffect(() => {
+    const onMouseMove = (e) => {
+      if (!resizingCol) return;
+      const newWidth = Math.max(50, startWidth + (e.clientX - startX));
+      setColWidths((prev) => ({ ...prev, [resizingCol]: newWidth }));
+    };
+    const onMouseUp = () => {
+      if (resizingCol) {
+        document.body.style.cursor = "default";
+        setResizingCol(null);
+      }
+    };
+    if (resizingCol) {
+      document.body.style.cursor = "col-resize";
+      document.addEventListener("mousemove", onMouseMove);
+      document.addEventListener("mouseup", onMouseUp);
+    }
+    return () => {
+      document.body.style.cursor = "default";
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [resizingCol, startX, startWidth]);
+
+  const handleResizeStart = (e, key) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setResizingCol(key);
+    setStartX(e.clientX);
+    const th = e.target.closest("th");
+    if (th) {
+      setStartWidth(th.getBoundingClientRect().width);
+    } else {
+      setStartWidth(100);
+    }
+  };
 
   // Derived state
   const isAllSelected =
@@ -399,9 +442,15 @@ const AcademicTable = ({
               {columns.map((col, idx) => (
                 <th
                   key={col.key}
-                  className={`py-3 px-2 text-xs font-medium text-gray-500 ${col.width || ""}`}
+                  className={`py-3 px-2 text-xs font-medium text-gray-500 relative select-none ${colWidths[col.key] ? "" : (col.width || "")}`}
+                  style={colWidths[col.key] ? { width: colWidths[col.key] + "px", minWidth: colWidths[col.key] + "px" } : {}}
                 >
                   {col.label}
+                  <div
+                    onMouseDown={(e) => handleResizeStart(e, col.key)}
+                    className="absolute right-0 top-0 bottom-0 w-1.5 cursor-col-resize hover:bg-blue-400 dark:hover:bg-blue-500 transition-colors z-10"
+                    title="Drag to resize"
+                  />
                 </th>
               ))}
             </tr>

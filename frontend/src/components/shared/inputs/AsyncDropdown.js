@@ -50,12 +50,7 @@ function normalizeOption(opt, index) {
   }
 
   const rawValue =
-    opt.value ??
-    opt.id ??
-    opt.code ??
-    opt.slug ??
-    opt.label ??
-    index;
+    opt.value ?? opt.id ?? opt.code ?? opt.slug ?? opt.label ?? index;
 
   const rawLabel =
     opt.label ??
@@ -125,7 +120,7 @@ export default function AsyncDropdown({
 
   const selectedOption = useMemo(() => {
     return normalizedOptions.find(
-      (opt) => String(opt.value) === String(value ?? "")
+      (opt) => String(opt.value) === String(value ?? ""),
     );
   }, [normalizedOptions, value]);
 
@@ -190,18 +185,27 @@ export default function AsyncDropdown({
   useEffect(() => {
     if (!isOpen) return;
     setHighlightedIndex((prev) =>
-      Math.min(prev, Math.max(0, normalizedOptions.length - 1))
+      Math.min(prev, Math.max(0, normalizedOptions.length - 1)),
     );
   }, [isOpen, normalizedOptions.length]);
 
+  // const openMenu = useCallback(() => {
+  //   if (disabled) return;
+  //   setIsOpen(true);
+  //   setHighlightedIndex(0);
+  //   updateMenuPosition();
+  //   onSearch?.("");
+  // }, [disabled, onSearch, updateMenuPosition]);
   const openMenu = useCallback(() => {
     if (disabled) return;
+
     setIsOpen(true);
     setHighlightedIndex(0);
     updateMenuPosition();
-    onSearch?.("");
-  }, [disabled, onSearch, updateMenuPosition]);
 
+    onSearch?.(""); // reset search
+    onLoadMore?.(); // 👈 force fetch
+  }, [disabled, onSearch, updateMenuPosition, onLoadMore]);
   const handleSelect = useCallback(
     (opt) => {
       onChange?.(opt.value, opt.raw ?? opt);
@@ -209,7 +213,7 @@ export default function AsyncDropdown({
       setIsOpen(false);
       onSearch?.("");
     },
-    [onChange, onSearch]
+    [onChange, onSearch],
   );
 
   const clearSelection = useCallback(() => {
@@ -288,7 +292,7 @@ export default function AsyncDropdown({
       text,
       value,
       clearSelection,
-    ]
+    ],
   );
 
   return (
@@ -371,8 +375,7 @@ export default function AsyncDropdown({
                 )}
 
                 {normalizedOptions.map((opt, idx) => {
-                  const selected =
-                    String(opt.value) === String(value ?? "");
+                  const selected = String(opt.value) === String(value ?? "");
                   const active = idx === highlightedIndex;
                   const sub = getSublabel
                     ? getSublabel(opt)
@@ -425,7 +428,7 @@ export default function AsyncDropdown({
               </div>
             </div>
           </div>,
-          document.body
+          document.body,
         )}
     </div>
   );

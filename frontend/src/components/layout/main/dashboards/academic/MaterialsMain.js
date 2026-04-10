@@ -1,5 +1,7 @@
 "use client";
 
+import Preloader from "@/components/shared/others/Preloader";
+
 import AcademicTable from "@/components/shared/dashboards/AcademicTable";
 import {
   useBulkDeleteMaterials,
@@ -27,7 +29,7 @@ const MaterialsMain = () => {
 
   const { data, isLoading, isError } = useMaterialsList({
     mode: "scroll",
-    limit: 500,
+    limit: 20,
     is_enabled: 1,
   });
 
@@ -113,7 +115,7 @@ const MaterialsMain = () => {
   );
 
   if (isLoading) {
-    return <div className="p-10 text-center">Loading materials...</div>;
+    return <Preloader />;
   }
 
   if (isError) {
