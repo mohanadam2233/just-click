@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
-import Link from "next/link";
 import ButtonPrimary from "@/components/shared/buttons/ButtonPrimary";
+import Link from "next/link";
+import { useState } from "react";
 
 const faqs = [
   {
@@ -57,7 +57,9 @@ const Faq = () => {
                   className="border border-borderColor dark:border-borderColor-dark rounded-2xl overflow-hidden bg-lightGrey10 dark:bg-lightGrey10-dark"
                 >
                   <button
-                    onClick={() => setOpenIndex(openIndex === index ? null : index)}
+                    onClick={() =>
+                      setOpenIndex(openIndex === index ? null : index)
+                    }
                     className="w-full px-6 py-5 flex items-center justify-between text-left font-semibold text-blackColor dark:text-whiteColor hover:bg-white dark:hover:bg-gray-800 transition-colors"
                   >
                     <span className="text-lg">{faq.question}</span>
@@ -100,11 +102,15 @@ const Faq = () => {
                 Ready to study smarter this semester?
               </h3>
               <p className="text-white/90 text-lg mb-8 max-w-2xl mx-auto">
-                Stop searching and start learning — everything is organized in one place.
+                Stop searching and start learning — everything is organized in
+                one place.
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
-                <ButtonPrimary path="/register" className="bg-white text-primaryColor hover:bg-gray-100 border-0">
+                <ButtonPrimary
+                  path="/signup"
+                  className="bg-white text-primaryColor hover:bg-gray-100 border-0"
+                >
                   Create free account
                 </ButtonPrimary>
 

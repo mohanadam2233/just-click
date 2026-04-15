@@ -1,6 +1,11 @@
 import MaterialCard from "./MaterialCard";
 
-const CoursesGrid = ({ materials, isNotSidebar }) => {
+const CoursesGrid = ({
+  materials,
+  isNotSidebar,
+  onToggleFavorite,
+  onShareMaterial,
+}) => {
   return (
     <div
       className={`grid grid-cols-1 ${
@@ -15,6 +20,8 @@ const CoursesGrid = ({ materials, isNotSidebar }) => {
             key={material.id}
             material={material}
             type="primaryMd"
+            onToggleFavorite={onToggleFavorite}
+            onShareMaterial={onShareMaterial}
           />
         ))
       ) : (

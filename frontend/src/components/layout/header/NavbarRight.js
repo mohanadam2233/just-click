@@ -155,7 +155,7 @@ const NavbarRight = ({ isScrolled }) => {
             </Link>
 
             <Link
-              href="/register"
+              href="/signup"
               className={`text-sm font-bold px-5 py-2 rounded-full transition-all ${btnClass}`}
             >
               Get started →

@@ -388,12 +388,12 @@ const CoursesPrimary = ({ isNotSidebar, isList }) => {
       try {
         if (typeof favoriteMutation?.mutateAsync === "function") {
           await favoriteMutation.mutateAsync({
-            materialId: material.id,
+            id: material.id,
             is_favorite: nextFavorite,
           });
         } else if (typeof favoriteMutation?.mutate === "function") {
           favoriteMutation.mutate({
-            materialId: material.id,
+            id: material.id,
             is_favorite: nextFavorite,
           });
         }
@@ -407,6 +407,40 @@ const CoursesPrimary = ({ isNotSidebar, isList }) => {
     },
     [favoriteMutation],
   );
+
+  const handleShareMaterial = useCallback((material) => {
+    if (!material?.id) return;
+
+    const shareUrl =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/materials/${material.id}`
+        : "";
+
+    if (!shareUrl) return;
+
+    const shareText = `New material uploaded: ${
+      material?.title || "Material"
+    }\n\nView here:\n${shareUrl}`;
+
+    if (navigator.share) {
+      navigator
+        .share({
+          title: material?.title || "Material",
+          text: "Check this material",
+          url: shareUrl,
+        })
+        .catch(() => {
+          const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(
+            shareText,
+          )}`;
+          window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+        });
+      return;
+    }
+
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+    window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+  }, []);
 
   const loadMoreRef = useIntersectionLoadMore({
     enabled: true,
@@ -721,11 +755,13 @@ const CoursesPrimary = ({ isNotSidebar, isList }) => {
                       isNotSidebar={isNotSidebar}
                       materials={materials}
                       onToggleFavorite={handleToggleFavorite}
+                      onShareMaterial={handleShareMaterial}
                     />
                   ) : (
                     <CoursesList
                       materials={materials}
                       onToggleFavorite={handleToggleFavorite}
+                      onShareMaterial={handleShareMaterial}
                     />
                   )}
                 </div>

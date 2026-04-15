@@ -15,7 +15,7 @@ import Link from "next/link";
 import { useEffect, useRef } from "react";
 
 /* -------------------------------------------------------------------------- */
-/* Utils                                  */
+/* Utils                                                                      */
 /* -------------------------------------------------------------------------- */
 
 const formatFileSize = (sizeMb) => {
@@ -53,7 +53,7 @@ const getPagesOrSlidesLabel = (material) => {
 };
 
 /* -------------------------------------------------------------------------- */
-/* UI Blocks                                  */
+/* UI Blocks                                                                  */
 /* -------------------------------------------------------------------------- */
 
 const HeroSkeleton = () => (
@@ -171,7 +171,7 @@ const ErrorState = ({ title, message, showRetry = true }) => (
 );
 
 /* -------------------------------------------------------------------------- */
-/* Main Component                                 */
+/* Main Component                                                             */
 /* -------------------------------------------------------------------------- */
 
 const MaterialDetailsPrimary = ({ id }) => {
@@ -189,16 +189,14 @@ const MaterialDetailsPrimary = ({ id }) => {
 
   const hasTrackedViewRef = useRef(false);
 
-  // Extract rawMaterial here so we can pass it to useEffect before the early returns
   const rawMaterial = data?.data?.data;
 
-  // Move useEffect ABOVE all early return statements
   useEffect(() => {
     if (!numericId || !rawMaterial) return;
     if (hasTrackedViewRef.current) return;
 
     hasTrackedViewRef.current = true;
-    trackView({ id: numericId, cooldown: 3600 });
+    trackView({ id: numericId, cooldown_seconds: 3600 });
   }, [numericId, rawMaterial, trackView]);
 
   if (!id || Number.isNaN(numericId)) {
@@ -282,6 +280,15 @@ const MaterialDetailsPrimary = ({ id }) => {
   const canReadFile = Boolean(readHref);
   const canDownloadFile = Boolean(downloadHref) && isDownloadable;
 
+  const shareUrl =
+    typeof window !== "undefined"
+      ? `${window.location.origin}/materials/${numericId}`
+      : "";
+
+  const shareText = `New material uploaded: ${
+    material?.title || "Material"
+  }\n\nView here:\n${shareUrl}`;
+
   const handleOpenRead = () => {
     if (!canReadFile) return;
     window.open(readHref, "_blank", "noopener,noreferrer");
@@ -291,6 +298,43 @@ const MaterialDetailsPrimary = ({ id }) => {
     if (!canDownloadFile) return;
     trackDownload(numericId);
     window.open(downloadHref, "_blank", "noopener,noreferrer");
+  };
+
+  const handleCopyLink = async () => {
+    if (!shareUrl) return;
+
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      window.alert("Link copied successfully.");
+    } catch {
+      window.alert("Could not copy the link.");
+    }
+  };
+
+  const handleShareWhatsApp = () => {
+    if (!shareUrl) return;
+
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+    window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+  };
+
+  const handleNativeShare = async () => {
+    if (!shareUrl) return;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: material?.title || "Material",
+          text: "Check this material",
+          url: shareUrl,
+        });
+        return;
+      } catch {
+        // user cancelled or native share failed
+      }
+    }
+
+    handleShareWhatsApp();
   };
 
   return (
@@ -484,6 +528,33 @@ const MaterialDetailsPrimary = ({ id }) => {
                     }`}
                   >
                     Download File
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleNativeShare}
+                    className="w-full py-4 font-bold rounded-lg transition-all duration-300 flex items-center justify-center gap-2 bg-white/5 text-white/80 border border-white/10 hover:bg-white/10"
+                  >
+                    <i className="icofont-share"></i>
+                    Share Material
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleCopyLink}
+                    className="w-full py-4 font-bold rounded-lg transition-all duration-300 flex items-center justify-center gap-2 bg-white/5 text-white/80 border border-white/10 hover:bg-white/10"
+                  >
+                    <i className="icofont-copy"></i>
+                    Copy Link
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleShareWhatsApp}
+                    className="w-full py-4 font-bold rounded-lg transition-all duration-300 flex items-center justify-center gap-2 bg-[#25D366]/20 text-[#25D366] border border-[#25D366]/30 hover:bg-[#25D366] hover:text-white"
+                  >
+                    <i className="icofont-brand-whatsapp"></i>
+                    Share on WhatsApp
                   </button>
 
                   <button

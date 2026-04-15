@@ -1,7 +1,3 @@
-
-import React from "react";
-import TiltWrapper from "@/components/shared/wrappers/TiltWrapper";
-import Image from "next/image";
 import about10 from "@/assets/images/about/about_10.png";
 import AppleImage from "@/components/shared/animaited-images/AppleImage";
 import BalbImage from "@/components/shared/animaited-images/BalbImage";
@@ -11,6 +7,8 @@ import TriangleImage from "@/components/shared/animaited-images/TriangleImage";
 import ButtonPrimary from "@/components/shared/buttons/ButtonPrimary";
 import HeadingXl from "@/components/shared/headings/HeadingXl";
 import HreoName from "@/components/shared/section-names/HreoName";
+import TiltWrapper from "@/components/shared/wrappers/TiltWrapper";
+import Image from "next/image";
 
 const Hero = () => {
   return (
@@ -37,12 +35,14 @@ const Hero = () => {
               </HeadingXl>
 
               <p className="text-size-15 md:text-lg text-blackColor dark:text-blackColor-dark font-medium mb-10 leading-7 max-w-xl">
-                Slides, past exams, and announcements organized by semester and course.
-                No more WhatsApp digging — study faster, anytime.
+                Slides, past exams, and announcements organized by semester and
+                course. No more WhatsApp digging — study faster, anytime.
               </p>
 
               <div className="flex flex-wrap gap-4">
-                <ButtonPrimary path="/register">Create free account</ButtonPrimary>
+                <ButtonPrimary path="/signup">
+                  Create free account
+                </ButtonPrimary>
                 <ButtonPrimary color="secondary" path="/login">
                   Log in
                 </ButtonPrimary>

@@ -1,6 +1,10 @@
 "use client";
 
-import { useToggleMaterialFavorite, useTrackMaterialView, useTrackMaterialDownload } from "@/features/materials/hooks";
+import {
+  useToggleMaterialFavorite,
+  useTrackMaterialDownload,
+  useTrackMaterialView,
+} from "@/features/materials/hooks";
 import { getFileIcon, getSemesterBg } from "@/utils/fileIcons";
 import Link from "next/link";
 
@@ -13,7 +17,7 @@ const formatFileSize = (sizeMb) => {
   return `${num % 1 === 0 ? num.toFixed(0) : num.toFixed(1)} MB`;
 };
 
-const MaterialCard = ({ material }) => {
+const MaterialCard = ({ material, onToggleFavorite, onShareMaterial }) => {
   const { mutate: toggleFavorite } = useToggleMaterialFavorite();
   const { mutate: trackView } = useTrackMaterialView();
   const { mutate: trackDownload } = useTrackMaterialDownload();
@@ -46,9 +50,59 @@ const MaterialCard = ({ material }) => {
         ? `${pageCount} pages`
         : materialType;
 
+  const handleFavoriteClick = async (e) => {
+    e.preventDefault();
+
+    if (typeof onToggleFavorite === "function") {
+      await onToggleFavorite(material);
+      return;
+    }
+
+    toggleFavorite({ id, is_favorite: !material?.isFavorite });
+  };
+
+  const handleShareClick = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (typeof onShareMaterial === "function") {
+      onShareMaterial(material);
+      return;
+    }
+
+    const shareUrl =
+      typeof window !== "undefined"
+        ? `${window.location.origin}/materials/${id}`
+        : "";
+
+    if (!shareUrl) return;
+
+    const shareText = `New material uploaded: ${
+      material?.title || "Material"
+    }\n\nView here:\n${shareUrl}`;
+
+    if (navigator.share) {
+      navigator
+        .share({
+          title: material?.title || "Material",
+          text: "Check this material",
+          url: shareUrl,
+        })
+        .catch(() => {
+          const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(
+            shareText,
+          )}`;
+          window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+        });
+      return;
+    }
+
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(shareText)}`;
+    window.open(whatsappUrl, "_blank", "noopener,noreferrer");
+  };
+
   return (
     <div className="group bg-transparent border border-borderColor dark:border-borderColor-dark rounded-xl overflow-hidden hover:border-primaryColor dark:hover:border-primaryColor transition-all duration-300 flex flex-col h-full">
-      {/* Visual Area */}
       <div className="relative aspect-video bg-lightGrey7/30 dark:bg-whiteColor-dark/5 flex items-center justify-center overflow-hidden">
         <i
           className={`${fileIconClass} text-6xl text-primaryColor/80 group-hover:scale-110 transition-transform duration-500`}
@@ -70,20 +124,38 @@ const MaterialCard = ({ material }) => {
           ) : null}
         </div>
 
-        <button
-          type="button"
-          onClick={(e) => {
-            e.preventDefault();
-            toggleFavorite({ id, is_favorite: !material?.isFavorite });
-          }}
-          className="absolute top-3 right-3 w-8 h-8 rounded-full bg-white dark:bg-darkdeep3-dark shadow-sm flex items-center justify-center text-contentColor hover:text-red-500 transition-colors"
-          aria-label={material?.isFavorite ? "Remove from favorites" : "Add to favorites"}
-        >
-          <i className={material?.isFavorite ? "icofont-heart text-red-500" : "icofont-heart-alt"}></i>
-        </button>
+        <div className="absolute top-3 right-3 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleShareClick}
+            className="w-8 h-8 rounded-full bg-white dark:bg-darkdeep3-dark shadow-sm flex items-center justify-center text-contentColor hover:text-primaryColor transition-colors"
+            aria-label="Share material"
+            title="Share material"
+          >
+            <i className="icofont-share"></i>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleFavoriteClick}
+            className="w-8 h-8 rounded-full bg-white dark:bg-darkdeep3-dark shadow-sm flex items-center justify-center text-contentColor hover:text-red-500 transition-colors"
+            aria-label={
+              material?.isFavorite
+                ? "Remove from favorites"
+                : "Add to favorites"
+            }
+          >
+            <i
+              className={
+                material?.isFavorite
+                  ? "icofont-heart text-red-500"
+                  : "icofont-heart-alt"
+              }
+            ></i>
+          </button>
+        </div>
       </div>
 
-      {/* Content */}
       <div className="p-5 flex flex-col flex-grow">
         <div className="flex items-center gap-2 mb-2 flex-wrap">
           <span className="text-[10px] font-bold text-primaryColor uppercase tracking-wider">
@@ -132,7 +204,7 @@ const MaterialCard = ({ material }) => {
               href={canPreviewInBrowser ? readUrl : `/materials/${id}/view`}
               target={canPreviewInBrowser ? "_blank" : undefined}
               rel={canPreviewInBrowser ? "noopener noreferrer" : undefined}
-              onClick={() => trackView({ id, cooldown: 3600 })}
+              onClick={() => trackView({ id, cooldown_seconds: 3600 })}
               className="p-2 rounded-lg border border-borderColor dark:border-borderColor-dark text-contentColor hover:bg-primaryColor hover:text-whiteColor hover:border-primaryColor transition-all"
               aria-label="View material"
             >

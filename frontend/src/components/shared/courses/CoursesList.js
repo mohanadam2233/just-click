@@ -1,6 +1,6 @@
 import MaterialListItem from "./MaterialListItem";
 
-const CoursesList = ({ materials }) => {
+const CoursesList = ({ materials, onToggleFavorite, onShareMaterial }) => {
   return (
     <div className="w-full">
       <div className="overflow-x-auto">
@@ -16,7 +16,12 @@ const CoursesList = ({ materials }) => {
           <tbody>
             {materials?.length ? (
               materials.map((material) => (
-                <MaterialListItem key={material.id} material={material} />
+                <MaterialListItem
+                  key={material.id}
+                  material={material}
+                  onToggleFavorite={onToggleFavorite}
+                  onShareMaterial={onShareMaterial}
+                />
               ))
             ) : (
               <tr>
