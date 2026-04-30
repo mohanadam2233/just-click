@@ -17,6 +17,19 @@ const formatFileSize = (sizeMb) => {
   return `${num % 1 === 0 ? num.toFixed(0) : num.toFixed(1)} MB`;
 };
 
+const getSafeFileName = (material) => {
+  const title = material?.title || "material";
+  const ext = material?.file?.extension || material?.materialType || "file";
+  const safeTitle = title.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").trim();
+
+  return `${safeTitle || "material"}.${String(ext).replace(/^\./, "")}`;
+};
+
+const normalizeUrl = (url) => {
+  if (!url) return "#";
+  return url.replace("http://127.0.0.1:7000", "http://localhost:7000");
+};
+
 const MaterialCard = ({ material, onToggleFavorite, onShareMaterial }) => {
   const { mutate: toggleFavorite } = useToggleMaterialFavorite();
   const { mutate: trackView } = useTrackMaterialView();
@@ -50,8 +63,65 @@ const MaterialCard = ({ material, onToggleFavorite, onShareMaterial }) => {
         ? `${pageCount} pages`
         : materialType;
 
+  const handleViewClick = () => {
+    if (!id) return;
+    trackView({ id, cooldown_seconds: 3600 });
+  };
+
+  const handleDownloadClick = async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    const finalDownloadUrl = normalizeUrl(downloadUrl);
+
+    if (!id || !finalDownloadUrl || finalDownloadUrl === "#") return;
+
+    try {
+      const token =
+        localStorage.getItem("token") ||
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("authToken");
+
+      const response = await fetch(finalDownloadUrl, {
+        method: "GET",
+        credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+
+      if (response.status === 401) {
+        alert("Your login session expired. Please login again.");
+        return;
+      }
+
+      if (!response.ok) {
+        alert("Download failed. Please try again.");
+        return;
+      }
+
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+
+      const link = document.createElement("a");
+      link.href = blobUrl;
+      link.download = getSafeFileName(material);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+
+      window.URL.revokeObjectURL(blobUrl);
+
+      trackDownload(id);
+    } catch (error) {
+      console.error("Download failed:", error);
+      alert("Download failed. Please check your connection.");
+    }
+  };
+
   const handleFavoriteClick = async (e) => {
     e.preventDefault();
+    e.stopPropagation();
+
+    if (!id) return;
 
     if (typeof onToggleFavorite === "function") {
       await onToggleFavorite(material);
@@ -201,23 +271,27 @@ const MaterialCard = ({ material, onToggleFavorite, onShareMaterial }) => {
 
           <div className="flex gap-2">
             <a
-              href={canPreviewInBrowser ? readUrl : `/materials/${id}/view`}
+              href={
+                canPreviewInBrowser
+                  ? normalizeUrl(readUrl)
+                  : `/materials/${id}/view`
+              }
               target={canPreviewInBrowser ? "_blank" : undefined}
               rel={canPreviewInBrowser ? "noopener noreferrer" : undefined}
-              onClick={() => trackView({ id, cooldown_seconds: 3600 })}
+              onClick={handleViewClick}
               className="p-2 rounded-lg border border-borderColor dark:border-borderColor-dark text-contentColor hover:bg-primaryColor hover:text-whiteColor hover:border-primaryColor transition-all"
               aria-label="View material"
             >
               <i className="icofont-eye-alt"></i>
             </a>
 
-            <a
-              href={downloadUrl}
-              onClick={() => trackDownload(id)}
+            <button
+              type="button"
+              onClick={handleDownloadClick}
               className="px-4 py-2 rounded-lg bg-blackColor dark:bg-primaryColor text-whiteColor text-xs font-bold hover:opacity-90 transition-all"
             >
               Download
-            </a>
+            </button>
           </div>
         </div>
       </div>

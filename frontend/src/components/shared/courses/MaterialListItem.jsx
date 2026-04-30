@@ -20,9 +20,14 @@ const formatFileSize = (sizeMb) => {
 const getSafeFileName = (material) => {
   const title = material?.title || "material";
   const ext = material?.file?.extension || material?.materialType || "file";
-
   const safeTitle = title.replace(/[<>:"/\\|?*\x00-\x1F]/g, "_").trim();
-  return `${safeTitle}.${String(ext).replace(/^\./, "")}`;
+
+  return `${safeTitle || "material"}.${String(ext).replace(/^\./, "")}`;
+};
+
+const normalizeUrl = (url) => {
+  if (!url) return "#";
+  return url.replace("http://127.0.0.1:7000", "http://localhost:7000");
 };
 
 const MaterialListItem = ({ material, onToggleFavorite, onShareMaterial }) => {
@@ -58,9 +63,16 @@ const MaterialListItem = ({ material, onToggleFavorite, onShareMaterial }) => {
         ? `${pageCount} pages`
         : "No page info";
 
+  const handleViewClick = () => {
+    if (!id) return;
+    trackView({ id, cooldown_seconds: 3600 });
+  };
+
   const handleFavoriteClick = async (e) => {
     e.preventDefault();
     e.stopPropagation();
+
+    if (!id) return;
 
     if (typeof onToggleFavorite === "function") {
       await onToggleFavorite(material);
@@ -110,27 +122,34 @@ const MaterialListItem = ({ material, onToggleFavorite, onShareMaterial }) => {
     window.open(whatsappUrl, "_blank", "noopener,noreferrer");
   };
 
-  const handleViewClick = (e) => {
-    e.stopPropagation();
-    trackView({ id, cooldown_seconds: 3600 });
-  };
-
   const handleDownloadClick = async (e) => {
     e.preventDefault();
     e.stopPropagation();
 
-    if (!downloadUrl || downloadUrl === "#") return;
+    const finalDownloadUrl = normalizeUrl(downloadUrl);
+
+    if (!id || !finalDownloadUrl || finalDownloadUrl === "#") return;
 
     try {
-      trackDownload(id);
+      const token =
+        localStorage.getItem("token") ||
+        localStorage.getItem("access_token") ||
+        localStorage.getItem("authToken");
 
-      const response = await fetch(downloadUrl, {
+      const response = await fetch(finalDownloadUrl, {
         method: "GET",
         credentials: "include",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
       });
 
+      if (response.status === 401) {
+        alert("Your login session expired. Please login again.");
+        return;
+      }
+
       if (!response.ok) {
-        throw new Error(`Download failed with status ${response.status}`);
+        alert("Download failed. Please try again.");
+        return;
       }
 
       const blob = await response.blob();
@@ -144,9 +163,11 @@ const MaterialListItem = ({ material, onToggleFavorite, onShareMaterial }) => {
       link.remove();
 
       window.URL.revokeObjectURL(blobUrl);
+
+      trackDownload(id);
     } catch (error) {
       console.error("Download failed:", error);
-      window.open(downloadUrl, "_blank", "noopener,noreferrer");
+      alert("Download failed. Please check your connection.");
     }
   };
 
@@ -247,7 +268,9 @@ const MaterialListItem = ({ material, onToggleFavorite, onShareMaterial }) => {
           </button>
 
           <a
-            href={canPreviewInBrowser ? readUrl : `/materials/${id}`}
+            href={
+              canPreviewInBrowser ? normalizeUrl(readUrl) : `/materials/${id}`
+            }
             target={canPreviewInBrowser ? "_blank" : undefined}
             rel={canPreviewInBrowser ? "noopener noreferrer" : undefined}
             onClick={handleViewClick}
@@ -259,7 +282,7 @@ const MaterialListItem = ({ material, onToggleFavorite, onShareMaterial }) => {
           <button
             type="button"
             onClick={handleDownloadClick}
-            className="bg-primaryColor/10 text-primaryColor hover:bg-primaryColor hover:text-whiteColor px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+            className="px-4 py-2 rounded-lg bg-blackColor dark:bg-primaryColor text-whiteColor text-xs font-bold hover:opacity-90 transition-all"
           >
             Download
           </button>
