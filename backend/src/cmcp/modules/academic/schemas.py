@@ -1,3 +1,4 @@
+# src/cmcp/modules/academic/schemas.py
 from __future__ import annotations
 
 from typing import Optional, List
@@ -64,6 +65,8 @@ class SemesterCreate(_BaseIn):
     def validate_number(cls, v: int):
         if v < 1:
             raise ValueError("Semester number must be at least 1")
+        if v > 12:
+            raise ValueError("Semester number cannot exceed 12")
         return v
 
 
@@ -78,23 +81,21 @@ class SemesterUpdate(_BaseIn):
     def validate_number(cls, v: Optional[int]):
         if v is not None and v < 1:
             raise ValueError("Semester number must be at least 1")
+        if v is not None and v > 12:
+            raise ValueError("Semester number cannot exceed 12")
         return v
 
 
 # ----------------------------
-# Course
+# Course (Base Course Definition - UPDATED)
 # ----------------------------
 class CourseCreate(_BaseIn):
-    department_id: int
-    semester_id: int
     title: str
     code: Optional[str] = None
     description: Optional[str] = None
 
 
 class CourseUpdate(_BaseIn):
-    department_id: Optional[int] = None
-    semester_id: Optional[int] = None
     title: Optional[str] = None
     code: Optional[str] = None
     description: Optional[str] = None
@@ -102,10 +103,48 @@ class CourseUpdate(_BaseIn):
 
 
 # ----------------------------
-# Chapter
+# Course Offering (NEW)
 # ----------------------------
-class ChapterCreate(_BaseIn):
+class CourseOfferingCreate(_BaseIn):
     course_id: int
+    department_id: int
+    semester_id: int
+    custom_title: Optional[str] = None
+    credit_hours: Optional[int] = None
+
+    @field_validator("credit_hours")
+    @classmethod
+    def validate_credit_hours(cls, v: Optional[int]):
+        if v is not None and v < 0:
+            raise ValueError("Credit hours cannot be negative")
+        if v is not None and v > 30:
+            raise ValueError("Credit hours cannot exceed 30")
+        return v
+
+
+class CourseOfferingUpdate(_BaseIn):
+    course_id: Optional[int] = None
+    department_id: Optional[int] = None
+    semester_id: Optional[int] = None
+    custom_title: Optional[str] = None
+    credit_hours: Optional[int] = None
+    is_enabled: Optional[bool] = None
+
+    @field_validator("credit_hours")
+    @classmethod
+    def validate_credit_hours(cls, v: Optional[int]):
+        if v is not None and v < 0:
+            raise ValueError("Credit hours cannot be negative")
+        if v is not None and v > 30:
+            raise ValueError("Credit hours cannot exceed 30")
+        return v
+
+
+# ----------------------------
+# Course Chapter (UPDATED - belongs to offering)
+# ----------------------------
+class CourseChapterCreate(_BaseIn):
+    course_offering_id: int
     number: int
     title: str
     description: Optional[str] = None
@@ -118,8 +157,8 @@ class ChapterCreate(_BaseIn):
         return v
 
 
-class ChapterUpdate(_BaseIn):
-    course_id: Optional[int] = None
+class CourseChapterUpdate(_BaseIn):
+    course_offering_id: Optional[int] = None
     number: Optional[int] = None
     title: Optional[str] = None
     description: Optional[str] = None

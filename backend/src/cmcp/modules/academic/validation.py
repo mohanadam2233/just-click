@@ -12,7 +12,7 @@ ERR_ACADEMIC_YEAR_NOT_FOUND = "Academic year not found."
 ERR_SEMESTER_NOT_FOUND = "Semester not found."
 ERR_COURSE_NOT_FOUND = "Course not found."
 ERR_CHAPTER_NOT_FOUND = "Chapter not found."
-
+ERR_COURSE_OFFERING_NOT_FOUND = "Course offering not found."  # NEW
 
 # ----------------------------
 # Exists / uniqueness messages
@@ -28,13 +28,13 @@ ERR_ACADEMIC_YEAR_EXISTS = "Academic year already exists with this name."
 ERR_SEMESTER_EXISTS_NAME = "Semester already exists with this name."
 ERR_SEMESTER_EXISTS_NUMBER = "Semester already exists with this number in this academic year."
 
-ERR_COURSE_EXISTS_TITLE_IN_SCOPE = "Course already exists with this title in this department and semester."
+ERR_COURSE_EXISTS_TITLE = "Course already exists with this title."  # UPDATED
 ERR_COURSE_CODE_EXISTS = "Course code already exists."
 
 ERR_CHAPTER_EXISTS_TITLE = "Chapter already exists with this title."
 ERR_CHAPTER_EXISTS_NUMBER = "Chapter already exists with this number in this course."
 
-
+ERR_COURSE_OFFERING_EXISTS_IN_SCOPE = "Course offering already exists with this course, department, and semester."
 # ----------------------------
 # Linked delete message helper
 # ----------------------------

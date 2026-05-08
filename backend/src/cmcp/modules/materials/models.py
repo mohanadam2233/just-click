@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Optional
 import enum
 
-from sqlalchemy import UniqueConstraint, CheckConstraint, Index
+from sqlalchemy import UniqueConstraint, CheckConstraint, Index, text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import JSONB
 
@@ -22,18 +22,36 @@ class MaterialTypeEnum(str, enum.Enum):
 
 
 class Material(BaseModel, TenantMixin):
+    """
+    A learning material (PDF, slides, video, etc.) uploaded by a lecturer.
+
+    Scoping logic:
+      - course_offering_id (required): which specific offering this belongs to.
+        e.g. "Math 101 — Computer Apps dept — Semester 1 / 2025-2026"
+
+      - chapter_id (optional): if the material belongs to a specific chapter
+        inside that offering, set this. If the material is general for the
+        whole offering (not chapter-specific), leave it NULL.
+
+    Examples:
+      - A course syllabus PDF   → chapter_id = NULL  (belongs to whole offering)
+      - Chapter 3 lecture slides → chapter_id = <id of Chapter 3>
+      - A reference video        → chapter_id = NULL  (general resource)
+    """
     __tablename__ = "edu_materials"
 
-    course_id: Mapped[int] = mapped_column(
+    # Required: which offering this material belongs to
+    course_offering_id: Mapped[int] = mapped_column(
         db.BigInteger,
-        db.ForeignKey("edu_courses.id", ondelete="CASCADE"),
+        db.ForeignKey("edu_course_offerings.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
     )
 
+    # Optional: narrows the material down to a specific chapter of that offering
     chapter_id: Mapped[Optional[int]] = mapped_column(
         db.BigInteger,
-        db.ForeignKey("edu_chapters.id", ondelete="SET NULL"),
+        db.ForeignKey("edu_course_chapters.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -46,40 +64,62 @@ class Material(BaseModel, TenantMixin):
         index=True,
     )
 
-    # File storage
+    # Where the file is stored (S3/MinIO/local path, etc.)
     file_url: Mapped[Optional[str]] = mapped_column(db.String(512), nullable=True)
 
-    # Metadata
-    page_count: Mapped[Optional[int]] = mapped_column(db.Integer, nullable=True)
-    slide_count: Mapped[Optional[int]] = mapped_column(db.Integer, nullable=True)
+    # Metadata about the file
+    page_count: Mapped[Optional[int]] = mapped_column(
+        db.Integer,
+        nullable=True,
+        comment="For PDF/DOC materials",
+    )
+    slide_count: Mapped[Optional[int]] = mapped_column(
+        db.Integer,
+        nullable=True,
+        comment="For SLIDES/PPT materials",
+    )
+    file_size_mb: Mapped[Optional[float]] = mapped_column(
+        db.Float,
+        nullable=True,
+        comment="File size in megabytes",
+    )
 
     learning_objectives: Mapped[Optional[list[str]]] = mapped_column(
         JSONB,
         nullable=True,
-        comment='e.g. ["Learn Syntax", "Understand Loops"]',
+        comment='e.g. ["Understand loops", "Apply recursion"]',
     )
 
     description: Mapped[Optional[str]] = mapped_column(db.Text, nullable=True)
-    file_size_mb: Mapped[Optional[float]] = mapped_column(db.Float, nullable=True)
 
-    is_downloadable: Mapped[bool] = mapped_column(db.Boolean, default=True, nullable=False, index=True)
+    # Permissions
+    is_downloadable: Mapped[bool] = mapped_column(
+        db.Boolean,
+        default=True,
+        nullable=False,
+        index=True,
+        comment="If False, students can view but not download",
+    )
     is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=True, nullable=False, index=True)
 
+    # Global counters — incremented every time a student views or downloads
+    view_count: Mapped[int] = mapped_column(db.Integer, default=0, nullable=False)
+    download_count: Mapped[int] = mapped_column(db.Integer, default=0, nullable=False)
 
-    # Global Analytics
-    view_count: Mapped[int] = mapped_column(db.Integer, default=0)
-    download_count: Mapped[int] = mapped_column(db.Integer, default=0)
-    course: Mapped["Course"] = db.relationship(
-        "Course",
+    # --- Relationships ---
+
+    course_offering: Mapped["CourseOffering"] = db.relationship(
+        "CourseOffering",
         back_populates="materials",
         lazy="select",
     )
 
-    chapter: Mapped[Optional["Chapter"]] = db.relationship(
-        "Chapter",
+    chapter: Mapped[Optional["CourseChapter"]] = db.relationship(
+        "CourseChapter",
         back_populates="materials",
         lazy="select",
     )
+
     interactions: Mapped[list["StudentMaterialInteraction"]] = db.relationship(
         "StudentMaterialInteraction",
         back_populates="material",
@@ -88,13 +128,34 @@ class Material(BaseModel, TenantMixin):
     )
 
     __table_args__ = (
-        UniqueConstraint("company_id", "course_id", "chapter_id", "title", name="uq_edu_materials_scope_title"),
-        CheckConstraint("(page_count is null) OR (page_count >= 1)", name="ck_edu_material_page_min"),
-        CheckConstraint("(slide_count is null) OR (slide_count >= 1)", name="ck_edu_material_slide_min"),
-        CheckConstraint("(file_size_mb is null) OR (file_size_mb >= 0)", name="ck_edu_material_size_min"),
-        Index("ix_edu_materials_company_course", "company_id", "course_id"),
+        # FIXED: Using partial indexes for PostgreSQL NULL chapter_id issue
+        Index(
+            "uq_edu_materials_offering_no_chapter_title",
+            "company_id", "course_offering_id", "title",
+            unique=True,
+            postgresql_where=text("chapter_id IS NULL"),
+        ),
+        Index(
+            "uq_edu_materials_offering_chapter_title",
+            "company_id", "course_offering_id", "chapter_id", "title",
+            unique=True,
+            postgresql_where=text("chapter_id IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "(page_count IS NULL) OR (page_count >= 1)",
+            name="ck_edu_material_page_min",
+        ),
+        CheckConstraint(
+            "(slide_count IS NULL) OR (slide_count >= 1)",
+            name="ck_edu_material_slide_min",
+        ),
+        CheckConstraint(
+            "(file_size_mb IS NULL) OR (file_size_mb >= 0)",
+            name="ck_edu_material_size_min",
+        ),
+        Index("ix_edu_materials_company_offering", "company_id", "course_offering_id"),
+        Index("ix_edu_materials_company_chapter", "company_id", "chapter_id"),
     )
-
 
 class StudentMaterialInteraction(BaseModel, TenantMixin):
     """

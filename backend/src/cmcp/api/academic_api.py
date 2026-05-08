@@ -1,3 +1,4 @@
+# src/cmcp/modules/academic/api.py
 from __future__ import annotations
 
 import json
@@ -20,19 +21,22 @@ from cmcp.modules.academic.schemas import (
     AcademicYearCreate, AcademicYearUpdate,
     SemesterCreate, SemesterUpdate,
     CourseCreate, CourseUpdate,
-    ChapterCreate, ChapterUpdate,
+    CourseOfferingCreate, CourseOfferingUpdate,
+    CourseChapterCreate, CourseChapterUpdate,
 )
 from cmcp.modules.academic.academic_service import AcademicService
 from cmcp.core.http.dropdown_args import dropdown_args
 
+
 def _handle_error(e: Exception):
     db.session.rollback()
-    # your validation layer now throws these (like academic)
     if isinstance(e, NotFoundError):
         return api_error(str(e), status_code=404)
     if isinstance(e, BusinessValidationError):
         return api_error(str(e), status_code=400)
     return api_error(str(e), status_code=400)
+
+
 bp = Blueprint("academic", __name__, url_prefix="/api/academic")
 svc = AcademicService()
 
@@ -46,12 +50,6 @@ def _as_bool(v: Any) -> bool:
 
 
 def _parse_filters() -> Dict[str, Any] | None:
-    """
-    Supports:
-      - filters JSON: ?filters={"is_enabled":true,"faculty_id":2}
-      - OR simple: ?is_enabled=true
-    JSON wins if provided.
-    """
     raw = request.args.get("filters")
     if raw:
         try:
@@ -97,12 +95,13 @@ def create_faculty(company_id: int):
     except Exception as e:
         return api_error(str(e), status_code=400)
 
+
 @bp.get("/faculties/list")
 @require_company_and_permission(doctype="Faculty", action="READ")
 def list_faculties(company_id: int):
     try:
         q = request.args
-        mode = (q.get("mode") or "cursor").strip().lower()  # cursor|page
+        mode = (q.get("mode") or "cursor").strip().lower()
 
         filters: Dict[str, Any] = {
             "search": (q.get("search") or "").strip() or None,
@@ -221,15 +220,12 @@ def update_department(company_id: int, department_id: int):
 def delete_department(company_id: int, department_id: int):
     try:
         soft = request.args.get("soft", "true").lower() == "true"
-
         ok, msg, out = svc.delete_department(
             company_id=company_id,
             department_id=department_id,
             soft=soft
         )
-
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
-
     except Exception as e:
         return api_error(str(e), status_code=400)
 
@@ -244,12 +240,13 @@ def bulk_delete_departments(company_id: int):
     except Exception as e:
         return api_error(str(e), status_code=400)
 
+
 @bp.get("/departments/list")
 @require_company_and_permission(doctype="Department", action="READ")
 def list_departments(company_id: int):
     try:
         q = request.args
-        mode = (q.get("mode") or "cursor").strip().lower()  # cursor|page
+        mode = (q.get("mode") or "cursor").strip().lower()
 
         filters: Dict[str, Any] = {
             "faculty_id": q.get("faculty_id", type=int),
@@ -293,6 +290,7 @@ def list_departments(company_id: int):
     except Exception as e:
         return _handle_error(e)
 
+
 @bp.get("/departments/<int:department_id>/get")
 @require_company_and_permission(doctype="Department", action="READ")
 def get_department_detail(company_id: int, department_id: int):
@@ -306,19 +304,19 @@ def get_department_detail(company_id: int, department_id: int):
         return _handle_error(e)
 
 
-
 # =========================================================
-# YEAR
+# ACADEMIC YEAR
 # =========================================================
-@bp.post("/years/create")
+@bp.post("/academic-years/create")
 @require_company_and_permission(doctype="Academic Year", action="CREATE")
-def create_year(company_id: int):
+def create_academic_year(company_id: int):
     try:
         payload = AcademicYearCreate.model_validate(request.get_json(silent=True) or {})
-        ok, msg, out = svc.create_year(company_id=company_id, data=payload.model_dump())
+        ok, msg, out = svc.create_academic_year(company_id=company_id, data=payload.model_dump())
         return api_success(message=msg, data=out, status_code=201) if ok else api_error(msg, status_code=400)
     except Exception as e:
         return api_error(str(e), status_code=400)
+
 
 @bp.get("/academic-years/<int:academic_year_id>/get")
 @require_company_and_permission(doctype="AcademicYear", action="READ")
@@ -329,38 +327,37 @@ def get_academic_year_detail(company_id: int, academic_year_id: int):
             academic_year_id=academic_year_id,
         )
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
-
     except Exception as e:
         return _handle_error(e)
 
 
-@bp.put("/years/<int:year_id>/update")
+@bp.put("/academic-years/<int:year_id>/update")
 @require_company_and_permission(doctype="Academic Year", action="UPDATE")
-def update_year(company_id: int, year_id: int):
+def update_academic_year(company_id: int, year_id: int):
     try:
         payload = AcademicYearUpdate.model_validate(request.get_json(silent=True) or {})
-        ok, msg, out = svc.update_year(company_id=company_id, year_id=year_id, data=payload.model_dump(exclude_unset=True))
+        ok, msg, out = svc.update_academic_year(company_id=company_id, year_id=year_id, data=payload.model_dump(exclude_unset=True))
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
     except Exception as e:
         return api_error(str(e), status_code=400)
 
 
-@bp.delete("/years/<int:year_id>/delete")
+@bp.delete("/academic-years/<int:year_id>/delete")
 @require_company_and_permission(doctype="Academic Year", action="DELETE")
-def delete_year(company_id: int, year_id: int):
+def delete_academic_year(company_id: int, year_id: int):
     try:
-        ok, msg, out = svc.delete_year(company_id=company_id, year_id=year_id, soft=True)
+        ok, msg, out = svc.delete_academic_year(company_id=company_id, year_id=year_id, soft=True)
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
     except Exception as e:
         return api_error(str(e), status_code=400)
 
 
-@bp.post("/years/bulk-delete")
+@bp.post("/academic-years/bulk-delete")
 @require_company_and_permission(doctype="Academic Year", action="DELETE")
-def bulk_delete_years(company_id: int):
+def bulk_delete_academic_years(company_id: int):
     try:
         payload = BulkDeleteIn.model_validate(request.get_json(silent=True) or {})
-        ok, msg, out = svc.bulk_delete_years(company_id=company_id, ids=payload.ids, soft=True)
+        ok, msg, out = svc.bulk_delete_academic_years(company_id=company_id, ids=payload.ids, soft=True)
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
     except Exception as e:
         return api_error(str(e), status_code=400)
@@ -416,8 +413,6 @@ def list_academic_years(company_id: int):
         return _handle_error(e)
 
 
-
-
 # =========================================================
 # SEMESTER
 # =========================================================
@@ -436,16 +431,14 @@ def create_semester(company_id: int):
 @require_company_and_permission(doctype="Semester", action="READ")
 def get_semester_detail(company_id: int, semester_id: int):
     try:
-
         ok, msg, out = svc.get_semester_detail(
             company_id=company_id,
             semester_id=semester_id,
         )
-
         return api_success(message=msg, data=out)
-
     except Exception as e:
         return _handle_error(e)
+
 
 @bp.get("/semesters/list")
 @require_company_and_permission(doctype="Semester", action="READ")
@@ -529,9 +522,8 @@ def bulk_delete_semesters(company_id: int):
         return api_error(str(e), status_code=400)
 
 
-
 # =========================================================
-# COURSE
+# COURSE (Base Definition)
 # =========================================================
 @bp.post("/courses/create")
 @require_company_and_permission(doctype="Course", action="CREATE")
@@ -575,6 +567,7 @@ def bulk_delete_courses(company_id: int):
     except Exception as e:
         return api_error(str(e), status_code=400)
 
+
 @bp.get("/courses/<int:course_id>/get")
 @require_company_and_permission(doctype="Course", action="READ")
 def get_course_detail(company_id: int, course_id: int):
@@ -584,7 +577,6 @@ def get_course_detail(company_id: int, course_id: int):
             course_id=course_id,
         )
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
-
     except Exception as e:
         return _handle_error(e)
 
@@ -597,8 +589,6 @@ def list_courses(company_id: int):
         mode = (q.get("mode") or "cursor").strip().lower()
 
         filters: Dict[str, Any] = {
-            "department_id": q.get("department_id", type=int),
-            "semester_id": q.get("semester_id", type=int),
             "search": (q.get("search") or "").strip() or None,
         }
 
@@ -640,17 +630,126 @@ def list_courses(company_id: int):
         return _handle_error(e)
 
 
+# =========================================================
+# COURSE OFFERING (NEW)
+# =========================================================
+@bp.post("/course-offerings/create")
+@require_company_and_permission(doctype="CourseOffering", action="CREATE")
+def create_course_offering(company_id: int):
+    try:
+        payload = CourseOfferingCreate.model_validate(request.get_json(silent=True) or {})
+        ok, msg, out = svc.create_course_offering(company_id=company_id, data=payload.model_dump())
+        return api_success(message=msg, data=out, status_code=201) if ok else api_error(msg, status_code=400)
+    except Exception as e:
+        return api_error(str(e), status_code=400)
 
+
+@bp.put("/course-offerings/<int:offering_id>/update")
+@require_company_and_permission(doctype="CourseOffering", action="UPDATE")
+def update_course_offering(company_id: int, offering_id: int):
+    try:
+        payload = CourseOfferingUpdate.model_validate(request.get_json(silent=True) or {})
+        ok, msg, out = svc.update_course_offering(company_id=company_id, offering_id=offering_id, data=payload.model_dump(exclude_unset=True))
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+    except Exception as e:
+        return api_error(str(e), status_code=400)
+
+
+@bp.delete("/course-offerings/<int:offering_id>/delete")
+@require_company_and_permission(doctype="CourseOffering", action="DELETE")
+def delete_course_offering(company_id: int, offering_id: int):
+    try:
+        ok, msg, out = svc.delete_course_offering(company_id=company_id, offering_id=offering_id, soft=True)
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+    except Exception as e:
+        return api_error(str(e), status_code=400)
+
+
+@bp.post("/course-offerings/bulk-delete")
+@require_company_and_permission(doctype="CourseOffering", action="DELETE")
+def bulk_delete_course_offerings(company_id: int):
+    try:
+        payload = BulkDeleteIn.model_validate(request.get_json(silent=True) or {})
+        ok, msg, out = svc.bulk_delete_course_offerings(company_id=company_id, ids=payload.ids, soft=True)
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+    except Exception as e:
+        return api_error(str(e), status_code=400)
+
+
+@bp.get("/course-offerings/<int:offering_id>/get")
+@require_company_and_permission(doctype="CourseOffering", action="READ")
+def get_course_offering_detail(company_id: int, offering_id: int):
+    try:
+        ok, msg, out = svc.get_course_offering_detail(
+            company_id=company_id,
+            offering_id=offering_id,
+        )
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=404)
+    except Exception as e:
+        return _handle_error(e)
+
+
+@bp.get("/course-offerings/list")
+@require_company_and_permission(doctype="CourseOffering", action="READ")
+def list_course_offerings(company_id: int):
+    try:
+        q = request.args
+        mode = (q.get("mode") or "cursor").strip().lower()
+
+        filters: Dict[str, Any] = {
+            "course_id": q.get("course_id", type=int),
+            "department_id": q.get("department_id", type=int),
+            "semester_id": q.get("semester_id", type=int),
+            "academic_year_id": q.get("academic_year_id", type=int),
+            "search": (q.get("search") or "").strip() or None,
+        }
+
+        is_enabled_raw = q.get("is_enabled")
+        is_enabled: Optional[bool] = None
+        if is_enabled_raw is not None:
+            s = str(is_enabled_raw).strip().lower()
+            if s in {"1", "true", "yes"}:
+                is_enabled = True
+            elif s in {"0", "false", "no"}:
+                is_enabled = False
+
+        if mode == "page":
+            page = q.get("page", type=int) or 1
+            per_page = q.get("per_page", type=int) or 20
+
+            ok, msg, out = svc.list_course_offerings_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+            return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
+        limit = q.get("limit", type=int) or 20
+        cursor = (q.get("cursor") or "").strip() or None
+
+        ok, msg, out = svc.list_course_offerings_cursor(
+            company_id=company_id,
+            limit=limit,
+            cursor=cursor,
+            filters=filters,
+            is_enabled=is_enabled,
+        )
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
+    except Exception as e:
+        return _handle_error(e)
 
 
 # =========================================================
-# CHAPTER
+# COURSE CHAPTER (UPDATED to use course_offering_id)
 # =========================================================
 @bp.post("/chapters/create")
 @require_company_and_permission(doctype="Chapter", action="CREATE")
 def create_chapter(company_id: int):
     try:
-        payload = ChapterCreate.model_validate(request.get_json(silent=True) or {})
+        payload = CourseChapterCreate.model_validate(request.get_json(silent=True) or {})
         ok, msg, out = svc.create_chapter(company_id=company_id, data=payload.model_dump())
         return api_success(message=msg, data=out, status_code=201) if ok else api_error(msg, status_code=400)
     except Exception as e:
@@ -661,7 +760,7 @@ def create_chapter(company_id: int):
 @require_company_and_permission(doctype="Chapter", action="UPDATE")
 def update_chapter(company_id: int, chapter_id: int):
     try:
-        payload = ChapterUpdate.model_validate(request.get_json(silent=True) or {})
+        payload = CourseChapterUpdate.model_validate(request.get_json(silent=True) or {})
         ok, msg, out = svc.update_chapter(company_id=company_id, chapter_id=chapter_id, data=payload.model_dump(exclude_unset=True))
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
     except Exception as e:
@@ -697,7 +796,7 @@ def list_chapters(company_id: int):
         mode = (q.get("mode") or "cursor").strip().lower()
 
         filters: Dict[str, Any] = {
-            "course_id": q.get("course_id", type=int),
+            "course_offering_id": q.get("course_offering_id", type=int),
             "search": (q.get("search") or "").strip() or None,
         }
 
@@ -739,9 +838,6 @@ def list_chapters(company_id: int):
         return _handle_error(e)
 
 
-
-
-
 @bp.get("/chapters/<int:chapter_id>/get")
 @require_company_and_permission(doctype="Chapter", action="READ")
 def get_chapter_detail(company_id: int, chapter_id: int):
@@ -751,11 +847,13 @@ def get_chapter_detail(company_id: int, chapter_id: int):
             chapter_id=chapter_id,
         )
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
-
     except Exception as e:
         return _handle_error(e)
 
 
+# =========================================================
+# DROPDOWNS
+# =========================================================
 @bp.get("/faculties/dropdown")
 @require_company_and_permission(doctype="Faculty", action="READ")
 def faculties_dropdown(company_id: int):
@@ -776,19 +874,17 @@ def faculties_dropdown(company_id: int):
     except Exception as e:
         return api_error(str(e), status_code=400)
 
+
 @bp.get("/public/faculties/dropdown")
 @public
 @rate_limit(key_prefix="public_faculties_dropdown", limit=60, window=60)
 def public_faculties_dropdown():
     try:
         company_id = resolve_company_id_for_public()
-
         search, limit, offset, _, filters = dropdown_args(
             parse_filters_func=_parse_filters,
             parse_bool_func=_as_bool,
         )
-
-        # force only enabled records for public usage
         data = svc.dropdown_faculties_public(
             company_id=company_id,
             search=search,
@@ -796,21 +892,9 @@ def public_faculties_dropdown():
             offset=offset,
             filters=filters,
         )
-
         return api_success(message="OK", data=data, status_code=200)
     except Exception as e:
         return api_error(str(e), status_code=400)
-
-
-
-
-
-
-
-
-
-
-
 
 
 @bp.get("/semesters/dropdown")
@@ -832,6 +916,8 @@ def semesters_dropdown(company_id: int):
         return api_success(message="OK", data=data, status_code=200)
     except Exception as e:
         return api_error(str(e), status_code=400)
+
+
 @bp.get("/faculties/with-departments/dropdown")
 @require_company_and_permission(doctype="Faculty", action="READ")
 def faculties_with_departments_dropdown(company_id: int):
@@ -849,6 +935,7 @@ def faculties_with_departments_dropdown(company_id: int):
     )
     return api_success(message="OK", data=data, status_code=200)
 
+
 @bp.get("/departments/dropdown")
 @require_company_and_permission(doctype="Department", action="READ")
 def departments_dropdown(company_id: int):
@@ -857,9 +944,7 @@ def departments_dropdown(company_id: int):
             parse_filters_func=_parse_filters,
             parse_bool_func=_as_bool,
         )
-
-        faculty_id = request.args.get("faculty_id", type=int)  # ✅ dependent param
-
+        faculty_id = request.args.get("faculty_id", type=int)
         data = svc.dropdown_departments(
             company_id=company_id,
             faculty_id=faculty_id,
@@ -873,24 +958,21 @@ def departments_dropdown(company_id: int):
     except Exception as e:
         return api_error(str(e), status_code=400)
 
+
 @bp.get("/public/faculties/with-departments/dropdown")
 @public
 @rate_limit(key_prefix="public_faculties_with_departments_dropdown", limit=60, window=60)
 def public_faculties_with_departments_dropdown():
     try:
         company_id = resolve_company_id_for_public()
-
         search, limit, offset, _, filters = dropdown_args(
             parse_filters_func=_parse_filters,
             parse_bool_func=_as_bool,
         )
-
-        # ✅ Extract the faculty_id from the frontend request params
         faculty_id = request.args.get("faculty_id", type=int)
-
         data = svc.dropdown_faculties_with_departments_public(
             company_id=company_id,
-            faculty_id=faculty_id,  # ✅ Pass it to the service
+            faculty_id=faculty_id,
             search=search,
             limit=limit,
             offset=offset,
@@ -900,6 +982,7 @@ def public_faculties_with_departments_dropdown():
     except Exception as e:
         return api_error(str(e), status_code=400)
 
+
 @bp.get("/courses/dropdown")
 @require_company_and_permission(doctype="Course", action="READ")
 def courses_dropdown(company_id: int):
@@ -908,23 +991,42 @@ def courses_dropdown(company_id: int):
             parse_filters_func=_parse_filters,
             parse_bool_func=_as_bool,
         )
-
         filters = dict(filters or {})
-
-        department_id = request.args.get("department_id", type=int)
-        semester_id = request.args.get("semester_id", type=int)
         code = request.args.get("code", type=str)
-
-        if department_id is not None:
-            filters["department_id"] = department_id
-
-        if semester_id is not None:
-            filters["semester_id"] = semester_id
-
         if code:
             filters["code"] = code
-
         data = svc.dropdown_courses(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            filters=filters,
+        )
+        return api_success(message="OK", data=data, status_code=200)
+    except Exception as e:
+        return api_error(str(e), status_code=400)
+
+
+@bp.get("/course-offerings/dropdown")
+@require_company_and_permission(doctype="CourseOffering", action="READ")
+def course_offerings_dropdown(company_id: int):
+    try:
+        search, limit, offset, active_only, filters = dropdown_args(
+            parse_filters_func=_parse_filters,
+            parse_bool_func=_as_bool,
+        )
+        filters = dict(filters or {})
+        department_id = request.args.get("department_id", type=int)
+        semester_id = request.args.get("semester_id", type=int)
+        course_id = request.args.get("course_id", type=int)
+        if department_id:
+            filters["department_id"] = department_id
+        if semester_id:
+            filters["semester_id"] = semester_id
+        if course_id:
+            filters["course_id"] = course_id
+        data = svc.dropdown_course_offerings(
             company_id=company_id,
             search=search,
             limit=limit,
@@ -945,14 +1047,10 @@ def chapters_dropdown(company_id: int):
             parse_filters_func=_parse_filters,
             parse_bool_func=_as_bool,
         )
-
         filters = dict(filters or {})
-
-        course_id = request.args.get("course_id", type=int)
-
-        if course_id is not None:
-            filters["course_id"] = course_id
-
+        course_offering_id = request.args.get("course_offering_id", type=int)
+        if course_offering_id is not None:
+            filters["course_offering_id"] = course_offering_id
         data = svc.dropdown_chapters(
             company_id=company_id,
             search=search,
@@ -964,4 +1062,3 @@ def chapters_dropdown(company_id: int):
         return api_success(message="OK", data=data, status_code=200)
     except Exception as e:
         return api_error(str(e), status_code=400)
-

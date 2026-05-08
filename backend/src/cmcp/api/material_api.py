@@ -163,7 +163,8 @@ def list_materials(company_id: int):
         external_base = _external_base()
 
         filters: Dict[str, Any] = {
-            "course_id": q.get("course_id", type=int),
+            "course_offering_id": q.get("course_offering_id", type=int),  # CHANGED: use offering_id
+            "course_id": q.get("course_id", type=int),  # Keep for backward compatibility
             "semester_id": q.get("semester_id", type=int),
             "department_id": q.get("department_id", type=int),
             "academic_year_id": q.get("academic_year_id", type=int),
@@ -245,9 +246,11 @@ def get_material_filter_options(company_id: int):
         filters: Dict[str, Any] = {
             "academic_year_id": q.get("academic_year_id", type=int),
             "semester_id": q.get("semester_id", type=int),
-            "course_id": q.get("course_id", type=int),
+            "course_offering_id": q.get("course_offering_id", type=int),  # NEW
+            "course_id": q.get("course_id", type=int),  # Keep for backward compatibility
             "chapter_id": q.get("chapter_id", type=int),
             "department_id": q.get("department_id", type=int),
+            "faculty_id": q.get("faculty_id", type=int),  # NEW
             "search": (q.get("search") or "").strip() or None,
         }
 

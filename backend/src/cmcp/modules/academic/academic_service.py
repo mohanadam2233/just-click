@@ -1,3 +1,4 @@
+# src/cmcp/modules/academic/service.py
 from __future__ import annotations
 
 from typing import Any, Dict, Optional, Tuple, List, Set
@@ -9,7 +10,10 @@ from cmcp.common.cache import cached_dropdown, cached_list, cached_detail
 from cmcp.core.base_service import BaseService
 from cmcp.core.exceptions import NotFoundError
 from cmcp.modules.academic.academic_repo import AcademicRepo
-from cmcp.modules.academic.models import Faculty, Department, AcademicYear, Semester, Course, Chapter
+from cmcp.modules.academic.models import (
+    Faculty, Department, AcademicYear, Semester,
+    Course, CourseOffering, CourseChapter
+)
 from cmcp.modules.academic.validation import (
     cannot_delete_linked,
     require_text,
@@ -19,6 +23,7 @@ from cmcp.modules.academic.validation import (
     ERR_ACADEMIC_YEAR_NOT_FOUND,
     ERR_SEMESTER_NOT_FOUND,
     ERR_COURSE_NOT_FOUND,
+    ERR_COURSE_OFFERING_NOT_FOUND,
     ERR_CHAPTER_NOT_FOUND,
     ERR_FACULTY_EXISTS,
     ERR_FACULTY_CODE_EXISTS,
@@ -27,8 +32,9 @@ from cmcp.modules.academic.validation import (
     ERR_ACADEMIC_YEAR_EXISTS,
     ERR_SEMESTER_EXISTS_NAME,
     ERR_SEMESTER_EXISTS_NUMBER,
-    ERR_COURSE_EXISTS_TITLE_IN_SCOPE,
+    ERR_COURSE_EXISTS_TITLE,
     ERR_COURSE_CODE_EXISTS,
+    ERR_COURSE_OFFERING_EXISTS_IN_SCOPE,
     ERR_CHAPTER_EXISTS_TITLE,
     ERR_CHAPTER_EXISTS_NUMBER,
 )
@@ -62,7 +68,8 @@ class AcademicService:
         self.year_svc = BaseService(AcademicYear, session=self.s)
         self.semester_svc = BaseService(Semester, session=self.s)
         self.course_svc = BaseService(Course, session=self.s)
-        self.chapter_svc = BaseService(Chapter, session=self.s)
+        self.course_offering_svc = BaseService(CourseOffering, session=self.s)
+        self.chapter_svc = BaseService(CourseChapter, session=self.s)
 
     # ---------------------------------------------------------
     # Common bulk delete helper (linked guard + soft delete in one query)
@@ -189,9 +196,6 @@ class AcademicService:
 
         return True, "Bulk delete processed.", {"deleted": deleted, "failed": failed}
 
-    def get_faculty(self, *, company_id: int, faculty_id: int) -> Optional[Dict[str, Any]]:
-        return self.faculty_svc.get_one(company_id=company_id, id=faculty_id)
-
     # =========================================================
     # DEPARTMENT
     # =========================================================
@@ -249,22 +253,21 @@ class AcademicService:
         if not obj:
             return False, ERR_DEPARTMENT_NOT_FOUND, None
 
-        linked = self.repo.departments_with_courses([obj.id])
+        linked = self.repo.departments_with_course_offerings([obj.id])
 
         if obj.id in linked:
-            # archive
             self.department_svc.update(
                 company_id=company_id,
                 id=obj.id,
                 data={"is_enabled": False}
             )
-            return True, "Department archived because it has linked courses.", {"id": obj.id}
+            return True, "Department archived because it has linked course offerings.", {"id": obj.id}
 
-        # hard delete
         return self.department_svc.delete(company_id=company_id, id=department_id, soft=False)
 
     def bulk_delete_departments(self, *, company_id: int, ids: List[int], soft: bool = True):
-        linked = self.repo.departments_with_courses(ids)
+        linked = self.repo.departments_with_course_offerings(ids)
+
         deleted = []
         failed = []
 
@@ -276,7 +279,6 @@ class AcademicService:
                 continue
 
             if _id in linked:
-                # archive
                 self.department_svc.update(
                     company_id=company_id,
                     id=_id,
@@ -284,7 +286,6 @@ class AcademicService:
                 )
                 deleted.append(_id)
             else:
-                # hard delete
                 self.department_svc.delete(
                     company_id=company_id,
                     id=_id,
@@ -294,25 +295,16 @@ class AcademicService:
 
         return True, "Bulk delete processed.", {"deleted": deleted, "failed": failed}
 
-    def get_department(self, *, company_id: int, department_id: int) -> Optional[Dict[str, Any]]:
-        rec = self.department_svc.get_one(company_id=company_id, id=department_id, eager_load=["faculty"])
-        if rec and isinstance(rec.get("faculty"), dict):
-            rec["faculty_name"] = rec["faculty"].get("name")
-        return rec
-
     # =========================================================
-    # YEAR / SEMESTER / COURSE / CHAPTER
+    # ACADEMIC YEAR
     # =========================================================
-    # Same pattern as above (business rules) — kept compact by implementing
-    # full CRUD + list/get below.
-
-    def create_year(self, *, company_id: int, data: Dict[str, Any]):
+    def create_academic_year(self, *, company_id: int, data: Dict[str, Any]):
         name = require_text(data.get("name"), field_label="Academic year name")
         if self.repo.academic_year_name_exists(company_id=company_id, name=name):
             return False, ERR_ACADEMIC_YEAR_EXISTS, None
         return self.year_svc.create(company_id=company_id, data={"name": name, "is_enabled": True})
 
-    def update_year(self, *, company_id: int, year_id: int, data: Dict[str, Any]):
+    def update_academic_year(self, *, company_id: int, year_id: int, data: Dict[str, Any]):
         obj = self.repo.years.get(year_id, company_id=company_id)
         if not obj:
             return False, ERR_ACADEMIC_YEAR_NOT_FOUND, None
@@ -326,7 +318,7 @@ class AcademicService:
             patch["is_enabled"] = bool(data["is_enabled"])
         return self.year_svc.update(company_id=company_id, id=year_id, data=patch)
 
-    def delete_year(self, *, company_id: int, year_id: int, soft: bool = True):
+    def delete_academic_year(self, *, company_id: int, year_id: int, soft: bool = True):
         obj = self.repo.years.get(year_id, company_id=company_id)
         if not obj:
             return False, ERR_ACADEMIC_YEAR_NOT_FOUND, None
@@ -335,7 +327,7 @@ class AcademicService:
             return False, cannot_delete_linked("Academic year", "Semesters"), None
         return self.year_svc.delete(company_id=company_id, id=year_id, soft=soft)
 
-    def bulk_delete_years(self, *, company_id: int, ids: List[int], soft: bool = True):
+    def bulk_delete_academic_years(self, *, company_id: int, ids: List[int], soft: bool = True):
         linked = self.repo.years_with_semesters(ids)
         return self._bulk_delete_with_link_guard(
             company_id=company_id,
@@ -347,8 +339,6 @@ class AcademicService:
             linked_msg=cannot_delete_linked("Academic year", "Semesters"),
             soft=soft,
         )
-
-
 
     def list_academic_years_cursor(
         self,
@@ -412,7 +402,6 @@ class AcademicService:
         )
 
         return True, "OK", out
-
 
     def list_academic_years_page(
         self,
@@ -505,12 +494,10 @@ class AcademicService:
             return False, "Academic year not found.", {}
 
         return True, "OK", {"data": data}
-    # =========================================================
-    # ACADEMIC YEAR: DETAIL
-    # =========================================================
 
-
-    # ----- Semester -----
+    # =========================================================
+    # SEMESTER
+    # =========================================================
     def create_semester(self, *, company_id: int, data: Dict[str, Any]):
         academic_year_id = int(data.get("academic_year_id") or 0)
         if not self.repo.years.get(academic_year_id, company_id=company_id):
@@ -532,6 +519,85 @@ class AcademicService:
             data={"academic_year_id": academic_year_id, "number": number, "name": name, "is_enabled": True},
         )
 
+    def update_semester(self, *, company_id: int, semester_id: int, data: Dict[str, Any]):
+        obj = self.repo.semesters.get(semester_id, company_id=company_id)
+        if not obj:
+            return False, ERR_SEMESTER_NOT_FOUND, None
+
+        patch: Dict[str, Any] = {}
+
+        if "academic_year_id" in data and data["academic_year_id"] is not None:
+            new_year_id = int(data["academic_year_id"])
+            if not self.repo.years.get(new_year_id, company_id=company_id):
+                return False, ERR_ACADEMIC_YEAR_NOT_FOUND, None
+            patch["academic_year_id"] = new_year_id
+
+        if "number" in data and data["number"] is not None:
+            number = int(data["number"])
+            if number < 1:
+                return False, "Semester number must be at least 1", None
+            check_year_id = int(patch.get("academic_year_id") or obj.academic_year_id)
+            if self.repo.semester_number_exists(company_id=company_id, academic_year_id=check_year_id, number=number, exclude_id=obj.id):
+                return False, ERR_SEMESTER_EXISTS_NUMBER, None
+            patch["number"] = number
+
+        if "name" in data:
+            name = (data.get("name") or "").strip() or None
+            if name and self.repo.semester_name_exists(company_id=company_id, name=name, exclude_id=obj.id):
+                return False, ERR_SEMESTER_EXISTS_NAME, None
+            patch["name"] = name
+
+        if "is_enabled" in data:
+            patch["is_enabled"] = bool(data["is_enabled"])
+
+        return self.semester_svc.update(company_id=company_id, id=semester_id, data=patch)
+
+    def delete_semester(self, *, company_id: int, semester_id: int, soft: bool = True):
+        obj = self.repo.semesters.get(semester_id, company_id=company_id)
+        if not obj:
+            return False, ERR_SEMESTER_NOT_FOUND, None
+
+        linked = self.repo.semesters_with_offerings([obj.id])
+
+        if obj.id in linked:
+            self.semester_svc.update(
+                company_id=company_id,
+                id=obj.id,
+                data={"is_enabled": False}
+            )
+            return True, "Semester archived because it has linked course offerings.", {"id": obj.id}
+
+        return self.semester_svc.delete(company_id=company_id, id=semester_id, soft=False)
+
+    def bulk_delete_semesters(self, *, company_id: int, ids: List[int], soft: bool = True):
+        linked = self.repo.semesters_with_offerings(ids)
+
+        deleted = []
+        failed = []
+
+        for _id in ids:
+            obj = self.repo.semesters.get(_id, company_id=company_id)
+
+            if not obj:
+                failed.append({"id": _id, "error": ERR_SEMESTER_NOT_FOUND})
+                continue
+
+            if _id in linked:
+                self.semester_svc.update(
+                    company_id=company_id,
+                    id=_id,
+                    data={"is_enabled": False}
+                )
+                deleted.append(_id)
+            else:
+                self.semester_svc.delete(
+                    company_id=company_id,
+                    id=_id,
+                    soft=False
+                )
+                deleted.append(_id)
+
+        return True, "Bulk delete processed.", {"deleted": deleted, "failed": failed}
 
     def list_semesters_cursor(
         self,
@@ -594,8 +660,6 @@ class AcademicService:
         )
 
         return True, "OK", out
-
-
 
     def list_semesters_page(
         self,
@@ -664,7 +728,7 @@ class AcademicService:
             if not row:
                 return None
 
-            courses_preview = self.repo.semester_courses_preview(
+            offerings_preview = self.repo.semester_offerings_preview(
                 company_id=company_id,
                 semester_id=semester_id,
                 limit=5,
@@ -672,7 +736,7 @@ class AcademicService:
 
             return self.repo.shape_semester_detail_row(
                 row,
-                courses_preview=courses_preview,
+                offerings_preview=offerings_preview,
             )
 
         data = cached_detail(
@@ -688,116 +752,22 @@ class AcademicService:
 
         return True, "OK", {"data": data}
 
-    def update_semester(self, *, company_id: int, semester_id: int, data: Dict[str, Any]):
-        obj = self.repo.semesters.get(semester_id, company_id=company_id)
-        if not obj:
-            return False, ERR_SEMESTER_NOT_FOUND, None
-
-        patch: Dict[str, Any] = {}
-
-        if "academic_year_id" in data and data["academic_year_id"] is not None:
-            new_year_id = int(data["academic_year_id"])
-            if not self.repo.years.get(new_year_id, company_id=company_id):
-                return False, ERR_ACADEMIC_YEAR_NOT_FOUND, None
-            patch["academic_year_id"] = new_year_id
-
-        if "number" in data and data["number"] is not None:
-            number = int(data["number"])
-            if number < 1:
-                return False, "Semester number must be at least 1", None
-            check_year_id = int(patch.get("academic_year_id") or obj.academic_year_id)
-            if self.repo.semester_number_exists(company_id=company_id, academic_year_id=check_year_id, number=number, exclude_id=obj.id):
-                return False, ERR_SEMESTER_EXISTS_NUMBER, None
-            patch["number"] = number
-
-        if "name" in data:
-            name = (data.get("name") or "").strip() or None
-            if name and self.repo.semester_name_exists(company_id=company_id, name=name, exclude_id=obj.id):
-                return False, ERR_SEMESTER_EXISTS_NAME, None
-            patch["name"] = name
-
-        if "is_enabled" in data:
-            patch["is_enabled"] = bool(data["is_enabled"])
-
-        return self.semester_svc.update(company_id=company_id, id=semester_id, data=patch)
-
-    def delete_semester(self, *, company_id: int, semester_id: int, soft: bool = True):
-        obj = self.repo.semesters.get(semester_id, company_id=company_id)
-        if not obj:
-            return False, ERR_SEMESTER_NOT_FOUND, None
-
-        linked = self.repo.semesters_with_courses([obj.id])
-
-        if obj.id in linked:
-            self.semester_svc.update(
-                company_id=company_id,
-                id=obj.id,
-                data={"is_enabled": False}
-            )
-            return True, "Semester archived because it has linked courses.", {"id": obj.id}
-
-        return self.semester_svc.delete(company_id=company_id, id=semester_id, soft=False)
-
-    def bulk_delete_semesters(self, *, company_id: int, ids: List[int], soft: bool = True):
-        linked = self.repo.semesters_with_courses(ids)
-
-        deleted = []
-        failed = []
-
-        for _id in ids:
-            obj = self.repo.semesters.get(_id, company_id=company_id)
-
-            if not obj:
-                failed.append({"id": _id, "error": ERR_SEMESTER_NOT_FOUND})
-                continue
-
-            if _id in linked:
-                self.semester_svc.update(
-                    company_id=company_id,
-                    id=_id,
-                    data={"is_enabled": False}
-                )
-                deleted.append(_id)
-            else:
-                self.semester_svc.delete(
-                    company_id=company_id,
-                    id=_id,
-                    soft=False
-                )
-                deleted.append(_id)
-
-        return True, "Bulk delete processed.", {"deleted": deleted, "failed": failed}
-
-    def get_semester(self, *, company_id: int, semester_id: int) -> Optional[Dict[str, Any]]:
-        rec = self.semester_svc.get_one(company_id=company_id, id=semester_id, eager_load=["academic_year"])
-        if rec:
-            rec["name"] = (rec.get("name") or f"Semester {rec.get('number')}")
-            if isinstance(rec.get("academic_year"), dict):
-                rec["academic_year_name"] = rec["academic_year"].get("name")
-        return rec
-
-    # ----- Course -----
+    # =========================================================
+    # COURSE (Base Course Definition)
+    # =========================================================
     def create_course(self, *, company_id: int, data: Dict[str, Any]):
-        department_id = int(data.get("department_id") or 0)
-        if not self.repo.departments.get(department_id, company_id=company_id):
-            return False, ERR_DEPARTMENT_NOT_FOUND, None
-
-        semester_id = int(data.get("semester_id") or 0)
-        if not self.repo.semesters.get(semester_id, company_id=company_id):
-            return False, ERR_SEMESTER_NOT_FOUND, None
-
         title = require_text(data.get("title"), field_label="Course title")
         code = normalize_code(data.get("code"))
         description = _safe_desc(data.get("description"))
 
-        if self.repo.course_title_exists(company_id=company_id, department_id=department_id, semester_id=semester_id, title=title):
-            return False, ERR_COURSE_EXISTS_TITLE_IN_SCOPE, None
+        if self.repo.course_title_exists(company_id=company_id, title=title):
+            return False, ERR_COURSE_EXISTS_TITLE, None
         if code and self.repo.course_code_exists(company_id=company_id, code=code):
             return False, ERR_COURSE_CODE_EXISTS, None
 
         return self.course_svc.create(
             company_id=company_id,
-            data={"department_id": department_id, "semester_id": semester_id, "title": title, "code": code, "description": description, "is_enabled": True},
+            data={"title": title, "code": code, "description": description, "is_enabled": True},
         )
 
     def update_course(self, *, company_id: int, course_id: int, data: Dict[str, Any]):
@@ -807,24 +777,10 @@ class AcademicService:
 
         patch: Dict[str, Any] = {}
 
-        if "department_id" in data and data["department_id"] is not None:
-            new_department_id = int(data["department_id"])
-            if not self.repo.departments.get(new_department_id, company_id=company_id):
-                return False, ERR_DEPARTMENT_NOT_FOUND, None
-            patch["department_id"] = new_department_id
-
-        if "semester_id" in data and data["semester_id"] is not None:
-            new_semester_id = int(data["semester_id"])
-            if not self.repo.semesters.get(new_semester_id, company_id=company_id):
-                return False, ERR_SEMESTER_NOT_FOUND, None
-            patch["semester_id"] = new_semester_id
-
         if "title" in data and data["title"] is not None:
             title = require_text(data.get("title"), field_label="Course title")
-            check_dept = int(patch.get("department_id") or obj.department_id)
-            check_sem = int(patch.get("semester_id") or obj.semester_id)
-            if self.repo.course_title_exists(company_id=company_id, department_id=check_dept, semester_id=check_sem, title=title, exclude_id=obj.id):
-                return False, ERR_COURSE_EXISTS_TITLE_IN_SCOPE, None
+            if self.repo.course_title_exists(company_id=company_id, title=title, exclude_id=obj.id):
+                return False, ERR_COURSE_EXISTS_TITLE, None
             patch["title"] = title
 
         if "code" in data:
@@ -846,7 +802,7 @@ class AcademicService:
         if not obj:
             return False, ERR_COURSE_NOT_FOUND, None
 
-        linked = self.repo.courses_with_chapters([obj.id])
+        linked = self.repo.courses_with_offerings([obj.id])
 
         if obj.id in linked:
             self.course_svc.update(
@@ -854,12 +810,12 @@ class AcademicService:
                 id=obj.id,
                 data={"is_enabled": False}
             )
-            return True, "Course archived because it has linked chapters.", {"id": obj.id}
+            return True, "Course archived because it has linked offerings.", {"id": obj.id}
 
         return self.course_svc.delete(company_id=company_id, id=course_id, soft=False)
 
     def bulk_delete_courses(self, *, company_id: int, ids: List[int], soft: bool = True):
-        linked = self.repo.courses_with_chapters(ids)
+        linked = self.repo.courses_with_offerings(ids)
 
         deleted = []
         failed = []
@@ -888,23 +844,120 @@ class AcademicService:
 
         return True, "Bulk delete processed.", {"deleted": deleted, "failed": failed}
 
-    def get_course(self, *, company_id: int, course_id: int) -> Optional[Dict[str, Any]]:
-        rec = self.course_svc.get_one(company_id=company_id, id=course_id, eager_load=["department", "semester", "chapters"])
-        if not rec:
-            return None
-        if isinstance(rec.get("department"), dict):
-            rec["department_name"] = rec["department"].get("name")
-        if isinstance(rec.get("semester"), dict):
-            sem = rec["semester"]
-            rec["semester_name"] = (sem.get("name") or f"Semester {sem.get('number')}")
-        if isinstance(rec.get("chapters"), list):
-            rec["chapters"] = sorted(rec["chapters"], key=lambda x: int(x.get("number") or 0))
-        return rec
+    def list_courses_cursor(
+        self,
+        *,
+        company_id: int,
+        limit: int,
+        cursor: Optional[str],
+        filters: Dict[str, Any],
+        is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        limit = max(1, min(int(limit or 20), 100))
 
+        cur = _decode_cursor(cursor or "")
+        last_id = cur.get("last_id")
+        try:
+            last_id = int(last_id) if last_id is not None else None
+        except Exception:
+            last_id = None
 
-    # =========================================================
-    # COURSE: DETAIL
-    # =========================================================
+        params = {
+            "mode": "cursor",
+            "limit": limit,
+            "last_id": last_id,
+            "filters": filters,
+            "is_enabled": is_enabled,
+        }
+
+        def builder():
+            rows, total_count, has_more = self.repo.list_courses_cursor(
+                company_id=company_id,
+                limit=limit,
+                last_id=last_id,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_course_list_row(r) for r in rows]
+
+            next_cursor = None
+            if has_more and rows:
+                next_cursor = _encode_cursor({"last_id": int(rows[-1].id)})
+
+            return {
+                "data": data,
+                "pagination": {
+                    "limit": limit,
+                    "next_cursor": next_cursor,
+                    "has_more": bool(has_more),
+                },
+                "meta": {"total_count": int(total_count)},
+            }
+
+        out = cached_list(
+            entity="courses:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        return True, "OK", out
+
+    def list_courses_page(
+        self,
+        *,
+        company_id: int,
+        page: int,
+        per_page: int,
+        filters: Dict[str, Any],
+        is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        allowed = {10, 20, 50, 500}
+        per_page = per_page if int(per_page or 20) in allowed else 20
+        page = max(int(page or 1), 1)
+
+        params = {
+            "mode": "page",
+            "page": page,
+            "per_page": per_page,
+            "filters": filters,
+            "is_enabled": is_enabled,
+        }
+
+        def builder():
+            rows, total_count, pages = self.repo.list_courses_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_course_list_row(r) for r in rows]
+
+            return {
+                "data": data,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "pages": int(pages),
+                    "total_count": int(total_count),
+                },
+            }
+
+        out = cached_list(
+            entity="courses:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+        return True, "OK", out
+
     def get_course_detail(
             self,
             *,
@@ -919,14 +972,14 @@ class AcademicService:
             if not row:
                 return None
 
-            chapters = self.repo.course_chapters(
+            offerings = self.repo.course_offerings_list(
                 company_id=company_id,
                 course_id=course_id,
             )
 
             return self.repo.shape_course_detail_row(
                 row,
-                chapters=chapters,
+                offerings=offerings,
             )
 
         data = cached_detail(
@@ -942,33 +995,53 @@ class AcademicService:
 
         return True, "OK", {"data": data}
 
-    # ----- Chapter -----
-    def create_chapter(self, *, company_id: int, data: Dict[str, Any]):
+    # =========================================================
+    # COURSE OFFERING (NEW)
+    # =========================================================
+    def create_course_offering(self, *, company_id: int, data: Dict[str, Any]):
         course_id = int(data.get("course_id") or 0)
         if not self.repo.courses.get(course_id, company_id=company_id):
             return False, ERR_COURSE_NOT_FOUND, None
 
-        number = int(data.get("number") or 0)
-        if number < 1:
-            return False, "Chapter number must be at least 1", None
+        department_id = int(data.get("department_id") or 0)
+        if not self.repo.departments.get(department_id, company_id=company_id):
+            return False, ERR_DEPARTMENT_NOT_FOUND, None
 
-        title = require_text(data.get("title"), field_label="Chapter title")
-        description = _safe_desc(data.get("description"))
+        semester_id = int(data.get("semester_id") or 0)
+        if not self.repo.semesters.get(semester_id, company_id=company_id):
+            return False, ERR_SEMESTER_NOT_FOUND, None
 
-        if self.repo.chapter_title_exists(company_id=company_id, course_id=course_id, title=title):
-            return False, ERR_CHAPTER_EXISTS_TITLE, None
-        if self.repo.chapter_number_exists(company_id=company_id, course_id=course_id, number=number):
-            return False, ERR_CHAPTER_EXISTS_NUMBER, None
+        custom_title = (data.get("custom_title") or "").strip() or None
+        credit_hours = data.get("credit_hours")
+        if credit_hours is not None:
+            credit_hours = int(credit_hours)
+            if credit_hours < 0 or credit_hours > 30:
+                return False, "Credit hours must be between 0 and 30", None
 
-        return self.chapter_svc.create(
+        if self.repo.course_offering_exists_in_scope(
             company_id=company_id,
-            data={"course_id": course_id, "number": number, "title": title, "description": description, "is_enabled": True},
+            course_id=course_id,
+            department_id=department_id,
+            semester_id=semester_id
+        ):
+            return False, ERR_COURSE_OFFERING_EXISTS_IN_SCOPE, None
+
+        return self.course_offering_svc.create(
+            company_id=company_id,
+            data={
+                "course_id": course_id,
+                "department_id": department_id,
+                "semester_id": semester_id,
+                "custom_title": custom_title,
+                "credit_hours": credit_hours,
+                "is_enabled": True
+            },
         )
 
-    def update_chapter(self, *, company_id: int, chapter_id: int, data: Dict[str, Any]):
-        obj = self.repo.chapters.get(chapter_id, company_id=company_id)
+    def update_course_offering(self, *, company_id: int, offering_id: int, data: Dict[str, Any]):
+        obj = self.repo.course_offerings.get(offering_id, company_id=company_id)
         if not obj:
-            return False, ERR_CHAPTER_NOT_FOUND, None
+            return False, ERR_COURSE_OFFERING_NOT_FOUND, None
 
         patch: Dict[str, Any] = {}
 
@@ -978,19 +1051,305 @@ class AcademicService:
                 return False, ERR_COURSE_NOT_FOUND, None
             patch["course_id"] = new_course_id
 
+        if "department_id" in data and data["department_id"] is not None:
+            new_department_id = int(data["department_id"])
+            if not self.repo.departments.get(new_department_id, company_id=company_id):
+                return False, ERR_DEPARTMENT_NOT_FOUND, None
+            patch["department_id"] = new_department_id
+
+        if "semester_id" in data and data["semester_id"] is not None:
+            new_semester_id = int(data["semester_id"])
+            if not self.repo.semesters.get(new_semester_id, company_id=company_id):
+                return False, ERR_SEMESTER_NOT_FOUND, None
+            patch["semester_id"] = new_semester_id
+
+        if "custom_title" in data:
+            patch["custom_title"] = (data.get("custom_title") or "").strip() or None
+
+        if "credit_hours" in data:
+            credit_hours = data.get("credit_hours")
+            if credit_hours is not None:
+                credit_hours = int(credit_hours)
+                if credit_hours < 0 or credit_hours > 30:
+                    return False, "Credit hours must be between 0 and 30", None
+            patch["credit_hours"] = credit_hours
+
+        if "is_enabled" in data:
+            patch["is_enabled"] = bool(data["is_enabled"])
+
+        # Check uniqueness if scope changed
+        check_course = int(patch.get("course_id") or obj.course_id)
+        check_dept = int(patch.get("department_id") or obj.department_id)
+        check_sem = int(patch.get("semester_id") or obj.semester_id)
+
+        if (patch.get("course_id") or patch.get("department_id") or patch.get("semester_id")):
+            if self.repo.course_offering_exists_in_scope(
+                company_id=company_id,
+                course_id=check_course,
+                department_id=check_dept,
+                semester_id=check_sem,
+                exclude_id=obj.id
+            ):
+                return False, ERR_COURSE_OFFERING_EXISTS_IN_SCOPE, None
+
+        return self.course_offering_svc.update(company_id=company_id, id=offering_id, data=patch)
+
+    def delete_course_offering(self, *, company_id: int, offering_id: int, soft: bool = True):
+        obj = self.repo.course_offerings.get(offering_id, company_id=company_id)
+        if not obj:
+            return False, ERR_COURSE_OFFERING_NOT_FOUND, None
+
+        linked = self.repo.offerings_with_chapters([obj.id])
+
+        if obj.id in linked:
+            self.course_offering_svc.update(
+                company_id=company_id,
+                id=obj.id,
+                data={"is_enabled": False}
+            )
+            return True, "Course offering archived because it has linked chapters.", {"id": obj.id}
+
+        return self.course_offering_svc.delete(company_id=company_id, id=offering_id, soft=soft)
+
+    def bulk_delete_course_offerings(self, *, company_id: int, ids: List[int], soft: bool = True):
+        linked = self.repo.offerings_with_chapters(ids)
+
+        deleted = []
+        failed = []
+
+        for _id in ids:
+            obj = self.repo.course_offerings.get(_id, company_id=company_id)
+
+            if not obj:
+                failed.append({"id": _id, "error": ERR_COURSE_OFFERING_NOT_FOUND})
+                continue
+
+            if _id in linked:
+                self.course_offering_svc.update(
+                    company_id=company_id,
+                    id=_id,
+                    data={"is_enabled": False}
+                )
+                deleted.append(_id)
+            else:
+                self.course_offering_svc.delete(
+                    company_id=company_id,
+                    id=_id,
+                    soft=False
+                )
+                deleted.append(_id)
+
+        return True, "Bulk delete processed.", {"deleted": deleted, "failed": failed}
+
+    def list_course_offerings_cursor(
+        self,
+        *,
+        company_id: int,
+        limit: int,
+        cursor: Optional[str],
+        filters: Dict[str, Any],
+        is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        limit = max(1, min(int(limit or 20), 100))
+
+        cur = _decode_cursor(cursor or "")
+        last_id = cur.get("last_id")
+        try:
+            last_id = int(last_id) if last_id is not None else None
+        except Exception:
+            last_id = None
+
+        params = {
+            "mode": "cursor",
+            "limit": limit,
+            "last_id": last_id,
+            "filters": filters,
+            "is_enabled": is_enabled,
+        }
+
+        def builder():
+            rows, total_count, has_more = self.repo.list_course_offerings_cursor(
+                company_id=company_id,
+                limit=limit,
+                last_id=last_id,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_course_offering_list_row(r) for r in rows]
+
+            next_cursor = None
+            if has_more and rows:
+                next_cursor = _encode_cursor({"last_id": int(rows[-1].id)})
+
+            return {
+                "data": data,
+                "pagination": {
+                    "limit": limit,
+                    "next_cursor": next_cursor,
+                    "has_more": bool(has_more),
+                },
+                "meta": {"total_count": int(total_count)},
+            }
+
+        out = cached_list(
+            entity="course_offerings:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        return True, "OK", out
+
+    def list_course_offerings_page(
+        self,
+        *,
+        company_id: int,
+        page: int,
+        per_page: int,
+        filters: Dict[str, Any],
+        is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        allowed = {10, 20, 50, 500}
+        per_page = per_page if int(per_page or 20) in allowed else 20
+        page = max(int(page or 1), 1)
+
+        params = {
+            "mode": "page",
+            "page": page,
+            "per_page": per_page,
+            "filters": filters,
+            "is_enabled": is_enabled,
+        }
+
+        def builder():
+            rows, total_count, pages = self.repo.list_course_offerings_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+
+            data = [self.repo.shape_course_offering_list_row(r) for r in rows]
+
+            return {
+                "data": data,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "pages": int(pages),
+                    "total_count": int(total_count),
+                },
+            }
+
+        out = cached_list(
+            entity="course_offerings:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+
+        return True, "OK", out
+
+    def get_course_offering_detail(
+            self,
+            *,
+            company_id: int,
+            offering_id: int,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        def builder():
+            row = self.repo.get_course_offering_detail(
+                company_id=company_id,
+                offering_id=offering_id,
+            )
+            if not row:
+                return None
+
+            chapters = self.repo.offering_chapters_list(
+                company_id=company_id,
+                offering_id=offering_id,
+            )
+
+            return self.repo.shape_course_offering_detail_row(
+                row,
+                chapters=chapters,
+            )
+
+        data = cached_detail(
+            entity="course_offerings:detail",
+            company_id=company_id,
+            record_id=offering_id,
+            ttl=30,
+            builder=builder,
+        )
+
+        if data is None:
+            return False, "Course offering not found.", {}
+
+        return True, "OK", {"data": data}
+
+    # =========================================================
+    # COURSE CHAPTER
+    # =========================================================
+    def create_chapter(self, *, company_id: int, data: Dict[str, Any]):
+        course_offering_id = int(data.get("course_offering_id") or 0)
+        if not self.repo.course_offerings.get(course_offering_id, company_id=company_id):
+            return False, ERR_COURSE_OFFERING_NOT_FOUND, None
+
+        number = int(data.get("number") or 0)
+        if number < 1:
+            return False, "Chapter number must be at least 1", None
+
+        title = require_text(data.get("title"), field_label="Chapter title")
+        description = _safe_desc(data.get("description"))
+
+        if self.repo.chapter_title_exists(company_id=company_id, course_offering_id=course_offering_id, title=title):
+            return False, ERR_CHAPTER_EXISTS_TITLE, None
+        if self.repo.chapter_number_exists(company_id=company_id, course_offering_id=course_offering_id, number=number):
+            return False, ERR_CHAPTER_EXISTS_NUMBER, None
+
+        return self.chapter_svc.create(
+            company_id=company_id,
+            data={
+                "course_offering_id": course_offering_id,
+                "number": number,
+                "title": title,
+                "description": description,
+                "is_enabled": True
+            },
+        )
+
+    def update_chapter(self, *, company_id: int, chapter_id: int, data: Dict[str, Any]):
+        obj = self.repo.chapters.get(chapter_id, company_id=company_id)
+        if not obj:
+            return False, ERR_CHAPTER_NOT_FOUND, None
+
+        patch: Dict[str, Any] = {}
+
+        if "course_offering_id" in data and data["course_offering_id"] is not None:
+            new_offering_id = int(data["course_offering_id"])
+            if not self.repo.course_offerings.get(new_offering_id, company_id=company_id):
+                return False, ERR_COURSE_OFFERING_NOT_FOUND, None
+            patch["course_offering_id"] = new_offering_id
+
         if "number" in data and data["number"] is not None:
             number = int(data["number"])
             if number < 1:
                 return False, "Chapter number must be at least 1", None
-            check_course = int(patch.get("course_id") or obj.course_id)
-            if self.repo.chapter_number_exists(company_id=company_id, course_id=check_course, number=number, exclude_id=obj.id):
+            check_offering = int(patch.get("course_offering_id") or obj.course_offering_id)
+            if self.repo.chapter_number_exists(company_id=company_id, course_offering_id=check_offering, number=number, exclude_id=obj.id):
                 return False, ERR_CHAPTER_EXISTS_NUMBER, None
             patch["number"] = number
 
         if "title" in data and data["title"] is not None:
             title = require_text(data.get("title"), field_label="Chapter title")
-            check_course = int(patch.get("course_id") or obj.course_id)
-            if self.repo.chapter_title_exists(company_id=company_id, course_id=check_course, title=title, exclude_id=obj.id):
+            check_offering = int(patch.get("course_offering_id") or obj.course_offering_id)
+            if self.repo.chapter_title_exists(company_id=company_id, course_offering_id=check_offering, title=title, exclude_id=obj.id):
                 return False, ERR_CHAPTER_EXISTS_TITLE, None
             patch["title"] = title
 
@@ -1011,276 +1370,152 @@ class AcademicService:
     def bulk_delete_chapters(self, *, company_id: int, ids: List[int], soft: bool = True):
         return self.chapter_svc.bulk_delete(company_id=company_id, ids=ids, soft=soft)
 
-
-    def get_chapter(self, *, company_id: int, chapter_id: int) -> Optional[Dict[str, Any]]:
-        rec = self.chapter_svc.get_one(company_id=company_id, id=chapter_id, eager_load=["course"])
-        if rec and isinstance(rec.get("course"), dict):
-            rec["course_title"] = rec["course"].get("title")
-        return rec
-    # ---------- Dropdowns ----------
-    def dropdown_faculties(
-        self,
-        *,
-        company_id: int,
-        search: str | None,
-        limit: int,
-        offset: int,
-        active_only: bool,
-        filters: dict | None,
-    ):
-        allowed_filters = {"is_enabled": Faculty.is_enabled, "name": Faculty.name, "code": Faculty.code}
-        sort_fields = {"id": Faculty.id, "name": Faculty.name, "code": Faculty.code, "created_at": getattr(Faculty, "created_at", Faculty.id)}
-
-        return self.faculty_svc.dropdown(
-            company_id=company_id,
-            search=search,
-            limit=limit,
-            offset=offset,
-            active_only=active_only,
-            search_columns=[Faculty.name, Faculty.code],
-            filters=filters,
-            allowed_filters=allowed_filters,
-            sort_fields=sort_fields,
-            default_sort=[Faculty.name.asc()],
-            value_field="id",
-            label_fields=["code", "name"],
-            meta_fields=["code", "is_enabled"],
-            strict_label=True,   # <- module controls behavior
-        )
-
-    def dropdown_faculties_public(
+    def list_chapters_cursor(
             self,
             *,
             company_id: int,
-            search: str | None,
             limit: int,
-            offset: int,
-            filters: dict | None,
-    ):
-        allowed_filters = {
-            "name": Faculty.name,
-            "code": Faculty.code,
-        }
+            cursor: Optional[str],
+            filters: Dict[str, Any],
+            is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        limit = max(1, min(int(limit or 20), 100))
 
-        sort_fields = {
-            "id": Faculty.id,
-            "name": Faculty.name,
-            "code": Faculty.code,
-            "created_at": getattr(Faculty, "created_at", Faculty.id),
-        }
+        cur = _decode_cursor(cursor or "")
+        last_no = cur.get("last_no")
+        try:
+            last_no = int(last_no) if last_no is not None else None
+        except Exception:
+            last_no = None
 
-        return self.faculty_svc.dropdown(
-            company_id=company_id,
-            search=search,
-            limit=limit,
-            offset=offset,
-            active_only=True,  # always true for public
-            search_columns=[Faculty.name, Faculty.code],
-            filters=filters,
-            allowed_filters=allowed_filters,
-            sort_fields=sort_fields,
-            default_sort=[Faculty.name.asc()],
-            value_field="id",
-            label_fields=["code", "name"],
-            meta_fields=["code"],  # keep public response minimal
-            strict_label=True,
-        )
-    def dropdown_semesters(
-        self,
-        *,
-        company_id: int,
-        search: str | None,
-        limit: int,
-        offset: int,
-        active_only: bool,
-        filters: dict | None,
-    ):
-        allowed_filters = {
-            "is_enabled": Semester.is_enabled,
-            "academic_year_id": Semester.academic_year_id,
-            "number": Semester.number,
-            "name": Semester.name,
-        }
-        sort_fields = {"id": Semester.id, "number": Semester.number, "created_at": getattr(Semester, "created_at", Semester.id)}
-
-        def sem_label(s: Semester) -> str:
-            nm = (getattr(s, "name", None) or "").strip()
-            return nm or f"Semester {int(getattr(s, 'number', 0) or 0)}"
-
-        return self.semester_svc.dropdown(
-            company_id=company_id,
-            search=search,
-            limit=limit,
-            offset=offset,
-            active_only=active_only,
-            search_columns=[Semester.name],
-            filters=filters,
-            allowed_filters=allowed_filters,
-            sort_fields=sort_fields,
-            default_sort=[Semester.number.asc()],
-            value_field="id",
-            label_getter=sem_label,
-            meta_fields=["academic_year_id", "number", "name", "is_enabled"],
-            strict_label=True,
-        )
-
-    def dropdown_departments(
-            self,
-            *,
-            company_id: int,
-            faculty_id: int | None,  # ✅ dependent filter
-            search: str | None,
-            limit: int,
-            offset: int,
-            active_only: bool,
-            filters: dict | None,
-    ):
-        allowed_filters = {
-            "is_enabled": Department.is_enabled,
-            "name": Department.name,
-            "code": Department.code,
-            "faculty_id": Department.faculty_id,  # optional (but we already accept faculty_id param)
-        }
-
-        sort_fields = {
-            "id": Department.id,
-            "name": Department.name,
-            "code": Department.code,
-            "created_at": getattr(Department, "created_at", Department.id),
-        }
-
-        # ✅ enforce faculty_id when provided (strong, explicit)
-        extra_where = []
-        if faculty_id is not None:
-            extra_where.append(Department.faculty_id == int(faculty_id))
-
-        # ---------------- caching ----------------
         params = {
-            "search": search,
-            "limit": int(limit),
-            "offset": int(offset),
-            "active_only": bool(active_only),
-            "filters": filters or {},
-            "faculty_id": int(faculty_id) if faculty_id is not None else None,
+            "mode": "cursor",
+            "limit": limit,
+            "last_no": last_no,
+            "filters": filters,
+            "is_enabled": is_enabled,
         }
 
         def builder():
-            return self.department_svc.dropdown(
+            rows, total_count, has_more = self.repo.list_chapters_cursor(
                 company_id=company_id,
-                search=search,
                 limit=limit,
-                offset=offset,
-                active_only=active_only,
-                search_columns=[Department.name, Department.code],
+                last_no=last_no,
                 filters=filters,
-                allowed_filters=allowed_filters,
-                sort_fields=sort_fields,
-                default_sort=[Department.name.asc()],
-                value_field="id",
-                label_fields=["code", "name"],
-                meta_fields=["faculty_id", "code", "is_enabled"],
-                strict_label=True,
-                # ✅ use your NEW HOOK
-                extra_where=extra_where,
+                is_enabled=is_enabled,
             )
 
-        return cached_dropdown(
-            name="departments",
+            data = [self.repo.shape_chapter_list_row(r) for r in rows]
+
+            next_cursor = None
+            if has_more and rows:
+                next_cursor = _encode_cursor({"last_no": int(rows[-1].number)})
+
+            return {
+                "data": data,
+                "pagination": {
+                    "limit": limit,
+                    "next_cursor": next_cursor,
+                    "has_more": bool(has_more),
+                },
+                "meta": {"total_count": int(total_count)},
+            }
+
+        out = cached_list(
+            entity="chapters:list",
             company_id=company_id,
             params=params,
-            ttl=600,
+            scope="default",
+            ttl=20,
             builder=builder,
         )
-    def dropdown_faculties_with_departments(
+
+        return True, "OK", out
+
+    def list_chapters_page(
             self,
             *,
             company_id: int,
-            search: str | None,
-            limit: int,
-            offset: int,
-            active_only: bool,
-            filters: dict | None,
-    ):
-        allowed_filters = {"is_enabled": Faculty.is_enabled, "name": Faculty.name, "code": Faculty.code}
-        sort_fields = {"id": Faculty.id, "name": Faculty.name, "code": Faculty.code}
+            page: int,
+            per_page: int,
+            filters: Dict[str, Any],
+            is_enabled: Optional[bool],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        allowed = {10, 20, 50, 500}
+        per_page = per_page if int(per_page or 20) in allowed else 20
+        page = max(int(page or 1), 1)
 
-        # condition: faculty has at least one department (optionally enabled only)
-        dept_exists = exists(
-            select(1).where(
-                Department.faculty_id == Faculty.id,
-                Department.company_id == Faculty.company_id,  # tenant-safe
-                Department.is_enabled.is_(True),  # optional
+        params = {
+            "mode": "page",
+            "page": page,
+            "per_page": per_page,
+            "filters": filters,
+            "is_enabled": is_enabled,
+        }
+
+        def builder():
+            rows, total_count, pages = self.repo.list_chapters_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+                is_enabled=is_enabled,
             )
-        )
 
-        return self.faculty_svc.dropdown(
+            data = [self.repo.shape_chapter_list_row(r) for r in rows]
+
+            return {
+                "data": data,
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "pages": int(pages),
+                    "total_count": int(total_count),
+                },
+            }
+
+        out = cached_list(
+            entity="chapters:list",
             company_id=company_id,
-            search=search,
-            limit=limit,
-            offset=offset,
-            active_only=active_only,
-            search_columns=[Faculty.name, Faculty.code],
-            filters=filters,
-            allowed_filters=allowed_filters,
-            sort_fields=sort_fields,
-            default_sort=[Faculty.name.asc()],
-            value_field="id",
-            label_fields=["code", "name"],
-            meta_fields=["code", "is_enabled"],
-            strict_label=True,
-            # ---- NEW HOOK ----
-            extra_where=[dept_exists],
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
         )
 
-    def dropdown_faculties_with_departments_public(
-            self,
-            *,
-            company_id: int,
-            faculty_id: int | None,  # ✅ Accept faculty_id
-            search: str | None,
-            limit: int,
-            offset: int,
-            filters: dict | None,
-    ):
-        # ✅ Change all of these to Department instead of Faculty
-        allowed_filters = {
-            "name": Department.name,
-            "code": Department.code,
-        }
+        return True, "OK", out
 
-        sort_fields = {
-            "id": Department.id,
-            "name": Department.name,
-            "code": Department.code,
-        }
+    def get_chapter_detail(
+        self,
+        *,
+        company_id: int,
+        chapter_id: int,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        def builder():
+            row = self.repo.get_chapter_detail(
+                company_id=company_id,
+                chapter_id=chapter_id,
+            )
+            if not row:
+                return None
+            return self.repo.shape_chapter_detail_row(row)
 
-        # ✅ Enforce the faculty_id filter securely
-        extra_where = []
-        if faculty_id is not None:
-            extra_where.append(Department.faculty_id == int(faculty_id))
-
-        # Optional: ensure we only return active departments for public view
-        extra_where.append(Department.is_enabled.is_(True))
-
-        # ✅ Query department_svc so we return Departments, not Faculties
-        return self.department_svc.dropdown(
+        data = cached_detail(
+            entity="chapters:detail",
             company_id=company_id,
-            search=search,
-            limit=limit,
-            offset=offset,
-            active_only=True,  # Always True for public registration
-            search_columns=[Department.name, Department.code],
-            filters=filters,
-            allowed_filters=allowed_filters,
-            sort_fields=sort_fields,
-            default_sort=[Department.name.asc()],
-            value_field="id",
-            label_fields=["code", "name"],
-            meta_fields=["code", "faculty_id"],  # Good for debugging frontend
-            strict_label=True,
-            extra_where=extra_where,  # Apply the filters here
+            record_id=chapter_id,
+            ttl=30,
+            builder=builder,
         )
 
+        if data is None:
+            return False, "Chapter not found.", {}
+
+        return True, "OK", {"data": data}
+
+    # =========================================================
+    # FACULTY LIST METHODS
+    # =========================================================
     def list_faculties_cursor(
             self,
             *,
@@ -1440,6 +1675,9 @@ class AcademicService:
 
         return True, "OK", {"data": data}
 
+    # =========================================================
+    # DEPARTMENT LIST METHODS
+    # =========================================================
     def list_departments_cursor(
             self,
             *,
@@ -1505,9 +1743,6 @@ class AcademicService:
 
         return True, "OK", out
 
-    # =========================================================
-    # DEPARTMENT: LIST page (Service)
-    # =========================================================
     def list_departments_page(
             self,
             *,
@@ -1602,269 +1837,77 @@ class AcademicService:
 
         return True, "OK", {"data": data}
 
-
-
-
-    def list_courses_cursor(
+    # =========================================================
+    # DROPDOWNS
+    # =========================================================
+    def dropdown_faculties(
         self,
         *,
         company_id: int,
+        search: str | None,
         limit: int,
-        cursor: Optional[str],
-        filters: Dict[str, Any],
-        is_enabled: Optional[bool],
-    ) -> Tuple[bool, str, Dict[str, Any]]:
-        limit = max(1, min(int(limit or 20), 100))
+        offset: int,
+        active_only: bool,
+        filters: dict | None,
+    ):
+        allowed_filters = {"is_enabled": Faculty.is_enabled, "name": Faculty.name, "code": Faculty.code}
+        sort_fields = {"id": Faculty.id, "name": Faculty.name, "code": Faculty.code, "created_at": getattr(Faculty, "created_at", Faculty.id)}
 
-        cur = _decode_cursor(cursor or "")
-        last_id = cur.get("last_id")
-        try:
-            last_id = int(last_id) if last_id is not None else None
-        except Exception:
-            last_id = None
-
-        params = {
-            "mode": "cursor",
-            "limit": limit,
-            "last_id": last_id,
-            "filters": filters,
-            "is_enabled": is_enabled,
-        }
-
-        def builder():
-            rows, total_count, has_more = self.repo.list_courses_cursor(
-                company_id=company_id,
-                limit=limit,
-                last_id=last_id,
-                filters=filters,
-                is_enabled=is_enabled,
-            )
-
-            data = [self.repo.shape_course_list_row(r) for r in rows]
-
-            next_cursor = None
-            if has_more and rows:
-                next_cursor = _encode_cursor({"last_id": int(rows[-1].id)})
-
-            return {
-                "data": data,
-                "pagination": {
-                    "limit": limit,
-                    "next_cursor": next_cursor,
-                    "has_more": bool(has_more),
-                },
-                "meta": {"total_count": int(total_count)},
-            }
-
-        out = cached_list(
-            entity="courses:list",
+        return self.faculty_svc.dropdown(
             company_id=company_id,
-            params=params,
-            scope="default",
-            ttl=20,
-            builder=builder,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            search_columns=[Faculty.name, Faculty.code],
+            filters=filters,
+            allowed_filters=allowed_filters,
+            sort_fields=sort_fields,
+            default_sort=[Faculty.name.asc()],
+            value_field="id",
+            label_fields=["code", "name"],
+            meta_fields=["code", "is_enabled"],
+            strict_label=True,
         )
 
-        return True, "OK", out
-
-
-    def list_courses_page(
+    def dropdown_semesters(
         self,
         *,
         company_id: int,
-        page: int,
-        per_page: int,
-        filters: Dict[str, Any],
-        is_enabled: Optional[bool],
-    ) -> Tuple[bool, str, Dict[str, Any]]:
-        allowed = {10, 20, 50, 500}
-        per_page = per_page if int(per_page or 20) in allowed else 20
-        page = max(int(page or 1), 1)
-
-        params = {
-            "mode": "page",
-            "page": page,
-            "per_page": per_page,
-            "filters": filters,
-            "is_enabled": is_enabled,
+        search: str | None,
+        limit: int,
+        offset: int,
+        active_only: bool,
+        filters: dict | None,
+    ):
+        allowed_filters = {
+            "is_enabled": Semester.is_enabled,
+            "academic_year_id": Semester.academic_year_id,
+            "number": Semester.number,
+            "name": Semester.name,
         }
+        sort_fields = {"id": Semester.id, "number": Semester.number, "created_at": getattr(Semester, "created_at", Semester.id)}
 
-        def builder():
-            rows, total_count, pages = self.repo.list_courses_page(
-                company_id=company_id,
-                page=page,
-                per_page=per_page,
-                filters=filters,
-                is_enabled=is_enabled,
-            )
+        def sem_label(s: Semester) -> str:
+            nm = (getattr(s, "name", None) or "").strip()
+            return nm or f"Semester {int(getattr(s, 'number', 0) or 0)}"
 
-            data = [self.repo.shape_course_list_row(r) for r in rows]
-
-            return {
-                "data": data,
-                "pagination": {
-                    "page": page,
-                    "per_page": per_page,
-                    "pages": int(pages),
-                    "total_count": int(total_count),
-                },
-            }
-
-        out = cached_list(
-            entity="courses:list",
+        return self.semester_svc.dropdown(
             company_id=company_id,
-            params=params,
-            scope="default",
-            ttl=20,
-            builder=builder,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            search_columns=[Semester.name],
+            filters=filters,
+            allowed_filters=allowed_filters,
+            sort_fields=sort_fields,
+            default_sort=[Semester.number.asc()],
+            value_field="id",
+            label_getter=sem_label,
+            meta_fields=["academic_year_id", "number", "name", "is_enabled"],
+            strict_label=True,
         )
-        return True, "OK", out
-
-    def list_chapters_cursor(
-            self,
-            *,
-            company_id: int,
-            limit: int,
-            cursor: Optional[str],
-            filters: Dict[str, Any],
-            is_enabled: Optional[bool],
-    ) -> Tuple[bool, str, Dict[str, Any]]:
-        limit = max(1, min(int(limit or 20), 100))
-
-        cur = _decode_cursor(cursor or "")
-        last_no = cur.get("last_no")
-        try:
-            last_no = int(last_no) if last_no is not None else None
-        except Exception:
-            last_no = None
-
-        params = {
-            "mode": "cursor",
-            "limit": limit,
-            "last_no": last_no,
-            "filters": filters,
-            "is_enabled": is_enabled,
-        }
-
-        def builder():
-            rows, total_count, has_more = self.repo.list_chapters_cursor(
-                company_id=company_id,
-                limit=limit,
-                last_no=last_no,
-                filters=filters,
-                is_enabled=is_enabled,
-            )
-
-            data = [self.repo.shape_chapter_list_row(r) for r in rows]
-
-            next_cursor = None
-            if has_more and rows:
-                next_cursor = _encode_cursor({"last_no": int(rows[-1].number)})
-
-            return {
-                "data": data,
-                "pagination": {
-                    "limit": limit,
-                    "next_cursor": next_cursor,
-                    "has_more": bool(has_more),
-                },
-                "meta": {
-                    "total_count": int(total_count),
-                },
-            }
-
-        out = cached_list(
-            entity="chapters:list",
-            company_id=company_id,
-            params=params,
-            scope="default",
-            ttl=20,
-            builder=builder,
-        )
-
-        return True, "OK", out
-
-    def list_chapters_page(
-            self,
-            *,
-            company_id: int,
-            page: int,
-            per_page: int,
-            filters: Dict[str, Any],
-            is_enabled: Optional[bool],
-    ) -> Tuple[bool, str, Dict[str, Any]]:
-        allowed = {10, 20, 50, 500}
-        per_page = per_page if int(per_page or 20) in allowed else 20
-        page = max(int(page or 1), 1)
-
-        params = {
-            "mode": "page",
-            "page": page,
-            "per_page": per_page,
-            "filters": filters,
-            "is_enabled": is_enabled,
-        }
-
-        def builder():
-            rows, total_count, pages = self.repo.list_chapters_page(
-                company_id=company_id,
-                page=page,
-                per_page=per_page,
-                filters=filters,
-                is_enabled=is_enabled,
-            )
-
-            data = [self.repo.shape_chapter_list_row(r) for r in rows]
-
-            return {
-                "data": data,
-                "pagination": {
-                    "page": page,
-                    "per_page": per_page,
-                    "pages": int(pages),
-                    "total_count": int(total_count),
-                },
-            }
-
-        out = cached_list(
-            entity="chapters:list",
-            company_id=company_id,
-            params=params,
-            scope="default",
-            ttl=20,
-            builder=builder,
-        )
-
-        return True, "OK", out
-
-
-    def get_chapter_detail(
-        self,
-        *,
-        company_id: int,
-        chapter_id: int,
-    ) -> Tuple[bool, str, Dict[str, Any]]:
-        def builder():
-            row = self.repo.get_chapter_detail(
-                company_id=company_id,
-                chapter_id=chapter_id,
-            )
-            if not row:
-                return None
-            return self.repo.shape_chapter_detail_row(row)
-
-        data = cached_detail(
-            entity="chapters:detail",
-            company_id=company_id,
-            record_id=chapter_id,
-            ttl=30,
-            builder=builder,
-        )
-
-        if data is None:
-            return False, "Chapter not found.", {}
-
-        return True, "OK", {"data": data}
 
     def dropdown_courses(
         self,
@@ -1878,8 +1921,6 @@ class AcademicService:
     ):
         allowed_filters = {
             "is_enabled": Course.is_enabled,
-            "department_id": Course.department_id,
-            "semester_id": Course.semester_id,
             "code": Course.code,
         }
 
@@ -1903,12 +1944,76 @@ class AcademicService:
             default_sort=[Course.title.asc()],
             value_field="id",
             label_fields=["code", "title"],
-            meta_fields=["code", "department_id", "semester_id", "is_enabled"],
+            meta_fields=["code", "is_enabled"],
             strict_label=True,
         )
 
+    def dropdown_departments(
+            self,
+            *,
+            company_id: int,
+            faculty_id: int | None,
+            search: str | None,
+            limit: int,
+            offset: int,
+            active_only: bool,
+            filters: dict | None,
+    ):
+        allowed_filters = {
+            "is_enabled": Department.is_enabled,
+            "name": Department.name,
+            "code": Department.code,
+            "faculty_id": Department.faculty_id,
+        }
 
-    def dropdown_chapters(
+        sort_fields = {
+            "id": Department.id,
+            "name": Department.name,
+            "code": Department.code,
+            "created_at": getattr(Department, "created_at", Department.id),
+        }
+
+        extra_where = []
+        if faculty_id is not None:
+            extra_where.append(Department.faculty_id == int(faculty_id))
+
+        params = {
+            "search": search,
+            "limit": int(limit),
+            "offset": int(offset),
+            "active_only": bool(active_only),
+            "filters": filters or {},
+            "faculty_id": int(faculty_id) if faculty_id is not None else None,
+        }
+
+        def builder():
+            return self.department_svc.dropdown(
+                company_id=company_id,
+                search=search,
+                limit=limit,
+                offset=offset,
+                active_only=active_only,
+                search_columns=[Department.name, Department.code],
+                filters=filters,
+                allowed_filters=allowed_filters,
+                sort_fields=sort_fields,
+                default_sort=[Department.name.asc()],
+                value_field="id",
+                label_fields=["code", "name"],
+                meta_fields=["faculty_id", "code", "is_enabled"],
+                strict_label=True,
+                extra_where=extra_where,
+            )
+
+        return cached_dropdown(
+            name="departments",
+            company_id=company_id,
+            params=params,
+            ttl=600,
+            builder=builder,
+        )
+
+    def dropdown_course_offerings(
         self,
         *,
         company_id: int,
@@ -1919,30 +2024,36 @@ class AcademicService:
         filters: dict | None,
     ):
         allowed_filters = {
-            "is_enabled": Chapter.is_enabled,
-            "course_id": Chapter.course_id,
+            "is_enabled": CourseOffering.is_enabled,
+            "department_id": CourseOffering.department_id,
+            "semester_id": CourseOffering.semester_id,
+            "course_id": CourseOffering.course_id,
         }
 
         sort_fields = {
-            "id": Chapter.id,
-            "number": Chapter.number,
-            "title": Chapter.title,
-            "created_at": getattr(Chapter, "created_at", Chapter.id),
+            "id": CourseOffering.id,
+            "created_at": getattr(CourseOffering, "created_at", CourseOffering.id),
         }
 
-        return self.chapter_svc.dropdown(
+        def offering_label(o: CourseOffering) -> str:
+            if o.custom_title:
+                return o.custom_title
+            course_title = getattr(o, "course_title", None) or f"Course {o.course_id}"
+            return course_title
+
+        return self.course_offering_svc.dropdown(
             company_id=company_id,
             search=search,
             limit=limit,
             offset=offset,
             active_only=active_only,
-            search_columns=[Chapter.title],
+            search_columns=[],
             filters=filters,
             allowed_filters=allowed_filters,
             sort_fields=sort_fields,
-            default_sort=[Chapter.number.asc()],
+            default_sort=[CourseOffering.id.desc()],
             value_field="id",
-            label_getter=lambda x: f"Chapter {x.number} - {x.title}" if x.title else f"Chapter {x.number}",
-            meta_fields=["number", "course_id", "is_enabled"],
+            label_getter=offering_label,
+            meta_fields=["course_id", "department_id", "semester_id", "custom_title", "credit_hours", "is_enabled"],
             strict_label=True,
         )

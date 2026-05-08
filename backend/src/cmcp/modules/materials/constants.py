@@ -8,7 +8,7 @@ ERR_CHAPTER_NOT_IN_COURSE = "Chapter does not belong to this course."
 ERR_MATERIAL_TITLE_EXISTS = "Material with this title already exists in this course/chapter."
 ERR_MATERIAL_TYPE_REQUIRED = "Material type is required."
 ERR_MATERIAL_COUNTS_CONFLICT = "Provide only one of page_count or slide_count based on material type."
-
+ERR_COURSE_OFFERING_NOT_FOUND = "Course offering not found or not enabled."
 ERR_SLIDES_REQUIRE_SLIDE_COUNT = "Slides material must specify slide_count."
 ERR_PDF_REQUIRE_PAGE_COUNT = "PDF material must specify page_count."
 ERR_DOC_REQUIRE_PAGE_COUNT = "Document material must specify page_count."
