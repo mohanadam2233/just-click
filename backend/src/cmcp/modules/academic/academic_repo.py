@@ -132,11 +132,11 @@ class CourseOfferingListRow:
     course_code: Optional[str]
     department_id: int
     department_name: str
-    semester_id: int
-    semester_number: int
+    semester_id: Optional[int]
+    semester_number: Optional[int]
     semester_name: Optional[str]
-    academic_year_id: int
-    academic_year_name: str
+    academic_year_id: Optional[int]
+    academic_year_name: Optional[str]
     custom_title: Optional[str]
     credit_hours: Optional[int]
     is_enabled: bool
@@ -155,11 +155,11 @@ class CourseOfferingDetailRow:
     department_code: Optional[str]
     faculty_id: int
     faculty_name: str
-    semester_id: int
-    semester_number: int
+    semester_id: Optional[int]
+    semester_number: Optional[int]
     semester_name: Optional[str]
-    academic_year_id: int
-    academic_year_name: str
+    academic_year_id: Optional[int]
+    academic_year_name: Optional[str]
     custom_title: Optional[str]
     credit_hours: Optional[int]
     is_enabled: bool
@@ -214,6 +214,8 @@ class AcademicRepo:
 
     @staticmethod
     def _semester_name_only(number: int, name: Optional[str]) -> str:
+        if number is None:
+            return (name or "").strip() or ""
         return (name or "").strip() or f"Semester {int(number)}"
 
     # ----------------------------
@@ -298,15 +300,18 @@ class AcademicRepo:
         company_id: int, 
         course_id: int, 
         department_id: int, 
-        semester_id: int, 
+        semester_id: Optional[int],
         exclude_id: Optional[int] = None
     ) -> bool:
         conds = [
             CourseOffering.company_id == int(company_id),
             CourseOffering.course_id == int(course_id),
             CourseOffering.department_id == int(department_id),
-            CourseOffering.semester_id == int(semester_id),
         ]
+        if semester_id is None:
+            conds.append(CourseOffering.semester_id.is_(None))
+        else:
+            conds.append(CourseOffering.semester_id == int(semester_id))
         if exclude_id:
             conds.append(CourseOffering.id != int(exclude_id))
         return bool(self.s.scalar(select(exists().where(*conds))))
@@ -941,13 +946,19 @@ class AcademicRepo:
     def course_offerings_list(self, *, company_id: int, course_id: int) -> List[Dict[str, Any]]:
         stmt = (
             select(
-                CourseOffering.id, Department.name.label("department_name"),
-                Semester.number.label("semester_number"), AcademicYear.name.label("academic_year"),
+                CourseOffering.id,
+                CourseOffering.department_id,
+                Department.name.label("department_name"),
+                CourseOffering.semester_id,
+                Semester.number.label("semester_number"),
+                Semester.name.label("semester_name"),
+                AcademicYear.id.label("academic_year_id"),
+                AcademicYear.name.label("academic_year_name"),
                 CourseOffering.custom_title, CourseOffering.credit_hours, CourseOffering.is_enabled
             )
             .join(Department, Department.id == CourseOffering.department_id)
-            .join(Semester, Semester.id == CourseOffering.semester_id)
-            .join(AcademicYear, AcademicYear.id == Semester.academic_year_id)
+            .outerjoin(Semester, Semester.id == CourseOffering.semester_id)
+            .outerjoin(AcademicYear, AcademicYear.id == Semester.academic_year_id)
             .where(
                 CourseOffering.company_id == int(company_id),
                 CourseOffering.course_id == int(course_id)
@@ -955,11 +966,46 @@ class AcademicRepo:
             .order_by(AcademicYear.name.desc(), Semester.number.asc())
         )
         rows = self.s.execute(stmt).all()
+        offering_ids = [int(r.id) for r in rows]
+        chapters_by_offering: Dict[int, List[Dict[str, Any]]] = {offering_id: [] for offering_id in offering_ids}
+        if offering_ids:
+            chapter_stmt = (
+                select(
+                    CourseChapter.id,
+                    CourseChapter.course_offering_id,
+                    CourseChapter.number,
+                    CourseChapter.title,
+                    CourseChapter.description,
+                    CourseChapter.is_enabled,
+                )
+                .where(
+                    CourseChapter.company_id == int(company_id),
+                    CourseChapter.course_offering_id.in_(offering_ids),
+                )
+                .order_by(CourseChapter.course_offering_id.asc(), CourseChapter.number.asc())
+            )
+            for ch in self.s.execute(chapter_stmt).all():
+                chapters_by_offering.setdefault(int(ch.course_offering_id), []).append({
+                    "id": int(ch.id),
+                    "number": int(ch.number),
+                    "title": ch.title,
+                    "description": ch.description,
+                    "is_enabled": bool(ch.is_enabled),
+                })
+
         return [
             {
-                "id": int(r.id), "department": r.department_name, "semester": int(r.semester_number),
-                "academic_year": r.academic_year, "custom_title": r.custom_title,
+                "id": int(r.id),
+                "department_id": int(r.department_id),
+                "department_name": r.department_name,
+                "semester_id": int(r.semester_id) if r.semester_id is not None else None,
+                "semester_name": self._semester_name_only(r.semester_number, r.semester_name) if r.semester_id is not None else None,
+                "semester_code": f"S{int(r.semester_number)}" if r.semester_number is not None else None,
+                "academic_year_id": int(r.academic_year_id) if r.academic_year_id is not None else None,
+                "academic_year_name": r.academic_year_name,
+                "custom_title": r.custom_title,
                 "credit_hours": r.credit_hours, "is_enabled": bool(r.is_enabled),
+                "chapters": chapters_by_offering.get(int(r.id), []),
             }
             for r in rows
         ]
@@ -991,8 +1037,8 @@ class AcademicRepo:
             .select_from(CourseOffering)
             .join(Course, and_(Course.id == CourseOffering.course_id, Course.company_id == int(company_id)))
             .join(Department, and_(Department.id == CourseOffering.department_id, Department.company_id == int(company_id)))
-            .join(Semester, and_(Semester.id == CourseOffering.semester_id, Semester.company_id == int(company_id)))
-            .join(AcademicYear, and_(AcademicYear.id == Semester.academic_year_id, AcademicYear.company_id == int(company_id)))
+            .outerjoin(Semester, and_(Semester.id == CourseOffering.semester_id, Semester.company_id == int(company_id)))
+            .outerjoin(AcademicYear, and_(AcademicYear.id == Semester.academic_year_id, AcademicYear.company_id == int(company_id)))
             .outerjoin(CourseChapter, and_(CourseChapter.course_offering_id == CourseOffering.id, CourseChapter.company_id == int(company_id)))
             .where(CourseOffering.company_id == int(company_id))
             .group_by(
@@ -1071,9 +1117,14 @@ class AcademicRepo:
             "course": {"id": int(r.course_id), "title": r.course_title, "code": r.course_code},
             "department": {"id": int(r.department_id), "name": r.department_name},
             "semester": {
-                "id": int(r.semester_id), "number": int(r.semester_number),
-                "name": self._semester_name_only(r.semester_number, r.semester_name),
-                "academic_year": {"id": int(r.academic_year_id), "name": r.academic_year_name},
+                "id": int(r.semester_id) if r.semester_id is not None else None,
+                "number": int(r.semester_number) if r.semester_number is not None else None,
+                "name": self._semester_name_only(r.semester_number, r.semester_name) if r.semester_id is not None else None,
+                "code": f"S{int(r.semester_number)}" if r.semester_number is not None else None,
+                "academic_year": {
+                    "id": int(r.academic_year_id) if r.academic_year_id is not None else None,
+                    "name": r.academic_year_name,
+                },
             },
             "custom_title": r.custom_title, "credit_hours": r.credit_hours,
             "is_enabled": bool(r.is_enabled), "chapters_count": int(r.chapters_count or 0),
@@ -1098,8 +1149,8 @@ class AcademicRepo:
             .join(Course, and_(Course.id == CourseOffering.course_id, Course.company_id == int(company_id)))
             .join(Department, and_(Department.id == CourseOffering.department_id, Department.company_id == int(company_id)))
             .join(Faculty, and_(Faculty.id == Department.faculty_id, Faculty.company_id == int(company_id)))
-            .join(Semester, and_(Semester.id == CourseOffering.semester_id, Semester.company_id == int(company_id)))
-            .join(AcademicYear, and_(AcademicYear.id == Semester.academic_year_id, AcademicYear.company_id == int(company_id)))
+            .outerjoin(Semester, and_(Semester.id == CourseOffering.semester_id, Semester.company_id == int(company_id)))
+            .outerjoin(AcademicYear, and_(AcademicYear.id == Semester.academic_year_id, AcademicYear.company_id == int(company_id)))
             .outerjoin(CourseChapter, and_(CourseChapter.course_offering_id == CourseOffering.id, CourseChapter.company_id == int(company_id)))
             .where(CourseOffering.company_id == int(company_id), CourseOffering.id == int(offering_id))
             .group_by(
@@ -1132,9 +1183,14 @@ class AcademicRepo:
             "department": {"id": int(r.department_id), "name": r.department_name, "code": r.department_code},
             "faculty": {"id": int(r.faculty_id), "name": r.faculty_name},
             "semester": {
-                "id": int(r.semester_id), "number": int(r.semester_number),
-                "name": self._semester_name_only(r.semester_number, r.semester_name),
-                "academic_year": {"id": int(r.academic_year_id), "name": r.academic_year_name},
+                "id": int(r.semester_id) if r.semester_id is not None else None,
+                "number": int(r.semester_number) if r.semester_number is not None else None,
+                "name": self._semester_name_only(r.semester_number, r.semester_name) if r.semester_id is not None else None,
+                "code": f"S{int(r.semester_number)}" if r.semester_number is not None else None,
+                "academic_year": {
+                    "id": int(r.academic_year_id) if r.academic_year_id is not None else None,
+                    "name": r.academic_year_name,
+                },
             },
             "custom_title": r.custom_title, "credit_hours": r.credit_hours,
             "is_enabled": bool(r.is_enabled), "chapters_count": int(r.chapters_count or 0),

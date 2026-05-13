@@ -7,7 +7,7 @@ from cmcp.api.material_api import bp as material_bp
 from cmcp.api.admin_students_api import bp as admin_students_bp
 from cmcp.api.admin_staff_api import bp as admin_staff_bp
 from cmcp.api.admin_onboarding_api import bp as admin_onboarding_bp
-
+from cmcp.api.course_api import bp as academic_courses
 def register_blueprints(app):
     app.register_blueprint(health_bp)
     app.register_blueprint(media_bp)
@@ -18,5 +18,6 @@ def register_blueprints(app):
     app.register_blueprint(admin_students_bp)
     app.register_blueprint(admin_staff_bp)
     app.register_blueprint(admin_onboarding_bp)
+    app.register_blueprint(academic_courses)
 
 

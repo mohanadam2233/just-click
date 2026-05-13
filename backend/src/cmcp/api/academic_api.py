@@ -20,9 +20,13 @@ from cmcp.modules.academic.schemas import (
     DepartmentCreate, DepartmentUpdate,
     AcademicYearCreate, AcademicYearUpdate,
     SemesterCreate, SemesterUpdate,
-    CourseCreate, CourseUpdate,
-    CourseOfferingCreate, CourseOfferingUpdate,
+    CourseUpdate,
     CourseChapterCreate, CourseChapterUpdate,
+    CourseCreateNested,
+    CourseOfferingCreateNested,
+    CourseOfferingUpdateWithChapters,
+    CourseOfferingBulkCreate,
+    CourseOfferingBulkUpdate,
 )
 from cmcp.modules.academic.academic_service import AcademicService
 from cmcp.core.http.dropdown_args import dropdown_args
@@ -529,7 +533,7 @@ def bulk_delete_semesters(company_id: int):
 @require_company_and_permission(doctype="Course", action="CREATE")
 def create_course(company_id: int):
     try:
-        payload = CourseCreate.model_validate(request.get_json(silent=True) or {})
+        payload = CourseCreateNested.model_validate(request.get_json(silent=True) or {})
         ok, msg, out = svc.create_course(company_id=company_id, data=payload.model_dump())
         return api_success(message=msg, data=out, status_code=201) if ok else api_error(msg, status_code=400)
     except Exception as e:
@@ -637,8 +641,22 @@ def list_courses(company_id: int):
 @require_company_and_permission(doctype="CourseOffering", action="CREATE")
 def create_course_offering(company_id: int):
     try:
-        payload = CourseOfferingCreate.model_validate(request.get_json(silent=True) or {})
-        ok, msg, out = svc.create_course_offering(company_id=company_id, data=payload.model_dump())
+        body = request.get_json(silent=True) or {}
+        if isinstance(body, list):
+            items = [CourseOfferingCreateNested.model_validate(item).model_dump() for item in body]
+            ok, msg, out = svc.create_course_offerings(company_id=company_id, items=items)
+        elif isinstance(body, dict) and isinstance(body.get("offerings"), list):
+            payload = CourseOfferingBulkCreate.model_validate(body)
+            items = [item.model_dump() for item in payload.offerings]
+            if payload.course_id is not None:
+                items = [{**item, "course_id": payload.course_id} for item in items]
+            ok, msg, out = svc.create_course_offerings(
+                company_id=company_id,
+                items=items,
+            )
+        else:
+            payload = CourseOfferingCreateNested.model_validate(body)
+            ok, msg, out = svc.create_course_offering(company_id=company_id, data=payload.model_dump())
         return api_success(message=msg, data=out, status_code=201) if ok else api_error(msg, status_code=400)
     except Exception as e:
         return api_error(str(e), status_code=400)
@@ -648,9 +666,24 @@ def create_course_offering(company_id: int):
 @require_company_and_permission(doctype="CourseOffering", action="UPDATE")
 def update_course_offering(company_id: int, offering_id: int):
     try:
-        payload = CourseOfferingUpdate.model_validate(request.get_json(silent=True) or {})
+        payload = CourseOfferingUpdateWithChapters.model_validate(request.get_json(silent=True) or {})
         ok, msg, out = svc.update_course_offering(company_id=company_id, offering_id=offering_id, data=payload.model_dump(exclude_unset=True))
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+    except Exception as e:
+        return api_error(str(e), status_code=400)
+
+
+@bp.post("/course-offerings/bulk-update")
+@require_company_and_permission(doctype="CourseOffering", action="UPDATE")
+def bulk_update_course_offerings(company_id: int):
+    try:
+        payload = CourseOfferingBulkUpdate.model_validate(request.get_json(silent=True) or {})
+        ok, msg, out = svc.bulk_update_course_offerings(
+            company_id=company_id,
+            ids=payload.ids,
+            patch=payload.patch,
+        )
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, data=out, status_code=400)
     except Exception as e:
         return api_error(str(e), status_code=400)
 

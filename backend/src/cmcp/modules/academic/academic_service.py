@@ -4,7 +4,8 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple, List, Set
 
 from flask import g
-from sqlalchemy import exists, select
+from sqlalchemy import exists, select, update
+from sqlalchemy.exc import IntegrityError
 
 from cmcp.common.cache import cached_dropdown, cached_list, cached_detail
 from cmcp.core.base_service import BaseService
@@ -70,6 +71,44 @@ class AcademicService:
         self.course_svc = BaseService(Course, session=self.s)
         self.course_offering_svc = BaseService(CourseOffering, session=self.s)
         self.chapter_svc = BaseService(CourseChapter, session=self.s)
+
+    def _course_record(self, course: Course) -> Dict[str, Any]:
+        return {
+            "id": int(course.id),
+            "title": course.title,
+            "code": course.code,
+            "description": course.description,
+            "is_enabled": bool(course.is_enabled),
+        }
+
+    def _offering_title(self, offering: CourseOffering) -> str:
+        custom_title = (getattr(offering, "custom_title", None) or "").strip()
+        if custom_title:
+            return custom_title
+        course = self.repo.courses.get(int(offering.course_id), company_id=int(offering.company_id))
+        return course.title if course else f"Offering {int(offering.id)}"
+
+    def _offering_record(self, offering: CourseOffering) -> Dict[str, Any]:
+        return {
+            "id": int(offering.id),
+            "title": self._offering_title(offering),
+            "course_id": int(offering.course_id),
+            "department_id": int(offering.department_id),
+            "semester_id": int(offering.semester_id) if offering.semester_id is not None else None,
+            "custom_title": offering.custom_title,
+            "credit_hours": offering.credit_hours,
+            "is_enabled": bool(offering.is_enabled),
+        }
+
+    def _chapter_record(self, chapter: CourseChapter) -> Dict[str, Any]:
+        return {
+            "id": int(chapter.id),
+            "course_offering_id": int(chapter.course_offering_id),
+            "number": int(chapter.number),
+            "title": chapter.title,
+            "description": chapter.description,
+            "is_enabled": bool(chapter.is_enabled),
+        }
 
     # ---------------------------------------------------------
     # Common bulk delete helper (linked guard + soft delete in one query)
@@ -756,19 +795,96 @@ class AcademicService:
     # COURSE (Base Course Definition)
     # =========================================================
     def create_course(self, *, company_id: int, data: Dict[str, Any]):
-        title = require_text(data.get("title"), field_label="Course title")
-        code = normalize_code(data.get("code"))
-        description = _safe_desc(data.get("description"))
+        offerings = data.pop("offerings", None) or []
+        if offerings:
+            return self.create_course_with_offerings(company_id=company_id, data=data, offerings=offerings)
 
-        if self.repo.course_title_exists(company_id=company_id, title=title):
-            return False, ERR_COURSE_EXISTS_TITLE, None
-        if code and self.repo.course_code_exists(company_id=company_id, code=code):
-            return False, ERR_COURSE_CODE_EXISTS, None
+        try:
+            title = require_text(data.get("title"), field_label="Course title")
+            code = normalize_code(data.get("code"))
+            description = _safe_desc(data.get("description"))
 
-        return self.course_svc.create(
-            company_id=company_id,
-            data={"title": title, "code": code, "description": description, "is_enabled": True},
-        )
+            if self.repo.course_title_exists(company_id=company_id, title=title):
+                return False, ERR_COURSE_EXISTS_TITLE, None
+            if code and self.repo.course_code_exists(company_id=company_id, code=code):
+                return False, ERR_COURSE_CODE_EXISTS, None
+
+            course = Course(
+                company_id=int(company_id),
+                title=title,
+                code=code,
+                description=description,
+                is_enabled=bool(data.get("is_enabled", True)),
+            )
+            self.s.add(course)
+            self.s.flush()
+            record = {"record": {"course": self._course_record(course)}}
+            self.s.commit()
+            return True, "Course created successfully", record
+        except IntegrityError:
+            self.s.rollback()
+            return False, "Database constraint error.", None
+        except Exception:
+            self.s.rollback()
+            raise
+
+    def create_course_with_offerings(
+        self,
+        *,
+        company_id: int,
+        data: Dict[str, Any],
+        offerings: List[Dict[str, Any]],
+    ):
+        try:
+            title = require_text(data.get("title"), field_label="Course title")
+            code = normalize_code(data.get("code"))
+            description = _safe_desc(data.get("description"))
+
+            if self.repo.course_title_exists(company_id=company_id, title=title):
+                return False, ERR_COURSE_EXISTS_TITLE, None
+            if code and self.repo.course_code_exists(company_id=company_id, code=code):
+                return False, ERR_COURSE_CODE_EXISTS, None
+
+            course = Course(
+                company_id=int(company_id),
+                title=title,
+                code=code,
+                description=description,
+                is_enabled=bool(data.get("is_enabled", True)),
+            )
+            self.s.add(course)
+            self.s.flush()
+
+            created_offerings = []
+            seen_scopes: Set[Tuple[int, int, int]] = set()
+            for raw in offerings:
+                item = dict(raw)
+                item["course_id"] = int(course.id)
+                scope = (
+                    int(item.get("course_id") or 0),
+                    int(item.get("department_id") or 0),
+                    int(item.get("semester_id") or 0),
+                )
+                if scope in seen_scopes:
+                    self.s.rollback()
+                    return False, ERR_COURSE_OFFERING_EXISTS_IN_SCOPE, None
+                seen_scopes.add(scope)
+
+                ok, msg, offering = self._create_offering_row(company_id=company_id, data=item)
+                if not ok:
+                    self.s.rollback()
+                    return False, msg, None
+                created_offerings.append(offering)
+
+            record = {"record": {"course": self._course_record(course)}}
+            self.s.commit()
+            return True, "Course created successfully", record
+        except IntegrityError:
+            self.s.rollback()
+            return False, "Database constraint error.", None
+        except Exception:
+            self.s.rollback()
+            raise
 
     def update_course(self, *, company_id: int, course_id: int, data: Dict[str, Any]):
         obj = self.repo.courses.get(course_id, company_id=company_id)
@@ -795,54 +911,51 @@ class AcademicService:
         if "is_enabled" in data:
             patch["is_enabled"] = bool(data["is_enabled"])
 
-        return self.course_svc.update(company_id=company_id, id=course_id, data=patch)
+        try:
+            for k, v in patch.items():
+                setattr(obj, k, v)
+            self.s.flush([obj])
+            record = {"record": {"course": self._course_record(obj)}}
+            self.s.commit()
+            return True, "Course updated successfully", record
+        except IntegrityError:
+            self.s.rollback()
+            return False, "Database constraint error.", None
+        except Exception:
+            self.s.rollback()
+            raise
 
     def delete_course(self, *, company_id: int, course_id: int, soft: bool = True):
         obj = self.repo.courses.get(course_id, company_id=company_id)
         if not obj:
             return False, ERR_COURSE_NOT_FOUND, None
 
-        linked = self.repo.courses_with_offerings([obj.id])
-
-        if obj.id in linked:
-            self.course_svc.update(
-                company_id=company_id,
-                id=obj.id,
-                data={"is_enabled": False}
-            )
-            return True, "Course archived because it has linked offerings.", {"id": obj.id}
-
-        return self.course_svc.delete(company_id=company_id, id=course_id, soft=False)
+        obj.is_enabled = False
+        self.s.flush([obj])
+        record = {"record": {"course": self._course_record(obj)}}
+        self.s.commit()
+        return True, "Course disabled successfully", record
 
     def bulk_delete_courses(self, *, company_id: int, ids: List[int], soft: bool = True):
-        linked = self.repo.courses_with_offerings(ids)
+        ids = [int(x) for x in (ids or []) if x]
+        existing = self.repo.existing_ids(model=Course, company_id=company_id, ids=ids)
+        failed = [{"id": _id, "error": ERR_COURSE_NOT_FOUND} for _id in ids if _id not in existing]
 
-        deleted = []
-        failed = []
+        if existing:
+            self.s.execute(
+                update(Course)
+                .where(Course.company_id == int(company_id), Course.id.in_(existing))
+                .values(is_enabled=False)
+            )
+            self.s.commit()
 
-        for _id in ids:
-            obj = self.repo.courses.get(_id, company_id=company_id)
-
-            if not obj:
-                failed.append({"id": _id, "error": ERR_COURSE_NOT_FOUND})
-                continue
-
-            if _id in linked:
-                self.course_svc.update(
-                    company_id=company_id,
-                    id=_id,
-                    data={"is_enabled": False}
-                )
-                deleted.append(_id)
-            else:
-                self.course_svc.delete(
-                    company_id=company_id,
-                    id=_id,
-                    soft=False
-                )
-                deleted.append(_id)
-
-        return True, "Bulk delete processed.", {"deleted": deleted, "failed": failed}
+        return True, "Courses disabled successfully", {
+            "record": {
+                "disabled_count": len(existing),
+                "failed_count": len(failed),
+                "failed": failed,
+            }
+        }
 
     def list_courses_cursor(
         self,
@@ -999,6 +1112,34 @@ class AcademicService:
     # COURSE OFFERING (NEW)
     # =========================================================
     def create_course_offering(self, *, company_id: int, data: Dict[str, Any]):
+        return self.create_course_offerings(company_id=company_id, items=[data])
+
+    def _validate_chapter_payloads(self, chapters: List[Dict[str, Any]]):
+        seen_numbers: Set[int] = set()
+        seen_titles: Set[str] = set()
+        out = []
+        for raw in chapters or []:
+            number = int(raw.get("number") or 0)
+            if number < 1:
+                return False, "Chapter number must be at least 1", []
+            title = require_text(raw.get("title"), field_label="Chapter title")
+            title_key = title.lower()
+            if number in seen_numbers:
+                return False, ERR_CHAPTER_EXISTS_NUMBER, []
+            if title_key in seen_titles:
+                return False, ERR_CHAPTER_EXISTS_TITLE, []
+            seen_numbers.add(number)
+            seen_titles.add(title_key)
+            out.append({
+                "id": raw.get("id"),
+                "number": number,
+                "title": title,
+                "description": _safe_desc(raw.get("description")),
+                "is_enabled": bool(raw.get("is_enabled", True)),
+            })
+        return True, "OK", out
+
+    def _create_offering_row(self, *, company_id: int, data: Dict[str, Any]):
         course_id = int(data.get("course_id") or 0)
         if not self.repo.courses.get(course_id, company_id=company_id):
             return False, ERR_COURSE_NOT_FOUND, None
@@ -1011,34 +1152,101 @@ class AcademicService:
         if not self.repo.semesters.get(semester_id, company_id=company_id):
             return False, ERR_SEMESTER_NOT_FOUND, None
 
-        custom_title = (data.get("custom_title") or "").strip() or None
+        if self.repo.course_offering_exists_in_scope(
+            company_id=company_id,
+            course_id=course_id,
+            department_id=department_id,
+            semester_id=semester_id,
+        ):
+            return False, ERR_COURSE_OFFERING_EXISTS_IN_SCOPE, None
+
         credit_hours = data.get("credit_hours")
         if credit_hours is not None:
             credit_hours = int(credit_hours)
             if credit_hours < 0 or credit_hours > 30:
                 return False, "Credit hours must be between 0 and 30", None
 
-        if self.repo.course_offering_exists_in_scope(
-            company_id=company_id,
+        ok, msg, chapters = self._validate_chapter_payloads(data.get("chapters") or [])
+        if not ok:
+            return False, msg, None
+
+        offering = CourseOffering(
+            company_id=int(company_id),
             course_id=course_id,
             department_id=department_id,
-            semester_id=semester_id
-        ):
-            return False, ERR_COURSE_OFFERING_EXISTS_IN_SCOPE, None
-
-        return self.course_offering_svc.create(
-            company_id=company_id,
-            data={
-                "course_id": course_id,
-                "department_id": department_id,
-                "semester_id": semester_id,
-                "custom_title": custom_title,
-                "credit_hours": credit_hours,
-                "is_enabled": True
-            },
+            semester_id=semester_id,
+            custom_title=(data.get("custom_title") or "").strip() or None,
+            credit_hours=credit_hours,
+            is_enabled=bool(data.get("is_enabled", True)),
         )
+        self.s.add(offering)
+        self.s.flush()
+
+        chapter_records = []
+        for ch in chapters:
+            chapter = CourseChapter(
+                company_id=int(company_id),
+                course_offering_id=int(offering.id),
+                number=ch["number"],
+                title=ch["title"],
+                description=ch["description"],
+                is_enabled=bool(ch.get("is_enabled", True)),
+            )
+            self.s.add(chapter)
+            chapter_records.append(chapter)
+
+        if chapter_records:
+            self.s.flush(chapter_records)
+
+        record = self._offering_record(offering)
+        record["chapters"] = [
+            self._chapter_record(chapter) for chapter in chapter_records
+        ]
+        return True, "OK", {
+            **record,
+            "chapters": [
+                self._chapter_record(chapter) for chapter in chapter_records
+            ],
+        }
+
+    def create_course_offerings(self, *, company_id: int, items: List[Dict[str, Any]]):
+        try:
+            created = []
+            seen_scopes: Set[Tuple[int, int, int]] = set()
+            for item in items:
+                scope = (
+                    int(item.get("course_id") or 0),
+                    int(item.get("department_id") or 0),
+                    int(item.get("semester_id") or 0),
+                )
+                if scope in seen_scopes:
+                    self.s.rollback()
+                    return False, ERR_COURSE_OFFERING_EXISTS_IN_SCOPE, None
+                seen_scopes.add(scope)
+
+                ok, msg, offering = self._create_offering_row(company_id=company_id, data=dict(item))
+                if not ok:
+                    self.s.rollback()
+                    return False, msg, None
+                created.append(offering)
+
+            self.s.commit()
+            if len(created) == 1:
+                return True, "Course offering created successfully", {
+                    "record": {"offering": created[0]}
+                }
+            return True, "Course offerings created successfully", {
+                "record": {"created_count": len(created)}
+            }
+        except IntegrityError:
+            self.s.rollback()
+            return False, "Database constraint error.", None
+        except Exception:
+            self.s.rollback()
+            raise
 
     def update_course_offering(self, *, company_id: int, offering_id: int, data: Dict[str, Any]):
+        replace_chapters = data.pop("chapters", None)
         obj = self.repo.course_offerings.get(offering_id, company_id=company_id)
         if not obj:
             return False, ERR_COURSE_OFFERING_NOT_FOUND, None
@@ -1057,11 +1265,14 @@ class AcademicService:
                 return False, ERR_DEPARTMENT_NOT_FOUND, None
             patch["department_id"] = new_department_id
 
-        if "semester_id" in data and data["semester_id"] is not None:
-            new_semester_id = int(data["semester_id"])
-            if not self.repo.semesters.get(new_semester_id, company_id=company_id):
-                return False, ERR_SEMESTER_NOT_FOUND, None
-            patch["semester_id"] = new_semester_id
+        if "semester_id" in data:
+            if data["semester_id"] is None:
+                patch["semester_id"] = None
+            else:
+                new_semester_id = int(data["semester_id"])
+                if not self.repo.semesters.get(new_semester_id, company_id=company_id):
+                    return False, ERR_SEMESTER_NOT_FOUND, None
+                patch["semester_id"] = new_semester_id
 
         if "custom_title" in data:
             patch["custom_title"] = (data.get("custom_title") or "").strip() or None
@@ -1080,9 +1291,9 @@ class AcademicService:
         # Check uniqueness if scope changed
         check_course = int(patch.get("course_id") or obj.course_id)
         check_dept = int(patch.get("department_id") or obj.department_id)
-        check_sem = int(patch.get("semester_id") or obj.semester_id)
+        check_sem = patch["semester_id"] if "semester_id" in patch else obj.semester_id
 
-        if (patch.get("course_id") or patch.get("department_id") or patch.get("semester_id")):
+        if ("course_id" in patch or "department_id" in patch or "semester_id" in patch):
             if self.repo.course_offering_exists_in_scope(
                 company_id=company_id,
                 course_id=check_course,
@@ -1092,54 +1303,199 @@ class AcademicService:
             ):
                 return False, ERR_COURSE_OFFERING_EXISTS_IN_SCOPE, None
 
-        return self.course_offering_svc.update(company_id=company_id, id=offering_id, data=patch)
+        try:
+            for k, v in patch.items():
+                setattr(obj, k, v)
+            if replace_chapters is not None:
+                self._sync_offering_chapters(
+                    company_id=company_id,
+                    offering_id=offering_id,
+                    chapters=replace_chapters,
+                    missing_action=data.get("chapter_missing_row_action") or "disable",
+                )
+            self.s.flush([obj])
+            record = {"record": {"offering": self._offering_record(obj)}}
+            self.s.commit()
+            return True, "Course offering updated successfully", record
+        except IntegrityError:
+            self.s.rollback()
+            return False, "Database constraint error.", None
+        except Exception:
+            self.s.rollback()
+            raise
+
+    def _sync_offering_chapters(
+        self,
+        *,
+        company_id: int,
+        offering_id: int,
+        chapters: List[Dict[str, Any]],
+        missing_action: str,
+    ):
+        action = (missing_action or "disable").strip().lower()
+        if action not in {"disable", "delete"}:
+            raise ValueError("chapter_missing_row_action must be 'disable' or 'delete'.")
+
+        ok, msg, clean_chapters = self._validate_chapter_payloads(chapters or [])
+        if not ok:
+            raise ValueError(msg)
+
+        existing = self.s.scalars(
+            select(CourseChapter).where(
+                CourseChapter.company_id == int(company_id),
+                CourseChapter.course_offering_id == int(offering_id),
+            )
+        ).all()
+        existing_by_id = {int(chapter.id): chapter for chapter in existing}
+        submitted_ids = {int(ch["id"]) for ch in clean_chapters if ch.get("id")}
+
+        for ch in clean_chapters:
+            chapter_id = ch.get("id")
+            if chapter_id:
+                chapter = existing_by_id.get(int(chapter_id))
+                if not chapter:
+                    raise ValueError(ERR_CHAPTER_NOT_FOUND)
+                chapter.number = ch["number"]
+                chapter.title = ch["title"]
+                chapter.description = ch["description"]
+                chapter.is_enabled = bool(ch.get("is_enabled", True))
+            else:
+                self.s.add(CourseChapter(
+                    company_id=int(company_id),
+                    course_offering_id=int(offering_id),
+                    number=ch["number"],
+                    title=ch["title"],
+                    description=ch["description"],
+                    is_enabled=bool(ch.get("is_enabled", True)),
+                ))
+
+        for chapter in existing:
+            if int(chapter.id) in submitted_ids:
+                continue
+            if action == "delete":
+                self.s.delete(chapter)
+            else:
+                chapter.is_enabled = False
 
     def delete_course_offering(self, *, company_id: int, offering_id: int, soft: bool = True):
         obj = self.repo.course_offerings.get(offering_id, company_id=company_id)
         if not obj:
             return False, ERR_COURSE_OFFERING_NOT_FOUND, None
 
-        linked = self.repo.offerings_with_chapters([obj.id])
-
-        if obj.id in linked:
-            self.course_offering_svc.update(
-                company_id=company_id,
-                id=obj.id,
-                data={"is_enabled": False}
-            )
-            return True, "Course offering archived because it has linked chapters.", {"id": obj.id}
-
-        return self.course_offering_svc.delete(company_id=company_id, id=offering_id, soft=soft)
+        obj.is_enabled = False
+        self.s.flush([obj])
+        record = {"record": {"offering": self._offering_record(obj)}}
+        self.s.commit()
+        return True, "Course offering disabled successfully", record
 
     def bulk_delete_course_offerings(self, *, company_id: int, ids: List[int], soft: bool = True):
-        linked = self.repo.offerings_with_chapters(ids)
+        ids = [int(x) for x in (ids or []) if x]
+        existing = self.repo.existing_ids(model=CourseOffering, company_id=company_id, ids=ids)
+        failed = [{"id": _id, "error": ERR_COURSE_OFFERING_NOT_FOUND} for _id in ids if _id not in existing]
 
-        deleted = []
-        failed = []
+        if existing:
+            self.s.execute(
+                update(CourseOffering)
+                .where(CourseOffering.company_id == int(company_id), CourseOffering.id.in_(existing))
+                .values(is_enabled=False)
+            )
+            self.s.commit()
 
-        for _id in ids:
-            obj = self.repo.course_offerings.get(_id, company_id=company_id)
+        return True, "Course offerings disabled successfully", {
+            "record": {
+                "disabled_count": len(existing),
+                "failed_count": len(failed),
+                "failed": failed,
+            }
+        }
 
-            if not obj:
-                failed.append({"id": _id, "error": ERR_COURSE_OFFERING_NOT_FOUND})
-                continue
+    def bulk_update_course_offerings(self, *, company_id: int, ids: List[int], patch: Dict[str, Any]):
+        ids = [int(x) for x in (ids or []) if x]
+        allowed = {"course_id", "department_id", "semester_id", "custom_title", "credit_hours", "is_enabled"}
+        unknown = sorted(set(patch or {}) - allowed)
+        if unknown:
+            return False, "Bulk update contains unsupported fields.", {
+                "unsupported_fields": unknown
+            }
 
-            if _id in linked:
-                self.course_offering_svc.update(
-                    company_id=company_id,
-                    id=_id,
-                    data={"is_enabled": False}
-                )
-                deleted.append(_id)
+        update_data: Dict[str, Any] = {}
+        if "course_id" in patch:
+            if patch["course_id"] is None:
+                return False, "course_id cannot be null.", None
+            course_id = int(patch["course_id"])
+            if not self.repo.courses.get(course_id, company_id=company_id):
+                return False, ERR_COURSE_NOT_FOUND, None
+            update_data["course_id"] = course_id
+
+        if "department_id" in patch:
+            if patch["department_id"] is None:
+                return False, "department_id cannot be null.", None
+            department_id = int(patch["department_id"])
+            if not self.repo.departments.get(department_id, company_id=company_id):
+                return False, ERR_DEPARTMENT_NOT_FOUND, None
+            update_data["department_id"] = department_id
+
+        if "semester_id" in patch:
+            if patch["semester_id"] is None:
+                update_data["semester_id"] = None
             else:
-                self.course_offering_svc.delete(
-                    company_id=company_id,
-                    id=_id,
-                    soft=False
-                )
-                deleted.append(_id)
+                semester_id = int(patch["semester_id"])
+                if not self.repo.semesters.get(semester_id, company_id=company_id):
+                    return False, ERR_SEMESTER_NOT_FOUND, None
+                update_data["semester_id"] = semester_id
 
-        return True, "Bulk delete processed.", {"deleted": deleted, "failed": failed}
+        if "custom_title" in patch:
+            update_data["custom_title"] = (patch.get("custom_title") or "").strip() or None
+        if "credit_hours" in patch:
+            credit_hours = patch.get("credit_hours")
+            if credit_hours is not None:
+                credit_hours = int(credit_hours)
+                if credit_hours < 0 or credit_hours > 30:
+                    return False, "Credit hours must be between 0 and 30", None
+            update_data["credit_hours"] = credit_hours
+        if "is_enabled" in patch:
+            update_data["is_enabled"] = bool(patch["is_enabled"])
+
+        existing = self.repo.existing_ids(model=CourseOffering, company_id=company_id, ids=ids)
+        failed = [{"id": _id, "error": ERR_COURSE_OFFERING_NOT_FOUND} for _id in ids if _id not in existing]
+
+        if existing and update_data:
+            offerings = self.s.scalars(
+                select(CourseOffering).where(
+                    CourseOffering.company_id == int(company_id),
+                    CourseOffering.id.in_(existing),
+                )
+            ).all()
+
+            try:
+                for offering in offerings:
+                    check_course = int(update_data.get("course_id", offering.course_id))
+                    check_dept = int(update_data.get("department_id", offering.department_id))
+                    check_sem = update_data["semester_id"] if "semester_id" in update_data else offering.semester_id
+                    if self.repo.course_offering_exists_in_scope(
+                        company_id=company_id,
+                        course_id=check_course,
+                        department_id=check_dept,
+                        semester_id=check_sem,
+                        exclude_id=offering.id,
+                    ):
+                        failed.append({"id": int(offering.id), "error": ERR_COURSE_OFFERING_EXISTS_IN_SCOPE})
+                        continue
+                    for k, v in update_data.items():
+                        setattr(offering, k, v)
+                self.s.commit()
+            except IntegrityError:
+                self.s.rollback()
+                return False, "Database constraint error.", None
+
+        updated_count = max(len(existing) - len([x for x in failed if x["id"] in existing]), 0)
+        return True, "Course offerings updated successfully", {
+            "record": {
+                "updated_count": updated_count,
+                "failed_count": len(failed),
+                "failed": failed,
+            }
+        }
 
     def list_course_offerings_cursor(
         self,
@@ -1297,32 +1653,42 @@ class AcademicService:
     # COURSE CHAPTER
     # =========================================================
     def create_chapter(self, *, company_id: int, data: Dict[str, Any]):
-        course_offering_id = int(data.get("course_offering_id") or 0)
-        if not self.repo.course_offerings.get(course_offering_id, company_id=company_id):
-            return False, ERR_COURSE_OFFERING_NOT_FOUND, None
+        try:
+            course_offering_id = int(data.get("course_offering_id") or 0)
+            if not self.repo.course_offerings.get(course_offering_id, company_id=company_id):
+                return False, ERR_COURSE_OFFERING_NOT_FOUND, None
 
-        number = int(data.get("number") or 0)
-        if number < 1:
-            return False, "Chapter number must be at least 1", None
+            number = int(data.get("number") or 0)
+            if number < 1:
+                return False, "Chapter number must be at least 1", None
 
-        title = require_text(data.get("title"), field_label="Chapter title")
-        description = _safe_desc(data.get("description"))
+            title = require_text(data.get("title"), field_label="Chapter title")
+            description = _safe_desc(data.get("description"))
 
-        if self.repo.chapter_title_exists(company_id=company_id, course_offering_id=course_offering_id, title=title):
-            return False, ERR_CHAPTER_EXISTS_TITLE, None
-        if self.repo.chapter_number_exists(company_id=company_id, course_offering_id=course_offering_id, number=number):
-            return False, ERR_CHAPTER_EXISTS_NUMBER, None
+            if self.repo.chapter_title_exists(company_id=company_id, course_offering_id=course_offering_id, title=title):
+                return False, ERR_CHAPTER_EXISTS_TITLE, None
+            if self.repo.chapter_number_exists(company_id=company_id, course_offering_id=course_offering_id, number=number):
+                return False, ERR_CHAPTER_EXISTS_NUMBER, None
 
-        return self.chapter_svc.create(
-            company_id=company_id,
-            data={
-                "course_offering_id": course_offering_id,
-                "number": number,
-                "title": title,
-                "description": description,
-                "is_enabled": True
-            },
-        )
+            chapter = CourseChapter(
+                company_id=int(company_id),
+                course_offering_id=course_offering_id,
+                number=number,
+                title=title,
+                description=description,
+                is_enabled=bool(data.get("is_enabled", True)),
+            )
+            self.s.add(chapter)
+            self.s.flush()
+            record = {"record": {"chapter": self._chapter_record(chapter)}}
+            self.s.commit()
+            return True, "Chapter created successfully", record
+        except IntegrityError:
+            self.s.rollback()
+            return False, "Database constraint error.", None
+        except Exception:
+            self.s.rollback()
+            raise
 
     def update_chapter(self, *, company_id: int, chapter_id: int, data: Dict[str, Any]):
         obj = self.repo.chapters.get(chapter_id, company_id=company_id)
@@ -1359,16 +1725,48 @@ class AcademicService:
         if "is_enabled" in data:
             patch["is_enabled"] = bool(data["is_enabled"])
 
-        return self.chapter_svc.update(company_id=company_id, id=chapter_id, data=patch)
+        try:
+            for k, v in patch.items():
+                setattr(obj, k, v)
+            self.s.flush([obj])
+            record = {"record": {"chapter": self._chapter_record(obj)}}
+            self.s.commit()
+            return True, "Chapter updated successfully", record
+        except IntegrityError:
+            self.s.rollback()
+            return False, "Database constraint error.", None
+        except Exception:
+            self.s.rollback()
+            raise
 
     def delete_chapter(self, *, company_id: int, chapter_id: int, soft: bool = True):
         obj = self.repo.chapters.get(chapter_id, company_id=company_id)
         if not obj:
             return False, ERR_CHAPTER_NOT_FOUND, None
-        return self.chapter_svc.delete(company_id=company_id, id=chapter_id, soft=soft)
+        obj.is_enabled = False
+        self.s.flush([obj])
+        record = {"record": {"chapter": self._chapter_record(obj)}}
+        self.s.commit()
+        return True, "Chapter disabled successfully", record
 
     def bulk_delete_chapters(self, *, company_id: int, ids: List[int], soft: bool = True):
-        return self.chapter_svc.bulk_delete(company_id=company_id, ids=ids, soft=soft)
+        ids = [int(x) for x in (ids or []) if x]
+        existing = self.repo.existing_ids(model=CourseChapter, company_id=company_id, ids=ids)
+        failed = [{"id": _id, "error": ERR_CHAPTER_NOT_FOUND} for _id in ids if _id not in existing]
+        if existing:
+            self.s.execute(
+                update(CourseChapter)
+                .where(CourseChapter.company_id == int(company_id), CourseChapter.id.in_(existing))
+                .values(is_enabled=False)
+            )
+            self.s.commit()
+        return True, "Chapters disabled successfully", {
+            "record": {
+                "disabled_count": len(existing),
+                "failed_count": len(failed),
+                "failed": failed,
+            }
+        }
 
     def list_chapters_cursor(
             self,
