@@ -110,7 +110,24 @@ class CourseOfferingUpdateApiIn(_BaseIn):
             raise ValueError("Credit hours must be between 0 and 30.")
         return v
 
+class DeleteApiIn(_BaseIn):
+    permanent: Optional[bool] = False
 
+
+class BulkDeleteApiIn(_BaseIn):
+    ids: List[int]
+    permanent: Optional[bool] = False
+
+    @field_validator("ids")
+    @classmethod
+    def validate_ids(cls, v: List[int]) -> List[int]:
+        if not v:
+            raise ValueError("ids is required.")
+        if len(v) > 100:
+            raise ValueError("Cannot delete more than 100 records.")
+        if len(set(v)) != len(v):
+            raise ValueError("Duplicate ids are not allowed.")
+        return v
 # =========================================================
 # Blueprint & helpers
 # =========================================================
@@ -204,6 +221,51 @@ def update_course_offering(company_id: int, offering_id: int):
             company_id=company_id,
             offering_id=offering_id,
             data=payload.model_dump(exclude_unset=True),
+        )
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+    except Exception as e:
+        return _handle_error(e)
+
+
+@bp.delete("/courses/<int:course_id>/delete")
+@require_company_and_permission(doctype="Course", action="DELETE")
+def delete_course(company_id: int, course_id: int):
+    """
+    Delete one course.
+
+    Default:
+    - Soft delete by setting is_enabled=false.
+
+    Admin hard delete:
+    - Send {"permanent": true}
+    """
+    try:
+        payload = DeleteApiIn.model_validate(_json_body())
+        ok, msg, out = course_svc.delete_course(
+            company_id=company_id,
+            course_id=course_id,
+            permanent=bool(payload.permanent),
+        )
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+    except Exception as e:
+        return _handle_error(e)
+
+
+@bp.post("/courses/bulk-delete")
+@require_company_and_permission(doctype="Course", action="DELETE")
+def bulk_delete_courses(company_id: int):
+    """
+    Delete many courses from list page.
+
+    Default:
+    - Soft delete all selected courses.
+    """
+    try:
+        payload = BulkDeleteApiIn.model_validate(_json_body())
+        ok, msg, out = course_svc.bulk_delete_courses(
+            company_id=company_id,
+            ids=payload.ids,
+            permanent=bool(payload.permanent),
         )
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
     except Exception as e:
