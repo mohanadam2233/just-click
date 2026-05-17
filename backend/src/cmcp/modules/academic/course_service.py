@@ -13,16 +13,11 @@ from cmcp.modules.academic.course_repository import CourseRepository
 
 log = logging.getLogger(__name__)
 
-# ==================================================================
-# CONFIGURATION
-# ==================================================================
 MAX_OFFERINGS_PER_REQUEST = 20
 MAX_CHAPTERS_PER_OFFERING = 50
+MAX_BULK_DELETE = 100
 MAX_CREDIT_HOURS = 30
 
-# ==================================================================
-# ERROR MESSAGES
-# ==================================================================
 ERR_COURSE_NOT_FOUND = "Course not found."
 ERR_DEPARTMENT_NOT_FOUND = "Department not found."
 ERR_SEMESTER_NOT_FOUND = "Semester not found."
@@ -39,9 +34,6 @@ ERR_CHAPTER_EXISTS_TITLE = "Chapter already exists with this title in this offer
 ERR_TOO_MANY_OFFERINGS = f"Cannot process more than {MAX_OFFERINGS_PER_REQUEST} offerings in one request."
 ERR_TOO_MANY_CHAPTERS = f"Cannot process more than {MAX_CHAPTERS_PER_OFFERING} chapters for one offering."
 
-# ==================================================================
-# FIELD SETS
-# ==================================================================
 COURSE_FIELDS = {"title", "code", "description", "is_enabled"}
 OFFERING_FIELDS = {"id", "course_id", "department_id", "semester_id", "custom_title", "credit_hours", "is_enabled"}
 CHAPTER_FIELDS = {"id", "number", "title", "description", "is_enabled"}
@@ -49,9 +41,6 @@ CHAPTER_FIELDS = {"id", "number", "title", "description", "is_enabled"}
 MissingAction = str
 
 
-# ==================================================================
-# HELPER FUNCTIONS
-# ==================================================================
 def _require_text(value: Any, *, field_label: str) -> str:
     value = (str(value) if value is not None else "").strip()
     if not value:
@@ -77,14 +66,17 @@ def _as_bool(value: Any, default: bool = True) -> bool:
 
 class CourseService(BaseService[Course]):
     """
-    ERPNext/Frappe-style Course Service.
+    Frappe-inspired safe full-state sync.
 
-    Frappe Pattern Rules:
-    - Child row has id → UPDATE
-    - Child row has no id → CREATE
-    - Existing child row missing from submitted list → soft-delete (or hard-delete with flag)
+    Rules:
+    - Row with id -> update existing row.
+    - Row without id -> create new row.
+    - Existing child row missing from submitted list -> disable by default.
+    - Hard delete requires explicit permanent=true and safety checks.
 
-    The request represents THE COMPLETE DESIRED STATE.
+    This is intentionally safer than raw child-row deletion because
+    academic records may be linked to materials, progress, analytics,
+    or audit history.
     """
 
     repo: CourseRepository
@@ -99,30 +91,10 @@ class CourseService(BaseService[Course]):
         )
         self.repo: CourseRepository
 
-    # ==================================================================
-    # PUBLIC API METHODS
-    # ==================================================================
-
+    # =========================================================
+    # Course create/update
+    # =========================================================
     def create_course(self, *, company_id: int, data: Dict[str, Any]):
-        """
-        Create course with optional offerings + chapters.
-
-        Payload:
-        {
-            "title": "Advanced DBMS",
-            "code": "CS401",
-            "offerings": [
-                {
-                    "department_id": 10,
-                    "semester_id": 14,
-                    "chapters": [
-                        {"number": 1, "title": "Introduction"},
-                        {"number": 2, "title": "SQL Deep Dive"}
-                    ]
-                }
-            ]
-        }
-        """
         try:
             payload = dict(data or {})
             offerings_payload = payload.pop("offerings", None) or []
@@ -131,7 +103,10 @@ class CourseService(BaseService[Course]):
             self._validate_course(course_data, company_id=company_id, existing_id=None)
 
             with self.s.begin_nested():
-                course = self.repo.create_course({"company_id": int(company_id), **course_data})
+                course = self.repo.create_course({
+                    "company_id": int(company_id),
+                    **course_data,
+                })
 
                 if offerings_payload:
                     self._save_new_offerings_for_course(
@@ -141,7 +116,9 @@ class CourseService(BaseService[Course]):
                     )
 
             self._commit_or_flush()
-            return True, "Course created successfully", {"record": {"course": self._course_record(course)}}
+            return True, "Course created successfully", {
+                "record": {"course": self._course_record(course)}
+            }
 
         except (BusinessValidationError, NotFoundError) as e:
             self._rollback_if_needed()
@@ -155,36 +132,33 @@ class CourseService(BaseService[Course]):
             raise
 
     def update_course(self, *, company_id: int, course_id: int, data: Dict[str, Any]):
-        """
-        Update course with Frappe-style child table sync.
-
-        If "offerings" key is present, offerings = COMPLETE DESIRED STATE.
-
-        Optional flags:
-        - offering_missing_row_action: "disable" | "delete" | "keep" (default: "disable")
-        - permanent: true/false (required for hard delete)
-        """
         try:
             payload = dict(data or {})
             offerings_present = "offerings" in payload
             offerings_payload = payload.pop("offerings", None)
+
+            # Internal-only flags. Normal API schemas do not expose these.
             offering_missing_action = payload.pop("offering_missing_row_action", "disable")
             permanent = bool(payload.pop("permanent", False))
 
-            # ONE query with eager loading (fixes N+1)
-            course = self.repo.get_course_with_children(company_id=company_id, course_id=course_id)
+            course = self.repo.get_course_with_children(
+                company_id=company_id,
+                course_id=course_id,
+            )
             if not course:
                 raise NotFoundError(ERR_COURSE_NOT_FOUND)
 
             with self.s.begin_nested():
-                # Update course fields
                 course_patch = self._clean_course_data(payload, partial=True)
                 if course_patch:
-                    self._validate_course(course_patch, company_id=company_id, existing_id=int(course.id))
+                    self._validate_course(
+                        course_patch,
+                        company_id=company_id,
+                        existing_id=int(course.id),
+                    )
                     self._apply_patch(course, course_patch)
                     self.s.flush([course])
 
-                # Frappe-style offering sync
                 if offerings_present:
                     self._sync_offerings_for_course(
                         company_id=company_id,
@@ -195,7 +169,9 @@ class CourseService(BaseService[Course]):
                     )
 
             self._commit_or_flush()
-            return True, "Course updated successfully", {"record": {"course": self._course_record(course)}}
+            return True, "Course updated successfully", {
+                "record": {"course": self._course_record(course)}
+            }
 
         except (BusinessValidationError, NotFoundError) as e:
             self._rollback_if_needed()
@@ -208,43 +184,122 @@ class CourseService(BaseService[Course]):
             log.exception("update_course failed: %s", e)
             raise
 
+    # =========================================================
+    # Offering create/update
+    # =========================================================
+    def create_offering(self, *, company_id: int, data: Dict[str, Any]):
+        """
+        Create one or many offerings for an existing course.
+
+        Single mode:
+        {
+          "course_id": 1,
+          "department_id": 2,
+          "semester_id": 3,
+          "chapters": [...]
+        }
+
+        Bulk mode:
+        {
+          "course_id": 1,
+          "offerings": [...]
+        }
+        """
+        try:
+            payload = dict(data or {})
+            course_id = int(payload.get("course_id") or 0)
+            if not course_id:
+                raise BusinessValidationError("course_id is required.")
+
+            self._get_course_or_fail(company_id=company_id, course_id=course_id)
+
+            offerings_payload = payload.pop("offerings", None)
+
+            with self.s.begin_nested():
+                if offerings_payload is not None:
+                    if not isinstance(offerings_payload, list):
+                        raise BusinessValidationError("offerings must be a list.")
+
+                    saved = self._save_new_offerings_for_course(
+                        company_id=company_id,
+                        course_id=course_id,
+                        offerings=offerings_payload,
+                    )
+                else:
+                    chapters_payload = payload.pop("chapters", None) or []
+
+                    clean = self._clean_offering_data(payload, partial=False)
+                    clean["course_id"] = course_id
+
+                    self._validate_offering(
+                        clean,
+                        company_id=company_id,
+                        course_id=course_id,
+                        existing=None,
+                    )
+
+                    offering = self.repo.create_offering({
+                        "company_id": int(company_id),
+                        **clean,
+                    })
+
+                    if chapters_payload:
+                        self._save_new_chapters_for_offering(
+                            company_id=company_id,
+                            offering_id=int(offering.id),
+                            chapters=chapters_payload,
+                        )
+
+                    saved = [offering]
+
+            self._commit_or_flush()
+            return True, "Course offering created successfully", {
+                "records": [self._offering_record(o) for o in saved]
+            }
+
+        except (BusinessValidationError, NotFoundError) as e:
+            self._rollback_if_needed()
+            return False, str(e), None
+        except IntegrityError:
+            self._rollback_if_needed()
+            return False, "Database constraint error. Please check unique fields.", None
+        except Exception as e:
+            self._rollback_if_needed()
+            log.exception("create_offering failed: %s", e)
+            raise
+
     def update_offering(self, *, company_id: int, offering_id: int, data: Dict[str, Any]):
-        """
-        Update single offering with Frappe-style chapter sync.
-
-        If "chapters" key is present, chapters = COMPLETE DESIRED STATE.
-
-        Optional flags:
-        - chapter_missing_row_action: "disable" | "delete" | "keep" (default: "disable")
-        - permanent: true/false (required for hard delete)
-        """
         try:
             payload = dict(data or {})
             chapters_present = "chapters" in payload
             chapters_payload = payload.pop("chapters", None)
+
+            # Internal-only flags. Normal API schemas do not expose these.
             chapter_missing_action = payload.pop("chapter_missing_row_action", "disable")
             permanent = bool(payload.pop("permanent", False))
 
-            # ONE query with eager loading
-            offering = self.repo.get_offering_with_children(company_id=company_id, offering_id=offering_id)
+            offering = self.repo.get_offering_with_children(
+                company_id=company_id,
+                offering_id=offering_id,
+            )
             if not offering:
                 raise NotFoundError(ERR_COURSE_OFFERING_NOT_FOUND)
 
             with self.s.begin_nested():
-                # Update offering fields
                 offering_patch = self._clean_offering_data(payload, partial=True)
                 if offering_patch:
                     next_course_id = int(offering_patch.get("course_id") or offering.course_id)
+
                     self._validate_offering(
                         offering_patch,
                         company_id=company_id,
                         course_id=next_course_id,
                         existing=offering,
                     )
+
                     self._apply_patch(offering, offering_patch)
                     self.s.flush([offering])
 
-                # Frappe-style chapter sync
                 if chapters_present:
                     self._sync_chapters_for_offering(
                         company_id=company_id,
@@ -270,28 +325,309 @@ class CourseService(BaseService[Course]):
             log.exception("update_offering failed: %s", e)
             raise
 
-    # ==================================================================
-    # FETCH HELPERS
-    # ==================================================================
+    # =========================================================
+    # Delete methods
+    # =========================================================
+    def delete_course(self, *, company_id: int, course_id: int, permanent: bool = False):
+        try:
+            course = self.repo.get_course_with_children(
+                company_id=company_id,
+                course_id=course_id,
+            )
+            if not course:
+                raise NotFoundError(ERR_COURSE_NOT_FOUND)
+
+            with self.s.begin_nested():
+                if permanent:
+                    if course.offerings:
+                        raise BusinessValidationError(
+                            "Cannot permanently delete course because it has offering(s). "
+                            "Delete or disable the offerings first."
+                        )
+                    self.s.delete(course)
+                else:
+                    self._soft_delete_course_tree(course)
+
+            self._commit_or_flush()
+            return True, "Course deleted successfully", {
+                "record": {"id": int(course_id), "permanent": bool(permanent)}
+            }
+
+        except (BusinessValidationError, NotFoundError) as e:
+            self._rollback_if_needed()
+            return False, str(e), None
+        except IntegrityError:
+            self._rollback_if_needed()
+            return False, "Database constraint error. This course may be linked to other records.", None
+        except Exception as e:
+            self._rollback_if_needed()
+            log.exception("delete_course failed: %s", e)
+            raise
+
+    def bulk_delete_courses(self, *, company_id: int, ids: List[int], permanent: bool = False):
+        try:
+            ids = self._clean_bulk_ids(ids)
+            courses = self.repo.get_courses_with_children_by_ids(
+                company_id=company_id,
+                ids=ids,
+            )
+            found_map = {int(c.id): c for c in courses}
+
+            deleted: List[int] = []
+            failed: List[Dict[str, Any]] = []
+
+            with self.s.begin_nested():
+                for course_id in ids:
+                    course = found_map.get(int(course_id))
+                    if not course:
+                        failed.append({"id": int(course_id), "message": ERR_COURSE_NOT_FOUND})
+                        continue
+
+                    if permanent:
+                        if course.offerings:
+                            failed.append({
+                                "id": int(course_id),
+                                "message": "Cannot permanently delete course because it has offering(s).",
+                            })
+                            continue
+                        self.s.delete(course)
+                    else:
+                        self._soft_delete_course_tree(course)
+
+                    deleted.append(int(course_id))
+
+            self._commit_or_flush()
+            return True, "Bulk delete completed", {
+                "deleted": deleted,
+                "failed": failed,
+                "permanent": bool(permanent),
+            }
+
+        except BusinessValidationError as e:
+            self._rollback_if_needed()
+            return False, str(e), None
+        except IntegrityError:
+            self._rollback_if_needed()
+            return False, "Database constraint error. Some courses may be linked to other records.", None
+        except Exception as e:
+            self._rollback_if_needed()
+            log.exception("bulk_delete_courses failed: %s", e)
+            raise
+
+    def delete_offering(self, *, company_id: int, offering_id: int, permanent: bool = False):
+        try:
+            offering = self.repo.get_offering_with_children(
+                company_id=company_id,
+                offering_id=offering_id,
+            )
+            if not offering:
+                raise NotFoundError(ERR_COURSE_OFFERING_NOT_FOUND)
+
+            with self.s.begin_nested():
+                if permanent:
+                    self._remove_offering(
+                        company_id=company_id,
+                        offering=offering,
+                        action="delete",
+                        permanent=True,
+                    )
+                else:
+                    self._soft_delete_offering_tree(offering)
+
+            self._commit_or_flush()
+            return True, "Course offering deleted successfully", {
+                "record": {"id": int(offering_id), "permanent": bool(permanent)}
+            }
+
+        except (BusinessValidationError, NotFoundError) as e:
+            self._rollback_if_needed()
+            return False, str(e), None
+        except IntegrityError:
+            self._rollback_if_needed()
+            return False, "Database constraint error. This offering may be linked to other records.", None
+        except Exception as e:
+            self._rollback_if_needed()
+            log.exception("delete_offering failed: %s", e)
+            raise
+
+    def bulk_delete_offerings(self, *, company_id: int, ids: List[int], permanent: bool = False):
+        try:
+            ids = self._clean_bulk_ids(ids)
+            offerings = self.repo.get_offerings_with_children_by_ids(
+                company_id=company_id,
+                ids=ids,
+            )
+            found_map = {int(o.id): o for o in offerings}
+
+            material_counts = {}
+            if permanent:
+                material_counts = self.repo.count_materials_for_offerings(
+                    company_id=company_id,
+                    offering_ids=ids,
+                )
+
+            deleted: List[int] = []
+            failed: List[Dict[str, Any]] = []
+
+            with self.s.begin_nested():
+                for offering_id in ids:
+                    offering = found_map.get(int(offering_id))
+                    if not offering:
+                        failed.append({"id": int(offering_id), "message": ERR_COURSE_OFFERING_NOT_FOUND})
+                        continue
+
+                    if permanent:
+                        count = int(material_counts.get(int(offering_id), 0))
+                        if count > 0:
+                            failed.append({
+                                "id": int(offering_id),
+                                "message": f"Cannot permanently delete offering because it has {count} linked material(s).",
+                            })
+                            continue
+                        self.s.delete(offering)
+                    else:
+                        self._soft_delete_offering_tree(offering)
+
+                    deleted.append(int(offering_id))
+
+            self._commit_or_flush()
+            return True, "Bulk delete completed", {
+                "deleted": deleted,
+                "failed": failed,
+                "permanent": bool(permanent),
+            }
+
+        except BusinessValidationError as e:
+            self._rollback_if_needed()
+            return False, str(e), None
+        except IntegrityError:
+            self._rollback_if_needed()
+            return False, "Database constraint error. Some offerings may be linked to other records.", None
+        except Exception as e:
+            self._rollback_if_needed()
+            log.exception("bulk_delete_offerings failed: %s", e)
+            raise
+
+    def delete_chapter(self, *, company_id: int, chapter_id: int, permanent: bool = False):
+        try:
+            chapter = self.repo.get_chapter(
+                chapter_id=int(chapter_id),
+                company_id=int(company_id),
+            )
+            if not chapter:
+                raise NotFoundError(ERR_CHAPTER_NOT_FOUND)
+
+            with self.s.begin_nested():
+                if permanent:
+                    self._remove_chapter(
+                        company_id=company_id,
+                        chapter=chapter,
+                        action="delete",
+                        permanent=True,
+                    )
+                else:
+                    chapter.is_enabled = False
+
+            self._commit_or_flush()
+            return True, "Chapter deleted successfully", {
+                "record": {"id": int(chapter_id), "permanent": bool(permanent)}
+            }
+
+        except (BusinessValidationError, NotFoundError) as e:
+            self._rollback_if_needed()
+            return False, str(e), None
+        except IntegrityError:
+            self._rollback_if_needed()
+            return False, "Database constraint error. This chapter may be linked to other records.", None
+        except Exception as e:
+            self._rollback_if_needed()
+            log.exception("delete_chapter failed: %s", e)
+            raise
+
+    def bulk_delete_chapters(self, *, company_id: int, ids: List[int], permanent: bool = False):
+        try:
+            ids = self._clean_bulk_ids(ids)
+            chapters = self.repo.get_chapters_by_ids(
+                company_id=company_id,
+                ids=ids,
+            )
+            found_map = {int(ch.id): ch for ch in chapters}
+
+            material_counts = {}
+            if permanent:
+                material_counts = self.repo.count_materials_for_chapters(
+                    company_id=company_id,
+                    chapter_ids=ids,
+                )
+
+            deleted: List[int] = []
+            failed: List[Dict[str, Any]] = []
+
+            with self.s.begin_nested():
+                for chapter_id in ids:
+                    chapter = found_map.get(int(chapter_id))
+                    if not chapter:
+                        failed.append({"id": int(chapter_id), "message": ERR_CHAPTER_NOT_FOUND})
+                        continue
+
+                    if permanent:
+                        count = int(material_counts.get(int(chapter_id), 0))
+                        if count > 0:
+                            failed.append({
+                                "id": int(chapter_id),
+                                "message": f"Cannot permanently delete chapter because it has {count} linked material(s).",
+                            })
+                            continue
+                        self.s.delete(chapter)
+                    else:
+                        chapter.is_enabled = False
+
+                    deleted.append(int(chapter_id))
+
+            self._commit_or_flush()
+            return True, "Bulk delete completed", {
+                "deleted": deleted,
+                "failed": failed,
+                "permanent": bool(permanent),
+            }
+
+        except BusinessValidationError as e:
+            self._rollback_if_needed()
+            return False, str(e), None
+        except IntegrityError:
+            self._rollback_if_needed()
+            return False, "Database constraint error. Some chapters may be linked to other records.", None
+        except Exception as e:
+            self._rollback_if_needed()
+            log.exception("bulk_delete_chapters failed: %s", e)
+            raise
+
+    # =========================================================
+    # Fetch helpers
+    # =========================================================
     def _get_course_or_fail(self, *, company_id: int, course_id: int) -> Course:
         if not course_id:
             raise BusinessValidationError("course_id is required.")
+
         course = self.repo.get_course(int(course_id), company_id=int(company_id))
         if not course:
             raise NotFoundError(ERR_COURSE_NOT_FOUND)
+
         return course
 
     def _get_offering_or_fail(self, *, company_id: int, offering_id: int) -> CourseOffering:
         if not offering_id:
             raise BusinessValidationError("offering_id is required.")
+
         offering = self.repo.get_offering(int(offering_id), company_id=int(company_id))
         if not offering:
             raise NotFoundError(ERR_COURSE_OFFERING_NOT_FOUND)
+
         return offering
 
-    # ==================================================================
-    # CLEANING HELPERS
-    # ==================================================================
+    # =========================================================
+    # Cleaning helpers
+    # =========================================================
     def _clean_course_data(self, raw: Dict[str, Any], *, partial: bool) -> Dict[str, Any]:
         data = {k: v for k, v in dict(raw or {}).items() if k in COURSE_FIELDS}
         out: Dict[str, Any] = {}
@@ -303,8 +639,10 @@ class CourseService(BaseService[Course]):
 
         if "code" in data or not partial:
             out["code"] = _normalize_code(data.get("code"))
+
         if "description" in data or not partial:
             out["description"] = _safe_text(data.get("description"))
+
         if "is_enabled" in data or not partial:
             out["is_enabled"] = _as_bool(data.get("is_enabled"), default=True)
 
@@ -370,44 +708,58 @@ class CourseService(BaseService[Course]):
 
         if "description" in data or not partial:
             out["description"] = _safe_text(data.get("description"))
+
         if "is_enabled" in data or not partial:
             out["is_enabled"] = _as_bool(data.get("is_enabled"), default=True)
 
         return out
 
-    # ==================================================================
-    # VALIDATION HELPERS
-    # ==================================================================
+    # =========================================================
+    # Validation helpers
+    # =========================================================
     def _validate_course(self, data: Dict[str, Any], *, company_id: int, existing_id: Optional[int]) -> None:
         if "title" in data and self.repo.course_title_exists(
-                company_id=company_id,
-                title=data["title"],
-                exclude_id=existing_id,
+            company_id=company_id,
+            title=data["title"],
+            exclude_id=existing_id,
         ):
             raise BusinessValidationError(ERR_COURSE_EXISTS_TITLE)
 
         if data.get("code") and self.repo.course_code_exists(
-                company_id=company_id,
-                code=data["code"],
-                exclude_id=existing_id,
+            company_id=company_id,
+            code=data["code"],
+            exclude_id=existing_id,
         ):
             raise BusinessValidationError(ERR_COURSE_CODE_EXISTS)
 
     def _validate_offering(
-            self,
-            data: Dict[str, Any],
-            *,
-            company_id: int,
-            course_id: int,
-            existing: Optional[CourseOffering] = None,
+        self,
+        data: Dict[str, Any],
+        *,
+        company_id: int,
+        course_id: int,
+        existing: Optional[CourseOffering] = None,
     ) -> None:
         final_course_id = int(data.get("course_id") or course_id)
+
         final_department_id = int(
-            data.get("department_id") if "department_id" in data else getattr(existing, "department_id", 0) or 0
+            data.get("department_id")
+            if "department_id" in data
+            else getattr(existing, "department_id", 0) or 0
         )
-        final_semester_id = data.get("semester_id") if "semester_id" in data else getattr(existing, "semester_id", None)
-        final_custom_title = data.get("custom_title") if "custom_title" in data else getattr(existing, "custom_title",
-                                                                                             None)
+
+        final_semester_id = (
+            data.get("semester_id")
+            if "semester_id" in data
+            else getattr(existing, "semester_id", None)
+        )
+
+        final_custom_title = (
+            data.get("custom_title")
+            if "custom_title" in data
+            else getattr(existing, "custom_title", None)
+        )
+
         exclude_id = int(existing.id) if existing is not None else None
 
         self._get_course_or_fail(company_id=company_id, course_id=final_course_id)
@@ -417,69 +769,79 @@ class CourseService(BaseService[Course]):
 
         dept = self.repo.get_department(final_department_id, company_id=company_id)
         if not dept or not dept.is_enabled:
-            raise BusinessValidationError(f"Department {final_department_id} not found or disabled")
+            raise BusinessValidationError(f"Department {final_department_id} not found or disabled.")
 
         if final_semester_id is not None:
             sem = self.repo.get_semester(int(final_semester_id), company_id=company_id)
             if not sem or not sem.is_enabled:
-                raise BusinessValidationError(f"Semester {final_semester_id} not found or disabled")
+                raise BusinessValidationError(f"Semester {final_semester_id} not found or disabled.")
 
         if self.repo.offering_scope_exists(
-                company_id=company_id,
-                course_id=final_course_id,
-                department_id=final_department_id,
-                semester_id=final_semester_id,
-                exclude_id=exclude_id,
+            company_id=company_id,
+            course_id=final_course_id,
+            department_id=final_department_id,
+            semester_id=final_semester_id,
+            exclude_id=exclude_id,
         ):
             raise BusinessValidationError(ERR_COURSE_OFFERING_EXISTS_IN_SCOPE)
 
         if final_custom_title and self.repo.offering_custom_title_exists(
-                company_id=company_id,
-                course_id=final_course_id,
-                custom_title=final_custom_title,
-                exclude_id=exclude_id,
+            company_id=company_id,
+            course_id=final_course_id,
+            custom_title=final_custom_title,
+            exclude_id=exclude_id,
         ):
             raise BusinessValidationError(ERR_COURSE_OFFERING_EXISTS_TITLE)
 
     def _validate_chapter(
-            self,
-            data: Dict[str, Any],
-            *,
-            company_id: int,
-            offering_id: int,
-            existing: Optional[CourseChapter] = None,
+        self,
+        data: Dict[str, Any],
+        *,
+        company_id: int,
+        offering_id: int,
+        existing: Optional[CourseChapter] = None,
     ) -> None:
         exclude_id = int(existing.id) if existing is not None else None
         number = data.get("number") if "number" in data else getattr(existing, "number", None)
         title = data.get("title") if "title" in data else getattr(existing, "title", None)
 
         if number is not None and self.repo.chapter_number_exists(
-                company_id=company_id,
-                offering_id=offering_id,
-                number=int(number),
-                exclude_id=exclude_id,
+            company_id=company_id,
+            offering_id=offering_id,
+            number=int(number),
+            exclude_id=exclude_id,
         ):
             raise BusinessValidationError(ERR_CHAPTER_EXISTS_NUMBER)
 
         if title and self.repo.chapter_title_exists(
-                company_id=company_id,
-                offering_id=offering_id,
-                title=title,
-                exclude_id=exclude_id,
+            company_id=company_id,
+            offering_id=offering_id,
+            title=title,
+            exclude_id=exclude_id,
         ):
             raise BusinessValidationError(ERR_CHAPTER_EXISTS_TITLE)
 
-    # ==================================================================
-    # REQUEST VALIDATION (Before processing)
-    # ==================================================================
-    def _validate_request_limits(self, *, offerings: Optional[List[Dict]] = None,
-                                 chapters: Optional[List[Dict]] = None) -> None:
+    # =========================================================
+    # Request validation
+    # =========================================================
+    def _validate_request_limits(
+        self,
+        *,
+        offerings: Optional[List[Dict]] = None,
+        chapters: Optional[List[Dict]] = None,
+    ) -> None:
         if offerings is not None and len(offerings) > MAX_OFFERINGS_PER_REQUEST:
             raise BusinessValidationError(ERR_TOO_MANY_OFFERINGS)
+
         if chapters is not None and len(chapters) > MAX_CHAPTERS_PER_OFFERING:
             raise BusinessValidationError(ERR_TOO_MANY_CHAPTERS)
 
-    def _validate_no_duplicate_offerings_in_payload(self, offerings: List[Dict[str, Any]], *, course_id: int) -> None:
+    def _validate_no_duplicate_offerings_in_payload(
+        self,
+        offerings: List[Dict[str, Any]],
+        *,
+        course_id: int,
+    ) -> None:
         seen_ids: Set[int] = set()
         seen_scopes: Set[Tuple[int, int, Optional[int]]] = set()
         seen_titles: Set[str] = set()
@@ -487,14 +849,12 @@ class CourseService(BaseService[Course]):
         for raw in offerings or []:
             row = dict(raw or {})
 
-            # Duplicate ID check
             if row.get("id") is not None:
                 row_id = int(row["id"])
                 if row_id in seen_ids:
                     raise BusinessValidationError(f"Duplicate offering id {row_id} in request.")
                 seen_ids.add(row_id)
 
-            # Duplicate scope check (course + dept + semester)
             row_course_id = int(row.get("course_id") or course_id)
             dept_id = int(row.get("department_id") or 0)
             sem_raw = row.get("semester_id")
@@ -506,7 +866,6 @@ class CourseService(BaseService[Course]):
                     raise BusinessValidationError(ERR_COURSE_OFFERING_EXISTS_IN_SCOPE)
                 seen_scopes.add(scope)
 
-            # Duplicate custom title check
             custom_title = (row.get("custom_title") or "").strip().lower()
             if custom_title:
                 if custom_title in seen_titles:
@@ -539,15 +898,30 @@ class CourseService(BaseService[Course]):
                     raise BusinessValidationError(ERR_CHAPTER_EXISTS_TITLE)
                 seen_titles.add(title)
 
-    # ==================================================================
-    # CREATE HELPERS (For create operations)
-    # ==================================================================
+    @staticmethod
+    def _clean_bulk_ids(ids: List[int]) -> List[int]:
+        if not ids:
+            raise BusinessValidationError("ids is required.")
+
+        clean = [int(x) for x in ids]
+
+        if len(clean) > MAX_BULK_DELETE:
+            raise BusinessValidationError(f"Cannot delete more than {MAX_BULK_DELETE} records.")
+
+        if len(set(clean)) != len(clean):
+            raise BusinessValidationError("Duplicate ids are not allowed.")
+
+        return clean
+
+    # =========================================================
+    # Create helpers
+    # =========================================================
     def _save_new_offerings_for_course(
-            self,
-            *,
-            company_id: int,
-            course_id: int,
-            offerings: List[Dict[str, Any]],
+        self,
+        *,
+        company_id: int,
+        course_id: int,
+        offerings: List[Dict[str, Any]],
     ) -> List[CourseOffering]:
         if not isinstance(offerings, list):
             raise BusinessValidationError("offerings must be a list.")
@@ -556,6 +930,7 @@ class CourseService(BaseService[Course]):
         self._validate_no_duplicate_offerings_in_payload(offerings, course_id=course_id)
 
         saved: List[CourseOffering] = []
+
         for raw in offerings:
             row = dict(raw or {})
             chapters_payload = row.pop("chapters", None) or []
@@ -566,8 +941,17 @@ class CourseService(BaseService[Course]):
             clean = self._clean_offering_data(row, partial=False)
             clean["course_id"] = int(course_id)
 
-            self._validate_offering(clean, company_id=company_id, course_id=int(course_id), existing=None)
-            offering = self.repo.create_offering({"company_id": int(company_id), **clean})
+            self._validate_offering(
+                clean,
+                company_id=company_id,
+                course_id=int(course_id),
+                existing=None,
+            )
+
+            offering = self.repo.create_offering({
+                "company_id": int(company_id),
+                **clean,
+            })
 
             if chapters_payload:
                 self._save_new_chapters_for_offering(
@@ -581,11 +965,11 @@ class CourseService(BaseService[Course]):
         return saved
 
     def _save_new_chapters_for_offering(
-            self,
-            *,
-            company_id: int,
-            offering_id: int,
-            chapters: List[Dict[str, Any]],
+        self,
+        *,
+        company_id: int,
+        offering_id: int,
+        chapters: List[Dict[str, Any]],
     ) -> List[CourseChapter]:
         if not isinstance(chapters, list):
             raise BusinessValidationError("chapters must be a list.")
@@ -594,45 +978,59 @@ class CourseService(BaseService[Course]):
         self._validate_no_duplicate_chapters_in_payload(chapters)
 
         saved: List[CourseChapter] = []
+
         for raw in chapters:
             row = dict(raw or {})
+
             if row.get("id"):
                 raise BusinessValidationError("New chapter rows must not include id.")
 
             clean = self._clean_chapter_data(row, partial=False)
-            self._validate_chapter(clean, company_id=company_id, offering_id=offering_id, existing=None)
+
+            self._validate_chapter(
+                clean,
+                company_id=company_id,
+                offering_id=offering_id,
+                existing=None,
+            )
 
             chapter = self.repo.create_chapter({
                 "company_id": int(company_id),
                 "course_offering_id": int(offering_id),
                 **clean,
             })
+
             saved.append(chapter)
 
         return saved
 
-    # ==================================================================
-    # FRAPPE-STYLE SYNC HELPERS (The Heart of the Pattern)
-    # ==================================================================
+    # =========================================================
+    # Full-state sync helpers
+    # =========================================================
     def _sync_offerings_for_course(
-            self,
-            *,
-            company_id: int,
-            course: Course,
-            offerings: List[Dict[str, Any]],
-            missing_action: MissingAction,
-            permanent: bool,
+        self,
+        *,
+        company_id: int,
+        course: Course,
+        offerings: List[Dict[str, Any]],
+        missing_action: MissingAction,
+        permanent: bool,
     ) -> List[CourseOffering]:
-        """Frappe pattern: offerings = COMPLETE DESIRED STATE."""
-
         if not isinstance(offerings, list):
             raise BusinessValidationError("offerings must be a list.")
 
-        action = self._normalize_missing_action(missing_action, field="offering_missing_row_action")
+        action = self._normalize_missing_action(
+            missing_action,
+            field="offering_missing_row_action",
+        )
+
         self._validate_request_limits(offerings=offerings)
         self._validate_no_duplicate_offerings_in_payload(offerings, course_id=int(course.id))
 
-        existing_map: Dict[int, CourseOffering] = {int(o.id): o for o in (course.offerings or [])}
+        existing_map: Dict[int, CourseOffering] = {
+            int(o.id): o for o in (course.offerings or [])
+        }
+
         incoming_ids: Set[int] = set()
         saved: List[CourseOffering] = []
 
@@ -640,13 +1038,15 @@ class CourseService(BaseService[Course]):
             row = dict(raw or {})
             chapters_present = "chapters" in row
             chapters_payload = row.pop("chapters", None)
+
+            # Internal-only. Normal API does not expose this.
             chapter_missing_action = row.pop("chapter_missing_row_action", "disable")
 
             clean = self._clean_offering_data(row, partial=bool(row.get("id")))
+            explicitly_sent_enabled = "is_enabled" in clean
             offering_id = clean.pop("id", None)
 
             if offering_id:
-                # UPDATE existing offering
                 if int(offering_id) not in existing_map:
                     raise BusinessValidationError(
                         f"Offering {offering_id} does not belong to course {int(course.id)}."
@@ -655,21 +1055,41 @@ class CourseService(BaseService[Course]):
                 offering = existing_map[int(offering_id)]
                 incoming_ids.add(int(offering.id))
 
-                # Security: Prevent moving offering to another course
                 if "course_id" in clean and int(clean["course_id"]) != int(course.id):
                     raise BusinessValidationError("Offering course_id cannot be changed from update_course().")
 
-                self._validate_offering(clean, company_id=company_id, course_id=int(course.id), existing=offering)
+                self._validate_offering(
+                    clean,
+                    company_id=company_id,
+                    course_id=int(course.id),
+                    existing=offering,
+                )
+
                 self._apply_patch(offering, clean)
+
+                # Full-state sync rule:
+                # present row means active unless frontend explicitly sends is_enabled=false.
+                if not explicitly_sent_enabled:
+                    offering.is_enabled = True
+
                 self.s.flush([offering])
             else:
-                # CREATE new offering
                 clean["course_id"] = int(course.id)
-                self._validate_offering(clean, company_id=company_id, course_id=int(course.id), existing=None)
-                offering = self.repo.create_offering({"company_id": int(company_id), **clean})
+
+                self._validate_offering(
+                    clean,
+                    company_id=company_id,
+                    course_id=int(course.id),
+                    existing=None,
+                )
+
+                offering = self.repo.create_offering({
+                    "company_id": int(company_id),
+                    **clean,
+                })
+
                 incoming_ids.add(int(offering.id))
 
-            # Handle chapters for this offering
             if chapters_present:
                 self._sync_chapters_for_offering(
                     company_id=company_id,
@@ -681,7 +1101,6 @@ class CourseService(BaseService[Course]):
 
             saved.append(offering)
 
-        # Frappe: Handle missing offerings (existing not in incoming)
         if action != "keep":
             missing_ids = set(existing_map.keys()) - incoming_ids
             for offering_id in missing_ids:
@@ -695,33 +1114,39 @@ class CourseService(BaseService[Course]):
         return saved
 
     def _sync_chapters_for_offering(
-            self,
-            *,
-            company_id: int,
-            offering: CourseOffering,
-            chapters: List[Dict[str, Any]],
-            missing_action: MissingAction,
-            permanent: bool,
+        self,
+        *,
+        company_id: int,
+        offering: CourseOffering,
+        chapters: List[Dict[str, Any]],
+        missing_action: MissingAction,
+        permanent: bool,
     ) -> List[CourseChapter]:
-        """Frappe pattern: chapters = COMPLETE DESIRED STATE."""
-
         if not isinstance(chapters, list):
             raise BusinessValidationError("chapters must be a list.")
 
-        action = self._normalize_missing_action(missing_action, field="chapter_missing_row_action")
+        action = self._normalize_missing_action(
+            missing_action,
+            field="chapter_missing_row_action",
+        )
+
         self._validate_request_limits(chapters=chapters)
         self._validate_no_duplicate_chapters_in_payload(chapters)
 
-        existing_map: Dict[int, CourseChapter] = {int(ch.id): ch for ch in (offering.chapters or [])}
+        existing_map: Dict[int, CourseChapter] = {
+            int(ch.id): ch for ch in (offering.chapters or [])
+        }
+
         incoming_ids: Set[int] = set()
         saved: List[CourseChapter] = []
 
         for raw in chapters:
-            clean = self._clean_chapter_data(dict(raw or {}), partial=bool((raw or {}).get("id")))
+            row = dict(raw or {})
+            clean = self._clean_chapter_data(row, partial=bool(row.get("id")))
+            explicitly_sent_enabled = "is_enabled" in clean
             chapter_id = clean.pop("id", None)
 
             if chapter_id:
-                # UPDATE existing chapter
                 if int(chapter_id) not in existing_map:
                     raise BusinessValidationError(
                         f"Chapter {chapter_id} does not belong to offering {int(offering.id)}."
@@ -730,22 +1155,39 @@ class CourseService(BaseService[Course]):
                 chapter = existing_map[int(chapter_id)]
                 incoming_ids.add(int(chapter.id))
 
-                self._validate_chapter(clean, company_id=company_id, offering_id=int(offering.id), existing=chapter)
+                self._validate_chapter(
+                    clean,
+                    company_id=company_id,
+                    offering_id=int(offering.id),
+                    existing=chapter,
+                )
+
                 self._apply_patch(chapter, clean)
+
+                # Full-state sync rule:
+                # present row means active unless explicitly sent is_enabled=false.
+                if not explicitly_sent_enabled:
+                    chapter.is_enabled = True
+
                 self.s.flush([chapter])
             else:
-                # CREATE new chapter
-                self._validate_chapter(clean, company_id=company_id, offering_id=int(offering.id), existing=None)
+                self._validate_chapter(
+                    clean,
+                    company_id=company_id,
+                    offering_id=int(offering.id),
+                    existing=None,
+                )
+
                 chapter = self.repo.create_chapter({
                     "company_id": int(company_id),
                     "course_offering_id": int(offering.id),
                     **clean,
                 })
+
                 incoming_ids.add(int(chapter.id))
 
             saved.append(chapter)
 
-        # Frappe: Handle missing chapters
         if action != "keep":
             missing_ids = set(existing_map.keys()) - incoming_ids
             for chapter_id in missing_ids:
@@ -758,19 +1200,19 @@ class CourseService(BaseService[Course]):
 
         return saved
 
-    # ==================================================================
-    # REMOVAL HELPERS (With safety checks)
-    # ==================================================================
+    # =========================================================
+    # Removal helpers
+    # =========================================================
     def _remove_offering(
-            self,
-            *,
-            company_id: int,
-            offering: CourseOffering,
-            action: MissingAction,
-            permanent: bool,
+        self,
+        *,
+        company_id: int,
+        offering: CourseOffering,
+        action: MissingAction,
+        permanent: bool,
     ) -> None:
         if action == "disable":
-            offering.is_enabled = False
+            self._soft_delete_offering_tree(offering)
             return
 
         if action == "delete":
@@ -781,10 +1223,11 @@ class CourseService(BaseService[Course]):
                 company_id=company_id,
                 offering_id=int(offering.id),
             )
+
             if material_count > 0:
                 raise BusinessValidationError(
-                    f"Cannot delete offering {int(offering.id)} because it has {material_count} linked material(s). "
-                    f"Delete the materials first or use force=true."
+                    f"Cannot delete offering {int(offering.id)} because it has "
+                    f"{material_count} linked material(s)."
                 )
 
             self.s.delete(offering)
@@ -794,12 +1237,12 @@ class CourseService(BaseService[Course]):
             raise BusinessValidationError("Invalid offering_missing_row_action.")
 
     def _remove_chapter(
-            self,
-            *,
-            company_id: int,
-            chapter: CourseChapter,
-            action: MissingAction,
-            permanent: bool,
+        self,
+        *,
+        company_id: int,
+        chapter: CourseChapter,
+        action: MissingAction,
+        permanent: bool,
     ) -> None:
         if action == "disable":
             chapter.is_enabled = False
@@ -813,10 +1256,11 @@ class CourseService(BaseService[Course]):
                 company_id=company_id,
                 chapter_id=int(chapter.id),
             )
+
             if material_count > 0:
                 raise BusinessValidationError(
-                    f"Cannot delete chapter {int(chapter.id)} because it has {material_count} linked material(s). "
-                    f"Delete the materials first or use force=true."
+                    f"Cannot delete chapter {int(chapter.id)} because it has "
+                    f"{material_count} linked material(s)."
                 )
 
             self.s.delete(chapter)
@@ -826,15 +1270,32 @@ class CourseService(BaseService[Course]):
             raise BusinessValidationError("Invalid chapter_missing_row_action.")
 
     @staticmethod
+    def _soft_delete_course_tree(course: Course) -> None:
+        course.is_enabled = False
+
+        for offering in course.offerings or []:
+            offering.is_enabled = False
+
+            for chapter in offering.chapters or []:
+                chapter.is_enabled = False
+
+    @staticmethod
+    def _soft_delete_offering_tree(offering: CourseOffering) -> None:
+        offering.is_enabled = False
+
+        for chapter in offering.chapters or []:
+            chapter.is_enabled = False
+
+    @staticmethod
     def _normalize_missing_action(value: Any, *, field: str) -> str:
         action = (str(value or "disable")).strip().lower()
         if action not in {"disable", "delete", "keep"}:
             raise BusinessValidationError(f"{field} must be 'disable', 'delete', or 'keep'.")
         return action
 
-    # ==================================================================
-    # RECORD FORMATTERS
-    # ==================================================================
+    # =========================================================
+    # Record formatters
+    # =========================================================
     def _course_record(self, course: Course) -> Dict[str, Any]:
         return {
             "id": int(course.id),
@@ -874,238 +1335,3 @@ class CourseService(BaseService[Course]):
                 continue
             if hasattr(obj, key):
                 setattr(obj, key, value)
-
-
-    def delete_course(self, *, company_id: int, course_id: int, permanent: bool = False):
-        """
-        Delete course.
-
-        Default behavior:
-        - Soft delete course
-        - Soft delete all offerings
-        - Soft delete all chapters
-
-        Hard delete:
-        - Requires permanent=true
-        - Blocks if course has offerings
-        """
-        try:
-            course = self.repo.get_course_with_children(
-                company_id=company_id,
-                course_id=course_id,
-            )
-            if not course:
-                raise NotFoundError(ERR_COURSE_NOT_FOUND)
-
-            with self.s.begin_nested():
-                if permanent:
-                    if course.offerings:
-                        raise BusinessValidationError(
-                            "Cannot permanently delete course because it has offering(s). "
-                            "Delete or disable the offerings first."
-                        )
-                    self.s.delete(course)
-                else:
-                    course.is_enabled = False
-
-                    for offering in course.offerings or []:
-                        offering.is_enabled = False
-                        for chapter in offering.chapters or []:
-                            chapter.is_enabled = False
-
-            self._commit_or_flush()
-            return True, "Course deleted successfully", {
-                "record": {"id": int(course_id), "permanent": bool(permanent)}
-            }
-
-        except (BusinessValidationError, NotFoundError) as e:
-            self._rollback_if_needed()
-            return False, str(e), None
-        except IntegrityError:
-            self._rollback_if_needed()
-            return False, "Database constraint error. This course may be linked to other records.", None
-        except Exception as e:
-            self._rollback_if_needed()
-            log.exception("delete_course failed: %s", e)
-            raise
-
-
-    def bulk_delete_courses(self, *, company_id: int, ids: List[int], permanent: bool = False):
-        if not ids:
-            return False, "ids is required.", None
-
-        if len(ids) > 100:
-            return False, "Cannot delete more than 100 courses in one request.", None
-
-        deleted: List[int] = []
-        failed: List[Dict[str, Any]] = []
-
-        for course_id in ids:
-            ok, msg, _ = self.delete_course(
-                company_id=company_id,
-                course_id=int(course_id),
-                permanent=permanent,
-            )
-            if ok:
-                deleted.append(int(course_id))
-            else:
-                failed.append({"id": int(course_id), "message": msg})
-
-        return True, "Bulk delete completed", {
-            "deleted": deleted,
-            "failed": failed,
-            "permanent": bool(permanent),
-        }
-
-
-    def delete_offering(self, *, company_id: int, offering_id: int, permanent: bool = False):
-        """
-        Delete course offering.
-
-        Default:
-        - Soft delete offering
-        - Soft delete its chapters
-
-        Hard delete:
-        - Requires permanent=true
-        - Blocks if linked materials exist
-        """
-        try:
-            offering = self.repo.get_offering_with_children(
-                company_id=company_id,
-                offering_id=offering_id,
-            )
-            if not offering:
-                raise NotFoundError(ERR_COURSE_OFFERING_NOT_FOUND)
-
-            with self.s.begin_nested():
-                if permanent:
-                    self._remove_offering(
-                        company_id=company_id,
-                        offering=offering,
-                        action="delete",
-                        permanent=True,
-                    )
-                else:
-                    offering.is_enabled = False
-                    for chapter in offering.chapters or []:
-                        chapter.is_enabled = False
-
-            self._commit_or_flush()
-            return True, "Course offering deleted successfully", {
-                "record": {"id": int(offering_id), "permanent": bool(permanent)}
-            }
-
-        except (BusinessValidationError, NotFoundError) as e:
-            self._rollback_if_needed()
-            return False, str(e), None
-        except IntegrityError:
-            self._rollback_if_needed()
-            return False, "Database constraint error. This offering may be linked to other records.", None
-        except Exception as e:
-            self._rollback_if_needed()
-            log.exception("delete_offering failed: %s", e)
-            raise
-
-
-    def bulk_delete_offerings(self, *, company_id: int, ids: List[int], permanent: bool = False):
-        if not ids:
-            return False, "ids is required.", None
-
-        if len(ids) > 100:
-            return False, "Cannot delete more than 100 offerings in one request.", None
-
-        deleted: List[int] = []
-        failed: List[Dict[str, Any]] = []
-
-        for offering_id in ids:
-            ok, msg, _ = self.delete_offering(
-                company_id=company_id,
-                offering_id=int(offering_id),
-                permanent=permanent,
-            )
-            if ok:
-                deleted.append(int(offering_id))
-            else:
-                failed.append({"id": int(offering_id), "message": msg})
-
-        return True, "Bulk delete completed", {
-            "deleted": deleted,
-            "failed": failed,
-            "permanent": bool(permanent),
-        }
-
-
-    def delete_chapter(self, *, company_id: int, chapter_id: int, permanent: bool = False):
-        """
-        Delete chapter.
-
-        Default:
-        - Soft delete chapter
-
-        Hard delete:
-        - Requires permanent=true
-        - Blocks if linked materials exist
-        """
-        try:
-            chapter = self.repo.get_chapter(
-                chapter_id=int(chapter_id),
-                company_id=int(company_id),
-            )
-            if not chapter:
-                raise NotFoundError(ERR_CHAPTER_NOT_FOUND)
-
-            with self.s.begin_nested():
-                if permanent:
-                    self._remove_chapter(
-                        company_id=company_id,
-                        chapter=chapter,
-                        action="delete",
-                        permanent=True,
-                    )
-                else:
-                    chapter.is_enabled = False
-
-            self._commit_or_flush()
-            return True, "Chapter deleted successfully", {
-                "record": {"id": int(chapter_id), "permanent": bool(permanent)}
-            }
-
-        except (BusinessValidationError, NotFoundError) as e:
-            self._rollback_if_needed()
-            return False, str(e), None
-        except IntegrityError:
-            self._rollback_if_needed()
-            return False, "Database constraint error. This chapter may be linked to other records.", None
-        except Exception as e:
-            self._rollback_if_needed()
-            log.exception("delete_chapter failed: %s", e)
-            raise
-
-
-    def bulk_delete_chapters(self, *, company_id: int, ids: List[int], permanent: bool = False):
-        if not ids:
-            return False, "ids is required.", None
-
-        if len(ids) > 100:
-            return False, "Cannot delete more than 100 chapters in one request.", None
-
-        deleted: List[int] = []
-        failed: List[Dict[str, Any]] = []
-
-        for chapter_id in ids:
-            ok, msg, _ = self.delete_chapter(
-                company_id=company_id,
-                chapter_id=int(chapter_id),
-                permanent=permanent,
-            )
-            if ok:
-                deleted.append(int(chapter_id))
-            else:
-                failed.append({"id": int(chapter_id), "message": msg})
-
-        return True, "Bulk delete completed", {
-            "deleted": deleted,
-            "failed": failed,
-            "permanent": bool(permanent),
-        }

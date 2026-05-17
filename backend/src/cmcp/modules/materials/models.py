@@ -43,7 +43,7 @@ class Material(BaseModel, TenantMixin):
     # Required: which offering this material belongs to
     course_offering_id: Mapped[int] = mapped_column(
         db.BigInteger,
-        db.ForeignKey("edu_course_offerings.id", ondelete="CASCADE"),
+        db.ForeignKey("edu_course_offerings.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )

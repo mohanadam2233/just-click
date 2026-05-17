@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from cmcp.config.database import db
 from cmcp.common.models.base import BaseModel, TenantMixin
-
+from sqlalchemy import UniqueConstraint, CheckConstraint, Index, text
 
 class Faculty(BaseModel, TenantMixin):
     __tablename__ = "edu_faculties"
@@ -163,7 +163,6 @@ class Course(BaseModel, TenantMixin):
         UniqueConstraint("company_id", "title", name="uq_edu_courses_company_title"),
         UniqueConstraint("company_id", "code", name="uq_edu_courses_company_code"),
     )
-
 class CourseOffering(BaseModel, TenantMixin):
     __tablename__ = "edu_course_offerings"
 
@@ -181,7 +180,7 @@ class CourseOffering(BaseModel, TenantMixin):
         index=True,
     )
 
-    semester_id: Mapped[int] = mapped_column(
+    semester_id: Mapped[Optional[int]] = mapped_column(
         db.BigInteger,
         db.ForeignKey("edu_semesters.id", ondelete="CASCADE"),
         nullable=True,
@@ -191,11 +190,30 @@ class CourseOffering(BaseModel, TenantMixin):
     custom_title: Mapped[Optional[str]] = mapped_column(db.String(200), nullable=True)
     credit_hours: Mapped[Optional[int]] = mapped_column(db.Integer, nullable=True)
 
-    is_enabled: Mapped[bool] = mapped_column(db.Boolean, default=True, nullable=False, index=True)
+    is_enabled: Mapped[bool] = mapped_column(
+        db.Boolean,
+        default=True,
+        nullable=False,
+        index=True,
+    )
 
-    course: Mapped["Course"] = db.relationship("Course", back_populates="offerings", lazy="select")
-    department: Mapped["Department"] = db.relationship("Department", back_populates="course_offerings", lazy="select")
-    semester: Mapped["Semester"] = db.relationship("Semester", back_populates="course_offerings", lazy="select")
+    course: Mapped["Course"] = db.relationship(
+        "Course",
+        back_populates="offerings",
+        lazy="select",
+    )
+
+    department: Mapped["Department"] = db.relationship(
+        "Department",
+        back_populates="course_offerings",
+        lazy="select",
+    )
+
+    semester: Mapped["Semester"] = db.relationship(
+        "Semester",
+        back_populates="course_offerings",
+        lazy="select",
+    )
 
     chapters: Mapped[list["CourseChapter"]] = db.relationship(
         "CourseChapter",
@@ -205,24 +223,44 @@ class CourseOffering(BaseModel, TenantMixin):
         order_by="CourseChapter.number.asc()",
     )
 
+    # Important:
+    # Do not use cascade="all, delete-orphan" here.
+    # Materials are learning records and should not be accidentally deleted
+    # when an offering is deleted.
     materials: Mapped[list["Material"]] = db.relationship(
         "Material",
         back_populates="course_offering",
-        cascade="all, delete-orphan",
         lazy="select",
     )
 
     __table_args__ = (
-        UniqueConstraint(
-            "company_id", "course_id", "department_id", "semester_id",
-            name="uq_edu_course_offering_scope",
+        # PostgreSQL-safe uniqueness for nullable semester_id.
+        # Normal UniqueConstraint does not protect NULL semester_id duplicates.
+        Index(
+            "uq_edu_course_offering_scope_no_semester",
+            "company_id",
+            "course_id",
+            "department_id",
+            unique=True,
+            postgresql_where=text("semester_id IS NULL"),
         ),
-        CheckConstraint("(credit_hours IS NULL) OR (credit_hours >= 0)", name="ck_edu_course_offering_credit_hours_min"),
+        Index(
+            "uq_edu_course_offering_scope_with_semester",
+            "company_id",
+            "course_id",
+            "department_id",
+            "semester_id",
+            unique=True,
+            postgresql_where=text("semester_id IS NOT NULL"),
+        ),
+        CheckConstraint(
+            "(credit_hours IS NULL) OR (credit_hours >= 0)",
+            name="ck_edu_course_offering_credit_hours_min",
+        ),
         Index("ix_edu_course_offerings_company_department", "company_id", "department_id"),
         Index("ix_edu_course_offerings_company_semester", "company_id", "semester_id"),
         Index("ix_edu_course_offerings_company_course", "company_id", "course_id"),
     )
-
 
 class CourseChapter(BaseModel, TenantMixin):
     __tablename__ = "edu_course_chapters"
