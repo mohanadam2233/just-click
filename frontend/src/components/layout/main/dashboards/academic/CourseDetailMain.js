@@ -1,26 +1,34 @@
 "use client";
 
+import FrappeChildTable from "@/components/shared/forms/FrappeChildTable";
 import FrappeForm from "@/components/shared/forms/FrappeForm";
 import {
   useCourseDetail,
-  useDeleteCourse,
   useDepartmentsDropdown,
   useSemestersDropdown,
-  useUpdateCourse,
 } from "@/features/academic/hooks";
+import { useDeleteCourse, useUpdateCourse } from "@/features/course/hooks";
 import useNotify from "@/hooks/useNotify";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
 const TRACKED_FIELDS = ["title", "code", "description", "offerings"];
+
+// ---------------------------------------------------------------------------
+// Zod schemas
+// ---------------------------------------------------------------------------
 
 const chapterSchema = z.object({
   idx: z.number().optional(),
   id: z.any().optional(),
   __id: z.string().optional(),
   number: z.number().optional(),
-  title: z.string().optional(),
+  title: z.string().min(1, "Chapter title is required"),
   description: z.string().optional(),
   is_enabled: z.boolean().optional(),
 });
@@ -37,15 +45,12 @@ const offeringSchema = z.object({
   semester_name: z.string().optional(),
   semester_code: z.string().optional(),
 
-  academic_year_id: z.any().optional(),
-  academic_year_name: z.string().optional(),
-
   custom_title: z.string().optional(),
   credit_hours: z.any().optional(),
   is_enabled: z.boolean().optional(),
 
   chapters: z.array(chapterSchema).optional(),
-  chapters_summary: z.string().optional(),
+  chapters_count: z.number().optional(),
 });
 
 const courseSchema = z.object({
@@ -54,6 +59,10 @@ const courseSchema = z.object({
   description: z.string().optional(),
   offerings: z.array(offeringSchema).optional(),
 });
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function extractDetailRecord(res) {
   return res?.data?.data?.data ?? res?.data?.data ?? res?.data ?? null;
@@ -67,17 +76,21 @@ function makeRowId(prefix, id, index) {
   return `${prefix}-${id ?? `new-${index}`}`;
 }
 
-function buildChaptersSummary(chapters = []) {
-  if (!Array.isArray(chapters) || chapters.length === 0) {
-    return "No chapters";
-  }
+function getChaptersCount(chapters = []) {
+  return Array.isArray(chapters) ? chapters.length : 0;
+}
 
-  return chapters
-    .map((chapter, index) => {
-      const title = chapter?.title || "Untitled";
-      return `${index + 1}. ${title}`;
-    })
-    .join(", ");
+function normalizeChapters(chapters = []) {
+  return (Array.isArray(chapters) ? chapters : []).map((chapter, index) => ({
+    __id: chapter?.__id || makeRowId("chapter", chapter?.id, index),
+    idx: index + 1,
+    id: chapter?.id ?? null,
+    number: chapter?.number ? Number(chapter.number) : index + 1,
+    title: chapter?.title || "",
+    description: chapter?.description || "",
+    is_enabled:
+      chapter?.is_enabled === undefined ? true : Boolean(chapter?.is_enabled),
+  }));
 }
 
 function normalizeCourseToForm(item) {
@@ -85,19 +98,8 @@ function normalizeCourseToForm(item) {
     title: item?.title || "",
     code: item?.code || "",
     description: item?.description || "",
-
     offerings: (item?.offerings || []).map((offering, offeringIndex) => {
-      const chapters = (offering?.chapters || []).map(
-        (chapter, chapterIndex) => ({
-          __id: makeRowId("chapter", chapter?.id, chapterIndex),
-          idx: chapter?.number || chapterIndex + 1,
-          id: chapter?.id ?? null,
-          number: chapter?.number || chapterIndex + 1,
-          title: chapter?.title || "",
-          description: chapter?.description || "",
-          is_enabled: Boolean(chapter?.is_enabled),
-        }),
-      );
+      const chapters = normalizeChapters(offering?.chapters || []);
 
       return {
         __id: makeRowId("offering", offering?.id, offeringIndex),
@@ -113,9 +115,6 @@ function normalizeCourseToForm(item) {
         semester_name: offering?.semester_name || "",
         semester_code: offering?.semester_code || "",
 
-        academic_year_id: offering?.academic_year_id ?? null,
-        academic_year_name: offering?.academic_year_name || "",
-
         custom_title: offering?.custom_title || "",
         credit_hours:
           offering?.credit_hours !== undefined &&
@@ -123,10 +122,13 @@ function normalizeCourseToForm(item) {
             ? String(offering.credit_hours)
             : "",
 
-        is_enabled: Boolean(offering?.is_enabled),
+        is_enabled:
+          offering?.is_enabled === undefined
+            ? true
+            : Boolean(offering.is_enabled),
 
         chapters,
-        chapters_summary: buildChaptersSummary(chapters),
+        chapters_count: getChaptersCount(chapters),
       };
     }),
   };
@@ -161,9 +163,7 @@ function mapDepartmentOptions(items = []) {
         item?.title ||
         `Department #${item?.value ?? item?.id}`,
       value: String(item?.value ?? item?.id ?? ""),
-      meta: item?.meta || {
-        code: item?.code || "",
-      },
+      meta: item?.meta || { code: item?.code || "" },
     }))
     .filter((item) => item.value);
 }
@@ -203,9 +203,7 @@ function mergeCurrentDepartmentOptions(baseOptions = [], offerings = []) {
       map.set(value, {
         label: offering.department_name || `Department #${value}`,
         value,
-        meta: {
-          code: "",
-        },
+        meta: { code: "" },
       });
     }
   });
@@ -229,9 +227,7 @@ function mergeCurrentSemesterOptions(baseOptions = [], offerings = []) {
       map.set(value, {
         label: offering.semester_name || `Semester #${value}`,
         value,
-        meta: {
-          code: offering.semester_code || "",
-        },
+        meta: { code: offering.semester_code || "" },
       });
     }
   });
@@ -240,63 +236,291 @@ function mergeCurrentSemesterOptions(baseOptions = [], offerings = []) {
 }
 
 function cleanOfferingsForState(offerings = []) {
-  return offerings.map((offering, index) => {
-    const chapters = Array.isArray(offering?.chapters)
-      ? offering.chapters.map((chapter, chapterIndex) => ({
-          ...chapter,
-          idx: chapterIndex + 1,
-          number: chapterIndex + 1,
-        }))
-      : [];
+  return (Array.isArray(offerings) ? offerings : []).map((offering, index) => {
+    const chapters = normalizeChapters(offering?.chapters || []);
 
     return {
       ...offering,
+      __id: offering?.__id || makeRowId("offering", offering?.id, index),
       idx: index + 1,
+      id: offering?.id ?? null,
+
+      department_id: offering?.department_id
+        ? String(offering.department_id)
+        : "",
+      department_name: offering?.department_name || "",
+
+      semester_id: offering?.semester_id ? String(offering.semester_id) : "",
+      semester_name: offering?.semester_name || "",
+      semester_code: offering?.semester_code || "",
+
+      custom_title: offering?.custom_title || "",
+      credit_hours:
+        offering?.credit_hours !== undefined && offering?.credit_hours !== null
+          ? String(offering.credit_hours)
+          : "",
+
+      is_enabled:
+        offering?.is_enabled === undefined
+          ? true
+          : Boolean(offering.is_enabled),
+
       chapters,
-      chapters_summary: buildChaptersSummary(chapters),
+      chapters_count: getChaptersCount(chapters),
     };
   });
 }
 
+function toNullableNumber(value) {
+  if (value === "" || value === null || value === undefined) return null;
+
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
 function buildUpdatePayload(changedFields) {
-  const payload = {
-    ...changedFields,
-  };
+  const payload = { ...changedFields };
 
   if (changedFields.offerings !== undefined) {
-    payload.offerings = changedFields.offerings.map((offering) => ({
-      id: offering.id || null,
+    payload.offerings = cleanOfferingsForState(changedFields.offerings).map(
+      (offering) => ({
+        ...(offering.id ? { id: Number(offering.id) } : {}),
 
-      department_id: Number(offering.department_id),
-      semester_id: Number(offering.semester_id),
+        department_id: Number(offering.department_id),
+        semester_id: Number(offering.semester_id),
+        custom_title: offering.custom_title?.trim() || null,
+        credit_hours: toNullableNumber(offering.credit_hours),
+        is_enabled:
+          offering.is_enabled === undefined
+            ? true
+            : Boolean(offering.is_enabled),
 
-      academic_year_id: offering.academic_year_id
-        ? Number(offering.academic_year_id)
-        : null,
+        chapters: normalizeChapters(offering.chapters || []).map(
+          (chapter, chapterIndex) => ({
+            ...(chapter.id ? { id: Number(chapter.id) } : {}),
 
-      custom_title: offering.custom_title || "",
-
-      credit_hours:
-        offering.credit_hours !== "" &&
-        offering.credit_hours !== null &&
-        offering.credit_hours !== undefined
-          ? Number(offering.credit_hours)
-          : null,
-
-      is_enabled: Boolean(offering.is_enabled),
-
-      chapters: (offering.chapters || []).map((chapter, chapterIndex) => ({
-        id: chapter.id || null,
-        number: chapterIndex + 1,
-        title: chapter.title || "",
-        description: chapter.description || "",
-        is_enabled: Boolean(chapter.is_enabled),
-      })),
-    }));
+            number: chapter?.number ? Number(chapter.number) : chapterIndex + 1,
+            title: chapter.title?.trim() || "",
+            description: chapter.description?.trim() || "",
+            is_enabled:
+              chapter.is_enabled === undefined
+                ? true
+                : Boolean(chapter.is_enabled),
+          }),
+        ),
+      }),
+    );
   }
 
   return payload;
 }
+
+// ---------------------------------------------------------------------------
+// Chapter columns
+// ---------------------------------------------------------------------------
+
+const CHAPTER_COLUMNS = [
+  {
+    key: "idx",
+    label: "#",
+    width: "w-10",
+    readOnly: true,
+    render: (_, __, rowIndex) => rowIndex + 1,
+  },
+  {
+    key: "title",
+    label: "Title",
+    type: "text",
+    required: true,
+    editableInTable: true,
+    editableInModal: true,
+    placeholder: "e.g., Python Basics",
+  },
+  {
+    key: "description",
+    label: "Description",
+    type: "text",
+    editableInTable: true,
+    editableInModal: true,
+    placeholder: "Short description (optional)",
+  },
+  {
+    key: "is_enabled",
+    label: "Active",
+    width: "w-20",
+    type: "checkbox",
+    checkboxLabel: "Enabled",
+    editableInTable: true,
+    editableInModal: true,
+    render: (value) => (
+      <span
+        className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ${
+          value
+            ? "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
+            : "bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-gray-500"
+        }`}
+      >
+        {value ? "Active" : "Inactive"}
+      </span>
+    ),
+  },
+];
+
+// ---------------------------------------------------------------------------
+// ChapterManagerModal
+// ---------------------------------------------------------------------------
+
+function ChapterManagerModal({ open, offering, chapters, onClose, onSave }) {
+  const [localChapters, setLocalChapters] = useState([]);
+
+  useEffect(() => {
+    if (!open) return;
+    setLocalChapters(normalizeChapters(chapters || []));
+  }, [open, chapters]);
+
+  if (!open) return null;
+
+  const handleSave = () => {
+    const cleaned = normalizeChapters(localChapters);
+    const hasEmptyTitle = cleaned.some((ch) => !ch.title?.trim());
+
+    if (hasEmptyTitle) {
+      alert("Every chapter must have a title.");
+      return;
+    }
+
+    onSave(cleaned);
+  };
+
+  const offeringLabel =
+    offering?.custom_title ||
+    [offering?.department_name, offering?.semester_name]
+      .filter(Boolean)
+      .join(" · ") ||
+    "Offering";
+
+  const count = localChapters.length;
+
+  return (
+    <>
+      <div
+        className="fixed inset-0 z-[200] bg-black/30 backdrop-blur-[1px]"
+        onClick={onClose}
+      />
+
+      <div className="fixed inset-0 z-[201] flex items-center justify-center p-4 pointer-events-none">
+        <div
+          className={[
+            "pointer-events-auto w-full bg-white dark:bg-slate-900",
+            "border border-gray-200 dark:border-slate-700",
+            "rounded-xl shadow-lg",
+            "flex flex-col",
+            "max-w-3xl",
+            "max-h-[85vh]",
+          ].join(" ")}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-start justify-between px-5 pt-4 pb-3 border-b border-gray-100 dark:border-slate-800 flex-shrink-0">
+            <div className="min-w-0 pr-4">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-[15px] font-semibold text-gray-900 dark:text-gray-100 leading-tight">
+                  Manage Chapters
+                </h2>
+
+                <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-400">
+                  {count === 1 ? "1 chapter" : `${count} chapters`}
+                </span>
+              </div>
+
+              <p className="mt-0.5 text-[12px] text-gray-500 dark:text-gray-400 truncate">
+                {offeringLabel}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-shrink-0 p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100 dark:hover:bg-slate-800 dark:hover:text-gray-200 transition-colors"
+              aria-label="Close"
+            >
+              <svg
+                className="w-4 h-4"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth="2"
+                  d="M6 18L18 6M6 6l12 12"
+                />
+              </svg>
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0">
+            <FrappeChildTable
+              value={localChapters}
+              onChange={(next) => setLocalChapters(normalizeChapters(next))}
+              columns={CHAPTER_COLUMNS}
+              editable
+              allowAddRow
+              allowDeleteSelected
+              allowRowSelection
+              showRowSelection
+              showAddRowButton
+              showDeleteSelectedButton
+              showMoreAction={false}
+              useModal={false}
+              showFooter
+              addRowLabel="Add Chapter"
+              emptyMessage="No chapters yet. Click 'Add Chapter' to get started."
+              newRowDefaults={{
+                id: null,
+                title: "",
+                description: "",
+                is_enabled: true,
+              }}
+            />
+          </div>
+
+          <div className="flex items-center justify-between gap-3 px-5 py-3 border-t border-gray-100 dark:border-slate-800 flex-shrink-0 bg-gray-50/60 dark:bg-slate-900 rounded-b-xl">
+            <p className="text-[11px] text-gray-400 dark:text-gray-500">
+              Changes apply when you click{" "}
+              <span className="font-medium text-gray-600 dark:text-gray-300">
+                Apply
+              </span>
+              . They are saved with the course form.
+            </p>
+
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-1.5 rounded-md text-[13px] font-medium text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-slate-700 hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSave}
+                className="px-3.5 py-1.5 rounded-md text-[13px] font-medium bg-gray-900 dark:bg-white text-white dark:text-gray-900 hover:bg-gray-700 dark:hover:bg-gray-100 transition-colors"
+              >
+                Apply
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// CourseDetailMain
+// ---------------------------------------------------------------------------
 
 const CourseDetailMain = ({ id }) => {
   const router = useRouter();
@@ -305,6 +529,10 @@ const CourseDetailMain = ({ id }) => {
   const [values, setValues] = useState(null);
   const [initialValues, setInitialValues] = useState(null);
   const [errors, setErrors] = useState({});
+  const [chapterModal, setChapterModal] = useState({
+    open: false,
+    offeringIndex: null,
+  });
 
   const hasInitializedRef = useRef(false);
 
@@ -312,18 +540,13 @@ const CourseDetailMain = ({ id }) => {
   const courseData = useMemo(() => extractDetailRecord(response), [response]);
 
   const { data: departmentsResponse, isLoading: isLoadingDepts } =
-    useDepartmentsDropdown({
-      limit: 20,
-      offset: 0,
-      active_only: true,
-    });
+    useDepartmentsDropdown({ limit: 20, offset: 0, active_only: true });
 
   const { data: semestersResponse, isLoading: isLoadingSems } =
-    useSemestersDropdown({
-      limit: 20,
-      offset: 0,
-      active_only: true,
-    });
+    useSemestersDropdown({ limit: 20, offset: 0, active_only: true });
+
+  const updateMutation = useUpdateCourse();
+  const deleteMutation = useDeleteCourse();
 
   const departmentRows = useMemo(() => {
     const rows = extractDropdownRows(departmentsResponse);
@@ -335,27 +558,30 @@ const CourseDetailMain = ({ id }) => {
     return Array.isArray(rows) ? rows : [];
   }, [semestersResponse]);
 
-  const baseDepartmentOptions = useMemo(() => {
-    return mapDepartmentOptions(departmentRows);
-  }, [departmentRows]);
+  const baseDepartmentOptions = useMemo(
+    () => mapDepartmentOptions(departmentRows),
+    [departmentRows],
+  );
 
-  const baseSemesterOptions = useMemo(() => {
-    return mapSemesterOptions(semesterRows);
-  }, [semesterRows]);
+  const baseSemesterOptions = useMemo(
+    () => mapSemesterOptions(semesterRows),
+    [semesterRows],
+  );
 
-  const departmentOptions = useMemo(() => {
-    return mergeCurrentDepartmentOptions(
-      baseDepartmentOptions,
-      values?.offerings || [],
-    );
-  }, [baseDepartmentOptions, values?.offerings]);
+  const departmentOptions = useMemo(
+    () =>
+      mergeCurrentDepartmentOptions(
+        baseDepartmentOptions,
+        values?.offerings || [],
+      ),
+    [baseDepartmentOptions, values?.offerings],
+  );
 
-  const semesterOptions = useMemo(() => {
-    return mergeCurrentSemesterOptions(
-      baseSemesterOptions,
-      values?.offerings || [],
-    );
-  }, [baseSemesterOptions, values?.offerings]);
+  const semesterOptions = useMemo(
+    () =>
+      mergeCurrentSemesterOptions(baseSemesterOptions, values?.offerings || []),
+    [baseSemesterOptions, values?.offerings],
+  );
 
   useEffect(() => {
     if (!courseData) return;
@@ -383,8 +609,10 @@ const CourseDetailMain = ({ id }) => {
 
   const isDirty = Object.keys(changedFields).length > 0;
 
-  const updateMutation = useUpdateCourse();
-  const deleteMutation = useDeleteCourse();
+  const activeOffering =
+    chapterModal.open && chapterModal.offeringIndex !== null
+      ? values?.offerings?.[chapterModal.offeringIndex]
+      : null;
 
   const handleChange = (field, value) => {
     let nextValue = value;
@@ -406,6 +634,46 @@ const CourseDetailMain = ({ id }) => {
     }
   };
 
+  const openChapterModal = (offeringIndex) => {
+    setChapterModal({
+      open: true,
+      offeringIndex,
+    });
+  };
+
+  const closeChapterModal = () => {
+    setChapterModal({
+      open: false,
+      offeringIndex: null,
+    });
+  };
+
+  const applyChaptersToOffering = (chapters) => {
+    if (chapterModal.offeringIndex === null) return;
+
+    setValues((prev) => {
+      const offerings = [...(prev?.offerings || [])];
+
+      offerings[chapterModal.offeringIndex] = {
+        ...offerings[chapterModal.offeringIndex],
+        chapters: normalizeChapters(chapters),
+        chapters_count: getChaptersCount(chapters),
+      };
+
+      return {
+        ...prev,
+        offerings: cleanOfferingsForState(offerings),
+      };
+    });
+
+    setErrors((prev) => ({
+      ...prev,
+      offerings: null,
+    }));
+
+    closeChapterModal();
+  };
+
   const handleSave = (e) => {
     e?.preventDefault?.();
 
@@ -413,7 +681,12 @@ const CourseDetailMain = ({ id }) => {
 
     setErrors({});
 
-    const result = courseSchema.safeParse(values);
+    const cleanedValues = {
+      ...values,
+      offerings: cleanOfferingsForState(values.offerings || []),
+    };
+
+    const result = courseSchema.safeParse(cleanedValues);
 
     if (!result.success) {
       const fieldErrors = {};
@@ -439,19 +712,13 @@ const CourseDetailMain = ({ id }) => {
     const payload = buildUpdatePayload(changedFields);
 
     updateMutation.mutate(
-      { id, payload },
       {
-        onSuccess: (res) => {
+        id,
+        payload,
+      },
+      {
+        onSuccess: () => {
           notify.success("Course updated successfully");
-
-          const updatedRecord = extractDetailRecord(res);
-
-          if (updatedRecord) {
-            const normalized = normalizeCourseToForm(updatedRecord);
-            setValues(normalized);
-            setInitialValues(normalized);
-            return;
-          }
 
           const nextValues = {
             ...values,
@@ -468,6 +735,26 @@ const CourseDetailMain = ({ id }) => {
         },
         onError: (err) => {
           notify.error(err?.message || "Failed to update course");
+        },
+      },
+    );
+  };
+
+  const handleDelete = () => {
+    if (!confirm("Are you sure you want to delete this course?")) return;
+
+    deleteMutation.mutate(
+      {
+        id,
+        permanent: false,
+      },
+      {
+        onSuccess: () => {
+          notify.success("Document deleted");
+          router.push("/admin/dashboards/admin-academic/courses");
+        },
+        onError: (err) => {
+          notify.error(err?.message || "Failed to delete course");
         },
       },
     );
@@ -509,8 +796,8 @@ const CourseDetailMain = ({ id }) => {
           allowAddRow: true,
           allowDeleteSelected: true,
           allowRowSelection: true,
-          showMoreAction: true,
-          useModal: true,
+          showMoreAction: false,
+          useModal: false,
           addRowLabel: "Add Offering",
           emptyMessage: "No offerings found.",
           titleField: "custom_title",
@@ -522,27 +809,25 @@ const CourseDetailMain = ({ id }) => {
             semester_id: "",
             semester_name: "",
             semester_code: "",
-            academic_year_id: null,
-            academic_year_name: "",
             custom_title: "",
             credit_hours: "",
             is_enabled: true,
             chapters: [],
-            chapters_summary: "No chapters",
+            chapters_count: 0,
           },
 
           columns: [
             {
               key: "idx",
               label: "No.",
-              width: "w-16",
+              width: "w-12",
               render: (_, __, rowIndex) => rowIndex + 1,
               readOnly: true,
             },
             {
               key: "department_id",
               label: "Department",
-              width: "min-w-[220px]",
+              width: "min-w-[200px]",
               type: "async-dropdown",
               required: true,
               placeholder: "Select department",
@@ -559,7 +844,7 @@ const CourseDetailMain = ({ id }) => {
             {
               key: "semester_id",
               label: "Semester",
-              width: "min-w-[180px]",
+              width: "min-w-[160px]",
               type: "async-dropdown",
               required: true,
               placeholder: "Select semester",
@@ -573,34 +858,75 @@ const CourseDetailMain = ({ id }) => {
               },
             },
             {
-              key: "academic_year_name",
-              label: "Academic Year",
-              width: "min-w-[160px]",
+              key: "custom_title",
+              label: "Custom Title",
+              width: "min-w-[220px]",
               type: "text",
-              readOnly: true,
-              editableInTable: false,
-              editableInModal: false,
-              placeholder: "Auto",
-              render: (value) => value || "-",
+              placeholder: "Optional title",
+              editableInTable: true,
+              editableInModal: true,
             },
-
             {
-              key: "chapters_summary",
+              key: "credit_hours",
+              label: "Credits",
+              width: "w-28",
+              type: "number",
+              placeholder: "3",
+              editableInTable: true,
+              editableInModal: true,
+            },
+            {
+              key: "chapters_count",
               label: "Chapters",
-              width: "min-w-[320px]",
-              type: "text",
+              width: "w-32",
               readOnly: true,
               editableInTable: false,
               editableInModal: false,
-              render: (_, row) => buildChaptersSummary(row?.chapters || []),
+              render: (_, row, rowIndex) => {
+                const count = getChaptersCount(row?.chapters || []);
+
+                return (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      openChapterModal(rowIndex);
+                    }}
+                    className={[
+                      "inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[12px] font-medium",
+                      "border transition-colors",
+                      count > 0
+                        ? "border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 dark:border-blue-800 dark:bg-blue-900/20 dark:text-blue-400 dark:hover:bg-blue-900/40"
+                        : "border-gray-200 bg-gray-50 text-gray-600 hover:bg-gray-100 dark:border-slate-700 dark:bg-slate-800 dark:text-gray-400 dark:hover:bg-slate-700",
+                    ].join(" ")}
+                  >
+                    {count === 0
+                      ? "No chapters"
+                      : count === 1
+                        ? "1 chapter"
+                        : `${count} chapters`}
+                  </button>
+                );
+              },
             },
             {
               key: "is_enabled",
               label: "Active",
-              width: "w-28",
+              width: "w-24",
               type: "checkbox",
               checkboxLabel: "Enabled",
-              render: (value) => (value ? "Active" : "Inactive"),
+              render: (value) => (
+                <span
+                  className={`inline-flex items-center px-2 py-0.5 rounded text-[11px] font-medium ${
+                    value
+                      ? "bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-400"
+                      : "bg-gray-100 text-gray-500 dark:bg-slate-800 dark:text-gray-500"
+                  }`}
+                >
+                  {value ? "Active" : "Inactive"}
+                </span>
+              ),
               editableInTable: true,
               editableInModal: true,
             },
@@ -614,28 +940,19 @@ const CourseDetailMain = ({ id }) => {
   const menuOptions = useMemo(
     () => [
       {
-        label: "Delete",
-        action: () => {
-          if (confirm("Are you sure you want to delete this course?")) {
-            deleteMutation.mutate(id, {
-              onSuccess: () => {
-                notify.success("Document deleted");
-                router.push("/admin/dashboards/admin-academic/courses");
-              },
-              onError: (err) => {
-                notify.error(err?.message || "Failed to delete course");
-              },
-            });
-          }
-        },
+        label: deleteMutation.isPending ? "Deleting..." : "Delete",
+        action: handleDelete,
+        disabled: deleteMutation.isPending,
       },
     ],
-    [deleteMutation, id, notify, router],
+    [deleteMutation.isPending],
   );
 
-  const formTitle = courseData?.title
-    ? `${id} - ${courseData.title}`
-    : "Loading...";
+  const formTitle = values?.title
+    ? `${id} - ${values.title}`
+    : courseData?.title
+      ? `${id} - ${courseData.title}`
+      : "Loading...";
 
   const formStatus = updateMutation.isPending
     ? "Saving..."
@@ -669,6 +986,14 @@ const CourseDetailMain = ({ id }) => {
         onSave={handleSave}
         isSaving={updateMutation.isPending}
         menuOptions={menuOptions}
+      />
+
+      <ChapterManagerModal
+        open={chapterModal.open}
+        offering={activeOffering}
+        chapters={activeOffering?.chapters || []}
+        onClose={closeChapterModal}
+        onSave={applyChaptersToOffering}
       />
     </div>
   );
