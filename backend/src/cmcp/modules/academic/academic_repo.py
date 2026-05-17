@@ -109,7 +109,14 @@ class CourseListRow:
     code: Optional[str]
     description: Optional[str]
     is_enabled: bool
-    offerings_count: int  # New: count of course offerings
+    offerings_count: int
+
+    department_id: Optional[int] = None
+    department_name: Optional[str] = None
+
+    semester_id: Optional[int] = None
+    semester_number: Optional[int] = None
+    semester_raw_name: Optional[str] = None
 
 
 @dataclass
@@ -858,16 +865,61 @@ class AcademicRepo:
     # =========================================================
     # COURSE METHODS (Base Course Definition)
     # =========================================================
-    def _course_base_stmt(self, *, company_id: int, filters: Dict[str, Any], is_enabled: Optional[bool]):
+    def _course_base_stmt(
+            self,
+            *,
+            company_id: int,
+            filters: Dict[str, Any],
+            is_enabled: Optional[bool],
+    ):
         stmt = (
             select(
-                Course.id, Course.title, Course.code, Course.description, Course.is_enabled,
-                func.count(CourseOffering.id).label("offerings_count"),
+                Course.id,
+                Course.title,
+                Course.code,
+                Course.description,
+                Course.is_enabled,
+
+                func.count(func.distinct(CourseOffering.id)).label("offerings_count"),
+
+                func.min(Department.id).label("department_id"),
+                func.min(Department.name).label("department_name"),
+
+                func.min(Semester.id).label("semester_id"),
+                func.min(Semester.number).label("semester_number"),
+                func.min(Semester.name).label("semester_raw_name"),
             )
             .select_from(Course)
-            .outerjoin(CourseOffering, and_(CourseOffering.course_id == Course.id, CourseOffering.company_id == int(company_id)))
+            .outerjoin(
+                CourseOffering,
+                and_(
+                    CourseOffering.course_id == Course.id,
+                    CourseOffering.company_id == int(company_id),
+                    CourseOffering.is_enabled.is_(True),
+                ),
+            )
+            .outerjoin(
+                Department,
+                and_(
+                    Department.id == CourseOffering.department_id,
+                    Department.company_id == int(company_id),
+                ),
+            )
+            .outerjoin(
+                Semester,
+                and_(
+                    Semester.id == CourseOffering.semester_id,
+                    Semester.company_id == int(company_id),
+                ),
+            )
             .where(Course.company_id == int(company_id))
-            .group_by(Course.id, Course.title, Course.code, Course.description, Course.is_enabled)
+            .group_by(
+                Course.id,
+                Course.title,
+                Course.code,
+                Course.description,
+                Course.is_enabled,
+            )
         )
 
         if is_enabled is True:
@@ -881,29 +933,52 @@ class AcademicRepo:
             stmt = stmt.where(
                 func.lower(func.coalesce(Course.title, "")).like(like)
                 | func.lower(func.coalesce(Course.code, "")).like(like)
+                | func.lower(func.coalesce(Department.name, "")).like(like)
+                | func.lower(func.coalesce(Semester.name, "")).like(like)
             )
+
+        department_id = filters.get("department_id")
+        if department_id:
+            stmt = stmt.where(CourseOffering.department_id == int(department_id))
+
+        semester_id = filters.get("semester_id")
+        if semester_id:
+            stmt = stmt.where(CourseOffering.semester_id == int(semester_id))
+
         return stmt
 
     def list_courses_cursor(
-        self, *, company_id: int, limit: int, last_id: Optional[int],
-        filters: Dict[str, Any], is_enabled: Optional[bool]
+            self,
+            *,
+            company_id: int,
+            limit: int,
+            last_id: Optional[int],
+            filters: Dict[str, Any],
+            is_enabled: Optional[bool],
     ) -> Tuple[List[CourseListRow], int, bool]:
-        base = self._course_base_stmt(company_id=company_id, filters=filters, is_enabled=is_enabled)
+        base = self._course_base_stmt(
+            company_id=company_id,
+            filters=filters,
+            is_enabled=is_enabled,
+        )
+
         if last_id:
             base = base.where(Course.id < int(last_id))
+
         base = base.order_by(Course.id.desc()).limit(int(limit) + 1)
 
         rows = list(self.s.execute(base).all())
         has_more = len(rows) > limit
         rows = rows[:limit]
 
-        count_stmt = select(func.count()).select_from(Course).where(Course.company_id == int(company_id))
-        if is_enabled is True:
-            count_stmt = count_stmt.where(Course.is_enabled.is_(True))
-        elif is_enabled is False:
-            count_stmt = count_stmt.where(Course.is_enabled.is_(False))
-
+        count_base = self._course_base_stmt(
+            company_id=company_id,
+            filters=filters,
+            is_enabled=is_enabled,
+        )
+        count_stmt = select(func.count()).select_from(count_base.order_by(None).subquery())
         total = int(self.s.scalar(count_stmt) or 0)
+
         shaped = [CourseListRow(**r._asdict()) for r in rows]
         return shaped, total, has_more
 
@@ -923,9 +998,33 @@ class AcademicRepo:
         return shaped, total, pages
 
     def shape_course_list_row(self, r: CourseListRow) -> Dict[str, Any]:
+        semester_id = int(r.semester_id) if getattr(r, "semester_id", None) is not None else None
+        semester_number = getattr(r, "semester_number", None)
+        semester_raw_name = getattr(r, "semester_raw_name", None)
+
         return {
-            "id": int(r.id), "title": r.title, "code": r.code, "description": r.description,
-            "is_enabled": bool(r.is_enabled), "offerings_count": int(r.offerings_count or 0),
+            "id": int(r.id),
+            "title": r.title,
+            "code": r.code,
+            "description": r.description,
+            "is_enabled": bool(r.is_enabled),
+
+            "offerings_count": int(r.offerings_count or 0),
+
+            "department_id": int(r.department_id) if getattr(r, "department_id", None) is not None else None,
+            "department_name": r.department_name,
+
+            "semester_id": semester_id,
+            "semester_name": (
+                self._semester_name_only(semester_number, semester_raw_name)
+                if semester_id is not None
+                else None
+            ),
+            "semester_code": (
+                f"S{int(semester_number)}"
+                if semester_number is not None
+                else None
+            ),
         }
 
     def get_course_detail(self, *, company_id: int, course_id: int) -> Optional[CourseDetailRow]:

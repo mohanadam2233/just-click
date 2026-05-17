@@ -594,16 +594,30 @@ def list_courses(company_id: int):
 
         filters: Dict[str, Any] = {
             "search": (q.get("search") or "").strip() or None,
+            "department_id": q.get("department_id", type=int),
+            "semester_id": q.get("semester_id", type=int),
         }
 
+        # Default behavior:
+        # - no is_enabled param => show active only
+        # - is_enabled=true => active only
+        # - is_enabled=false => inactive only
+        # - is_enabled=all => active + inactive
         is_enabled_raw = q.get("is_enabled")
-        is_enabled: Optional[bool] = None
+
+        is_enabled: Optional[bool] = True
+
         if is_enabled_raw is not None:
             s = str(is_enabled_raw).strip().lower()
-            if s in {"1", "true", "yes"}:
+
+            if s in {"1", "true", "yes", "active"}:
                 is_enabled = True
-            elif s in {"0", "false", "no"}:
+            elif s in {"0", "false", "no", "inactive"}:
                 is_enabled = False
+            elif s in {"all", "*", "any"}:
+                is_enabled = None
+            else:
+                is_enabled = True
 
         if mode == "page":
             page = q.get("page", type=int) or 1
