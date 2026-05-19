@@ -4,12 +4,14 @@ import json
 from typing import Any, Dict, List, Optional
 
 from flask import Blueprint, request
+from pydantic import field_validator
 
 from cmcp.common.api_response import api_success, api_error
 from cmcp.common.cache import bump_detail, bump_list
 from cmcp.config.database import db
 from cmcp.core.exceptions import BusinessValidationError, NotFoundError
-from cmcp.modules.materials.schemas import MaterialCreateIn, MaterialUpdateIn, MaterialFavoriteIn
+from cmcp.modules.materials.constants import MAX_MATERIALS_PER_REQUEST
+from cmcp.modules.materials.schemas import MaterialCreateIn, MaterialUpdateIn, MaterialFavoriteIn, _BaseIn
 from cmcp.modules.materials.service import MaterialsService
 from cmcp.security.rbac_guards import require_company_and_permission
 
@@ -34,16 +36,69 @@ def _handle_error(e: Exception):
 def _external_base() -> str:
     return (request.host_url or "").rstrip("/")
 
-@bp.post("/create/material")
+
+class MaterialDeleteIn(_BaseIn):
+    """Delete a material."""
+    permanent: bool = False
+
+
+class MaterialBulkDeleteIn(_BaseIn):
+    """Bulk delete materials."""
+    material_ids: List[int]
+    permanent: bool = False
+
+    @field_validator("material_ids")
+    @classmethod
+    def validate_ids(cls, v: List[int]) -> List[int]:
+        if not v:
+            raise ValueError("material_ids is required")
+        if len(v) > MAX_MATERIALS_PER_REQUEST:
+            raise ValueError(f"Cannot delete more than {MAX_MATERIALS_PER_REQUEST} materials at once.")
+        if len(set(v)) != len(v):
+            raise ValueError("Duplicate material IDs are not allowed.")
+        return v
+
+def _json_body() -> Dict[str, Any]:
+    payload = request.get_json(silent=True) or {}
+    if not isinstance(payload, dict):
+        raise BusinessValidationError("Request body must be a JSON object.")
+    return payload
+
+
+class MaterialBulkUpdateIn(_BaseIn):
+    """Frappe-style full-state sync for materials in an offering."""
+    offering_id: int
+    materials: List[Dict[str, Any]]
+    missing_action: str = "disable"
+    permanent: bool = False
+
+    @field_validator("materials")
+    @classmethod
+    def validate_materials_length(cls, v: List) -> List:
+        if len(v) > MAX_MATERIALS_PER_REQUEST:
+            raise ValueError(f"Cannot process more than {MAX_MATERIALS_PER_REQUEST} materials at once.")
+        return v
+
+    @field_validator("missing_action")
+    @classmethod
+    def validate_missing_action(cls, v: str) -> str:
+        if v not in {"disable", "delete", "keep"}:
+            raise ValueError("missing_action must be 'disable', 'delete', or 'keep'")
+        return v
+
+@bp.post("/create")
 @require_company_and_permission(doctype="Material", action="CREATE")
 def create_material(company_id: int):
     """
-    Accepts:
-      - application/json
-      - multipart/form-data (payload=<json>, file=<file>)
+    Create a single material.
+
+    Supports:
+    - JSON: application/json
+    - Multipart: multipart/form-data (payload + file)
     """
     try:
         file_storage = None
+
         if request.content_type and "multipart/form-data" in request.content_type:
             payload_raw = request.form.get("payload")
             if not payload_raw:
@@ -60,6 +115,7 @@ def create_material(company_id: int):
             external_base=_external_base(),
         )
         _commit_ok(ok)
+
         # ✅ invalidate AFTER commit
         if ok:
             bump_list("materials:list", company_id)
@@ -78,12 +134,13 @@ def create_material(company_id: int):
 @require_company_and_permission(doctype="Material", action="UPDATE")
 def update_material(company_id: int, material_id: int):
     """
-    Accepts:
-      - JSON
-      - multipart/form-data (payload=<json>, file=<file>)
+    Update a single material.
+
+    Cannot change: course_offering_id, chapter_id, material_type.
     """
     try:
         file_storage = None
+
         if request.content_type and "multipart/form-data" in request.content_type:
             payload_raw = request.form.get("payload")
             if not payload_raw:
@@ -111,39 +168,86 @@ def update_material(company_id: int, material_id: int):
     except Exception as e:
         return _handle_error(e)
 
+
+@bp.put("/bulk-update")
+@require_company_and_permission(doctype="Material", action="UPDATE")
+def bulk_update_materials(company_id: int):
+    """
+    Frappe-style full-state sync for materials in an offering.
+
+    This is the PREFERRED way to manage all materials for a specific offering.
+    Send the COMPLETE desired state of materials.
+
+    Example:
+    {
+        "offering_id": 205,
+        "materials": [
+            {"id": 501, "title": "Updated Syllabus"},
+            {"title": "New Material", "material_type": "pdf", "page_count": 10}
+        ],
+        "missing_action": "disable"
+    }
+    """
+    try:
+        payload = MaterialBulkUpdateIn.model_validate(_json_body())
+
+        ok, msg, out = svc.bulk_update_materials(
+            company_id=company_id,
+            offering_id=payload.offering_id,
+            materials_data=payload.materials,
+            missing_action=payload.missing_action,
+            permanent=payload.permanent,
+        )
+        _commit_ok(ok)
+
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
+    except Exception as e:
+        return _handle_error(e)
+
+
 @bp.delete("/<int:material_id>/delete")
 @require_company_and_permission(doctype="Material", action="DELETE")
 def delete_material(company_id: int, material_id: int):
+    """
+    Delete a material.
+
+    Default: soft delete (is_enabled=false)
+    Hard delete: send {"permanent": true} (blocked if has interactions)
+    """
     try:
-        ok, msg, out = svc.delete_material(company_id=company_id, material_id=material_id)
+        payload = MaterialDeleteIn.model_validate(_json_body())
+
+        ok, msg, out = svc.delete_material(
+            company_id=company_id,
+            material_id=material_id,
+            permanent=payload.permanent,
+        )
         _commit_ok(ok)
-        if ok:
-            bump_detail("materials:detail", company_id, int(material_id))
-            bump_list("materials:list", company_id)
 
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
     except Exception as e:
         return _handle_error(e)
+
 
 @bp.post("/bulk-delete")
 @require_company_and_permission(doctype="Material", action="DELETE")
 def bulk_delete_materials(company_id: int):
     """
-    Soft delete only.
-    Body: { "ids": [1,2,3] }
+    Bulk delete materials.
+
+    Body: {"material_ids": [1,2,3], "permanent": false}
     """
     try:
-        body = request.get_json(silent=True) or {}
-        ids = body.get("ids") or []
-        ids = [int(x) for x in ids if x]
+        payload = MaterialBulkDeleteIn.model_validate(_json_body())
 
-        ok, msg, out = svc.bulk_delete_materials(company_id=company_id, ids=ids)
+        ok, msg, out = svc.bulk_delete_materials(
+            company_id=company_id,
+            material_ids=payload.material_ids,
+            permanent=payload.permanent,
+        )
         _commit_ok(ok)
-        if ok:
-            bump_list("materials:list", company_id)
-            # optional: bump each detail
-            for mid in ids[:1000]:
-                bump_detail("materials:detail", company_id, int(mid))
 
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
 

@@ -14,6 +14,14 @@ ERR_PDF_REQUIRE_PAGE_COUNT = "PDF material must specify page_count."
 ERR_DOC_REQUIRE_PAGE_COUNT = "Document material must specify page_count."
 ERR_LINK_INVALID_URL = "Invalid URL provided."
 
+
+ERR_CHAPTER_NOT_IN_OFFERING = "Chapter does not belong to this offering."
+
+
+ERR_CANNOT_CHANGE_OFFERING = "Cannot change course_offering_id after material creation."
+
+
+
 ERR_MATERIAL_FILE_SIZE_INVALID = "Invalid file size."
 ERR_FILE_SIZE_TOO_LARGE = "File size exceeds maximum limit of 100MB."
 ERR_FILE_SIZE_NEGATIVE = "File size cannot be negative."
@@ -33,8 +41,20 @@ ERR_MATERIAL_HAS_INTERACTIONS = "Cannot delete material with user interactions. 
 ERR_MATERIAL_MISMATCH_TYPE_META = "Metadata mismatch: Cannot set page count for video/slides or slide count for documents."
 ERR_FILE_REQUIRED_FOR_TYPE = "File upload is required for this material type."
 ERR_FILE_TYPE_NOT_ALLOWED = "Uploaded file type not allowed for this material type."
+RR_MATERIAL_TYPE_REQUIRED = "Material type is required."
+ERR_MATERIAL_TYPE_INVALID = "Invalid material type. Allowed: slides, pdf, doc, video, link, other."
+ERR_LEARNING_OBJECTIVES_INVALID = "learning_objectives must be a list of strings."
 
+ERR_TOO_MANY_MATERIALS = "Cannot process more than 50 materials in one request."
+ERR_DUPLICATE_IDS = "Duplicate material IDs are not allowed."
+ERR_INVALID_MISSING_ACTION = "missing_action must be 'disable', 'delete', or 'keep'."
+ERR_PERMANENT_REQUIRED = "Hard delete requires permanent=true."
+# =========================================================
+# CONFIGURATION
+# =========================================================
 MAX_FILE_SIZE_MB = 100.0
+MAX_MATERIALS_PER_REQUEST = 50
+MAX_TITLE_LENGTH = 200
 
 # ✅ per-material-type allowed extensions
 ALLOWED_EXTENSIONS_BY_TYPE = {
