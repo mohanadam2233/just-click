@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import os
 from sqlite3 import IntegrityError
 from typing import Any, Dict, Optional, Tuple, List, Set
@@ -50,6 +51,8 @@ from .constants import (
 )
 
 from cmcp.common.cache import cached_list, cached_detail
+
+log = logging.getLogger(__name__)
 
 
 def _calc_size_mb(b: bytes) -> float:
@@ -867,21 +870,100 @@ class MaterialsService:
     # LIST (PAGE)
     # =========================================================
 
-    def list_materials_page(
-            self,
-            *,
-            company_id: int,
-            page: int,
-            per_page: int,
-            filters: Dict[str, Any],
-            is_enabled: Optional[bool],
-            external_base: str,
+    # -------------------------------------------------------------------------
+    # STUDENT LIST (Cursor)
+    # -------------------------------------------------------------------------
+
+    def list_materials_cursor(
+        self,
+        *,
+        company_id: int,
+        limit: int,
+        cursor: Optional[str],
+        filters: Dict[str, Any],
+        is_enabled: Optional[bool],
+        external_base: str,
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        allowed = {10, 20, 50, 500}
+        limit = max(1, min(int(limit or 20), 100))
+        cur = _decode_cursor(cursor)
+
+        def _safe_int(val):
+            try:
+                return int(val) if val is not None else None
+            except Exception:
+                return None
+
+        last_id = _safe_int(cur.get("last_id"))
+        last_priority = _safe_int(cur.get("last_priority"))
+        last_semester_number = _safe_int(cur.get("last_semester_number"))
+
+        uid = getattr(getattr(g, "auth", None), "user_id", None)
+
+        params = {
+            "mode": "cursor",
+            "limit": limit,
+            "last_id": last_id,
+            "last_priority": last_priority,
+            "last_semester_number": last_semester_number,
+            "filters": filters,
+            "is_enabled": is_enabled,
+            "external_base": external_base,
+            "user_id": int(uid) if uid is not None else None,
+        }
+
+        def builder():
+            rows, total, has_more, next_cursor_payload = self.repo.list_materials_cursor(
+                company_id=company_id,
+                limit=limit,
+                last_id=last_id,
+                last_priority=last_priority,
+                last_semester_number=last_semester_number,
+                filters=filters,
+                is_enabled=is_enabled,
+            )
+            data = [
+                self.repo.shape_material_list_row(r, external_base=external_base)
+                for r in rows
+            ]
+            return {
+                "data": data,
+                "pagination": {
+                    "limit": limit,
+                    "next_cursor": _encode_cursor(next_cursor_payload),
+                    "has_more": bool(has_more),
+                },
+                "meta": {"total_count": int(total)},
+            }
+
+        out = cached_list(
+            entity="materials:list",
+            company_id=company_id,
+            params=params,
+            scope="default",
+            ttl=20,
+            builder=builder,
+        )
+        return True, "OK", out
+
+    # -------------------------------------------------------------------------
+    # STUDENT LIST (Page)
+    # -------------------------------------------------------------------------
+
+    def list_materials_page(
+        self,
+        *,
+        company_id: int,
+        page: int,
+        per_page: int,
+        filters: Dict[str, Any],
+        is_enabled: Optional[bool],
+        external_base: str,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        allowed = {10, 20, 50, 100}
         per_page = per_page if int(per_page or 20) in allowed else 20
         page = max(int(page or 1), 1)
 
-        user_id = getattr(getattr(g, "auth", None), "user_id", None)
+        uid = getattr(getattr(g, "auth", None), "user_id", None)
 
         params = {
             "mode": "page",
@@ -890,27 +972,28 @@ class MaterialsService:
             "filters": filters,
             "is_enabled": is_enabled,
             "external_base": external_base,
-            "user_id": int(user_id) if user_id is not None else None,
+            "user_id": int(uid) if uid is not None else None,
         }
 
         def builder():
-            rows, total_count, pages = self.repo.list_materials_page(
+            rows, total, pages = self.repo.list_materials_page(
                 company_id=company_id,
                 page=page,
                 per_page=per_page,
                 filters=filters,
                 is_enabled=is_enabled,
             )
-
-            data = [self.repo.shape_material_list_row(r, external_base=external_base) for r in rows]
-
+            data = [
+                self.repo.shape_material_list_row(r, external_base=external_base)
+                for r in rows
+            ]
             return {
                 "data": data,
                 "pagination": {
                     "page": page,
-                    "per_page": per_page,
-                    "pages": int(pages),
-                    "total_count": int(total_count),
+                    "limit": per_page,
+                    "total": int(total),
+                    "has_more": page < pages,
                 },
             }
 
@@ -922,29 +1005,28 @@ class MaterialsService:
             ttl=20,
             builder=builder,
         )
-
         return True, "OK", out
 
-    # =========================================================
-    # DETAIL
-    # =========================================================
+    # -------------------------------------------------------------------------
+    # STUDENT DETAIL
+    # -------------------------------------------------------------------------
 
     def get_material_detail(
-            self,
-            *,
-            company_id: int,
-            material_id: int,
-            external_base: str,
+        self,
+        *,
+        company_id: int,
+        material_id: int,
+        external_base: str,
     ) -> Tuple[bool, str, Dict[str, Any]]:
 
         def builder():
-            row = self.repo.get_material_detail(company_id=company_id, material_id=material_id)
+            row = self.repo.get_material_detail(
+                company_id=company_id, material_id=material_id
+            )
             if not row:
                 return None
             return self.repo.shape_material_detail_row(
-                row,
-                external_base=external_base,
-                company_id=company_id,
+                row, external_base=external_base, company_id=company_id
             )
 
         data = cached_detail(
@@ -960,27 +1042,102 @@ class MaterialsService:
 
         return True, "OK", {"data": data}
 
-    # =========================================================
-    # FILTER OPTIONS
-    # =========================================================
-    def get_material_filter_options(
-            self,
-            *,
-            company_id: int,
-            filters: Dict[str, Any],
+    # -------------------------------------------------------------------------
+    # ADMIN LIST (Page)
+    # -------------------------------------------------------------------------
+
+    def list_materials_admin_page(
+        self,
+        *,
+        company_id: int,
+        page: int,
+        per_page: int,
+        filters: Dict[str, Any],
+        external_base: str,
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        user_id = getattr(getattr(g, "auth", None), "user_id", None)
+        allowed = {10, 20, 50, 100}
+        per_page = per_page if int(per_page or 20) in allowed else 20
+        page = max(int(page or 1), 1)
+
+        uid = getattr(getattr(g, "auth", None), "user_id", None)
+
+        params = {
+            "mode": "admin:page",
+            "page": page,
+            "per_page": per_page,
+            "filters": filters,
+            "user_id": int(uid) if uid is not None else None,
+        }
+
+        def builder():
+            rows, total, pages = self.repo.list_materials_admin_page(
+                company_id=company_id,
+                page=page,
+                per_page=per_page,
+                filters=filters,
+            )
+            data = [self.repo.shape_admin_list_row(r) for r in rows]
+            return {
+                "data": data,
+                "pagination": {
+                    "page": page,
+                    "limit": per_page,
+                    "total": int(total),
+                    "has_more": page < pages,
+                },
+            }
+
+        out = cached_list(
+            entity="materials:admin:list",
+            company_id=company_id,
+            params=params,
+            scope="admin",
+            ttl=5,
+            builder=builder,
+        )
+        return True, "OK", out
+
+    # -------------------------------------------------------------------------
+    # ADMIN DETAIL
+    # -------------------------------------------------------------------------
+
+    def get_material_detail_admin(
+        self,
+        *,
+        company_id: int,
+        material_id: int,
+        external_base: str,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        row = self.repo.get_material_detail_admin(
+            company_id=company_id, material_id=material_id
+        )
+        if not row:
+            return False, "Material not found.", {}
+
+        data = self.repo.shape_admin_detail_row(row, external_base=external_base)
+        return True, "OK", {"data": data}
+
+    # -------------------------------------------------------------------------
+    # FILTER OPTIONS
+    # -------------------------------------------------------------------------
+
+    def get_material_filter_options(
+        self,
+        *,
+        company_id: int,
+        filters: Dict[str, Any],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        uid = getattr(getattr(g, "auth", None), "user_id", None)
 
         params = {
             "mode": "filter-options",
             "filters": filters,
-            "user_id": int(user_id) if user_id is not None else None,
+            "user_id": int(uid) if uid is not None else None,
         }
 
         def builder():
             return self.repo.get_material_filter_options(
-                company_id=company_id,
-                filters=filters,
+                company_id=company_id, filters=filters
             )
 
         out = cached_list(
@@ -991,21 +1148,21 @@ class MaterialsService:
             ttl=20,
             builder=builder,
         )
-
         return True, "OK", out
 
-    # =========================================================
-    # TRACK VIEW / DOWNLOAD
-    # =========================================================
+    # -------------------------------------------------------------------------
+    # TRACK VIEW
+    # -------------------------------------------------------------------------
+
     def track_view(
-            self,
-            *,
-            company_id: int,
-            material_id: int,
-            cooldown_seconds: int = 3600,
+        self,
+        *,
+        company_id: int,
+        material_id: int,
+        cooldown_seconds: int = 3600,
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        user_id = self.repo._current_user_id()
-        if not user_id:
+        uid = self.repo._current_user_id()
+        if not uid:
             return False, "Authentication required.", {}
 
         try:
@@ -1013,16 +1170,18 @@ class MaterialsService:
                 result = self.repo.increment_view(
                     company_id=company_id,
                     material_id=material_id,
-                    user_id=int(user_id),
+                    user_id=int(uid),
                     cooldown_seconds=int(cooldown_seconds),
                 )
-
-            message = "View tracked successfully." if result["counted"] else (
-                        result.get("reason") or "View not counted.")
+            message = (
+                "View tracked successfully."
+                if result["counted"]
+                else (result.get("reason") or "View not counted.")
+            )
             return True, message, {
                 "tracking": {
                     "material_id": int(result["material_id"]),
-                    "user_id": int(user_id),
+                    "user_id": int(uid),
                     "event": "view",
                     "counted": bool(result["counted"]),
                     "reason": result.get("reason"),
@@ -1034,17 +1193,22 @@ class MaterialsService:
                     "last_downloaded_at": result.get("last_downloaded_at"),
                 }
             }
-        except Exception as e:
-            return False, f"Failed to track view: {e}", {}
+        except Exception as exc:
+            log.exception("[materials.track_view] material_id=%s", material_id)
+            return False, f"Failed to track view: {exc}", {}
+
+    # -------------------------------------------------------------------------
+    # TRACK DOWNLOAD
+    # -------------------------------------------------------------------------
 
     def track_download(
-            self,
-            *,
-            company_id: int,
-            material_id: int,
+        self,
+        *,
+        company_id: int,
+        material_id: int,
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        user_id = self.repo._current_user_id()
-        if not user_id:
+        uid = self.repo._current_user_id()
+        if not uid:
             return False, "Authentication required.", {}
 
         try:
@@ -1052,16 +1216,15 @@ class MaterialsService:
                 result = self.repo.increment_download(
                     company_id=company_id,
                     material_id=material_id,
-                    user_id=int(user_id),
+                    user_id=int(uid),
                 )
-
             if not result["counted"]:
                 return False, result.get("reason") or "Download not counted.", {}
 
             return True, "Download tracked successfully.", {
                 "tracking": {
                     "material_id": int(result["material_id"]),
-                    "user_id": int(user_id),
+                    "user_id": int(uid),
                     "event": "download",
                     "counted": bool(result["counted"]),
                     "reason": result.get("reason"),
@@ -1073,18 +1236,23 @@ class MaterialsService:
                     "last_downloaded_at": result.get("last_downloaded_at"),
                 }
             }
-        except Exception as e:
-            return False, f"Failed to track download: {e}", {}
+        except Exception as exc:
+            log.exception("[materials.track_download] material_id=%s", material_id)
+            return False, f"Failed to track download: {exc}", {}
+
+    # -------------------------------------------------------------------------
+    # SET FAVORITE
+    # -------------------------------------------------------------------------
 
     def set_favorite(
-            self,
-            *,
-            company_id: int,
-            material_id: int,
-            is_favorite: bool,
+        self,
+        *,
+        company_id: int,
+        material_id: int,
+        is_favorite: bool,
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        user_id = self.repo._current_user_id()
-        if not user_id:
+        uid = self.repo._current_user_id()
+        if not uid:
             return False, "Authentication required.", {}
 
         try:
@@ -1092,17 +1260,16 @@ class MaterialsService:
                 result = self.repo.set_favorite(
                     company_id=company_id,
                     material_id=material_id,
-                    user_id=int(user_id),
+                    user_id=int(uid),
                     is_favorite=bool(is_favorite),
                 )
-
             if not result["counted"]:
                 return False, result.get("reason") or "Favorite not updated.", {}
 
             return True, "Favorite updated successfully.", {
                 "favorite": {
                     "material_id": int(result["material_id"]),
-                    "user_id": int(user_id),
+                    "user_id": int(uid),
                     "is_favorite": bool(result["is_favorite"]),
                     "user_view_count": int(result["user_view_count"]),
                     "user_download_count": int(result["user_download_count"]),
@@ -1110,25 +1277,34 @@ class MaterialsService:
                     "last_downloaded_at": result.get("last_downloaded_at"),
                 }
             }
-        except Exception as e:
-            return False, f"Failed to update favorite: {e}", {}
+        except Exception as exc:
+            log.exception("[materials.set_favorite] material_id=%s", material_id)
+            return False, f"Failed to update favorite: {exc}", {}
+
+    # -------------------------------------------------------------------------
+    # LIST FAVORITES
+    # -------------------------------------------------------------------------
 
     def list_my_favorites_page(
-            self,
-            *,
-            company_id: int,
-            page: int,
-            per_page: int,
-            external_base: str,
+        self,
+        *,
+        company_id: int,
+        page: int,
+        per_page: int,
+        external_base: str,
     ) -> Tuple[bool, str, Dict[str, Any]]:
-        user_id = self.repo._current_user_id()
-        if not user_id:
+        uid = self.repo._current_user_id()
+        if not uid:
             return False, "Authentication required.", {}
+
+        allowed = {10, 20, 50, 100}
+        per_page = per_page if int(per_page or 20) in allowed else 20
+        page = max(int(page or 1), 1)
 
         try:
             rows, total, pages = self.repo.list_favorite_materials_page(
                 company_id=company_id,
-                user_id=int(user_id),
+                user_id=int(uid),
                 page=page,
                 per_page=per_page,
                 external_base=external_base,
@@ -1137,10 +1313,11 @@ class MaterialsService:
                 "data": rows,
                 "pagination": {
                     "page": int(page),
-                    "per_page": int(per_page),
-                    "pages": int(pages),
-                    "total_count": int(total),
+                    "limit": int(per_page),
+                    "total": int(total),
+                    "has_more": page < pages,
                 },
             }
-        except Exception as e:
-            return False, f"Failed to load favorites: {e}", {}
+        except Exception as exc:
+            log.exception("[materials.list_favorites]")
+            return False, f"Failed to load favorites: {exc}", {}

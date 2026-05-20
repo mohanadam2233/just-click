@@ -254,41 +254,60 @@ def bulk_delete_materials(company_id: int):
     except Exception as e:
         return _handle_error(e)
 
-# ------------------------------
-# LIST
-# ------------------------------
+
+# =============================================================================
+# STUDENT LIST ENDPOINTS
+# =============================================================================
+
 @bp.get("/list")
 @require_company_and_permission(doctype="Material", action="READ")
 def list_materials(company_id: int):
+    """
+    Student-facing material list with department/faculty scope filtering.
+
+    Query params:
+    - mode: "cursor" (default) or "page"
+    - limit: items per page (default 20, max 100)
+    - cursor: pagination cursor
+    - page: page number (for page mode)
+    - course_offering_id: Filter by offering (REQUIRED for students)
+    - chapter_id: Filter by specific chapter
+    - semester_id: Filter by semester
+    - academic_year_id: Filter by academic year
+    - material_type: slides, pdf, doc, video, link, other
+    - is_favorite: true/false - show only favorites
+    - search: Search in title/description/course/chapter
+    - is_enabled: true/false/all (default: true)
+    """
     try:
         q = request.args
-
-        mode = (q.get("mode") or "cursor").strip().lower()  # cursor|page
+        mode = (q.get("mode") or "cursor").strip().lower()
         external_base = _external_base()
 
         filters: Dict[str, Any] = {
-            "course_offering_id": q.get("course_offering_id", type=int),  # CHANGED: use offering_id
-            "course_id": q.get("course_id", type=int),  # Keep for backward compatibility
-            "semester_id": q.get("semester_id", type=int),
-            "department_id": q.get("department_id", type=int),
-            "academic_year_id": q.get("academic_year_id", type=int),
+            "course_offering_id": q.get("course_offering_id", type=int),
             "chapter_id": q.get("chapter_id", type=int),
+            "semester_id": q.get("semester_id", type=int),
+            "academic_year_id": q.get("academic_year_id", type=int),
             "material_type": (q.get("material_type") or "").strip() or None,
             "search": (q.get("search") or "").strip() or None,
+            "is_favorite": q.get("is_favorite", type=bool),
         }
 
-        is_enabled_raw = q.get("is_enabled")
-        is_enabled: Optional[bool] = None
-        if is_enabled_raw is not None:
-            s = str(is_enabled_raw).strip().lower()
-            if s in {"1", "true", "yes"}:
-                is_enabled = True
-            elif s in {"0", "false", "no"}:
-                is_enabled = False
+        # Parse is_enabled
+        is_enabled_raw = q.get("is_enabled", "true")
+        is_enabled: Optional[bool] = True
+        s = str(is_enabled_raw).strip().lower()
+        if s in {"1", "true", "yes"}:
+            is_enabled = True
+        elif s in {"0", "false", "no"}:
+            is_enabled = False
+        elif s in {"all", "any"}:
+            is_enabled = None
 
         if mode == "page":
             page = q.get("page", type=int) or 1
-            per_page = q.get("per_page", type=int) or 20
+            per_page = q.get("limit", type=int) or 20
 
             ok, msg, out = svc.list_materials_page(
                 company_id=company_id,
@@ -300,6 +319,7 @@ def list_materials(company_id: int):
             )
             return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
 
+        # Cursor mode (default)
         limit = q.get("limit", type=int) or 20
         cursor = (q.get("cursor") or "").strip() or None
 
@@ -317,12 +337,69 @@ def list_materials(company_id: int):
         return _handle_error(e)
 
 
-# ------------------------------
-# DETAIL
-# ------------------------------
+# =============================================================================
+# ADMIN LIST ENDPOINT
+# =============================================================================
+
+@bp.get("/list/admin")
+@require_company_and_permission(doctype="Material", action="READ")
+def list_materials_admin(company_id: int):
+    """
+    Admin-facing material list (minimal data for tables).
+
+    Query params:
+    - page: Page number (default 1)
+    - limit: Items per page (default 20)
+    - course_offering_id: Filter by offering
+    - chapter_id: Filter by chapter
+    - material_type: slides, pdf, doc, video, link, other
+    - is_enabled: true/false
+    - search: Search in title
+    """
+    try:
+        q = request.args
+        external_base = _external_base()
+
+        filters: Dict[str, Any] = {
+            "course_offering_id": q.get("course_offering_id", type=int),
+            "chapter_id": q.get("chapter_id", type=int),
+            "material_type": (q.get("material_type") or "").strip() or None,
+            "search": (q.get("search") or "").strip() or None,
+        }
+
+        # Parse is_enabled
+        is_enabled_raw = q.get("is_enabled")
+        if is_enabled_raw is not None:
+            s = str(is_enabled_raw).strip().lower()
+            if s in {"1", "true", "yes"}:
+                filters["is_enabled"] = True
+            elif s in {"0", "false", "no"}:
+                filters["is_enabled"] = False
+
+        page = q.get("page", type=int) or 1
+        per_page = q.get("limit", type=int) or 20
+
+        ok, msg, out = svc.list_materials_admin_page(
+            company_id=company_id,
+            page=page,
+            per_page=per_page,
+            filters=filters,
+            external_base=external_base,
+        )
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
+    except Exception as e:
+        return _handle_error(e)
+
+
+# =============================================================================
+# STUDENT DETAIL
+# =============================================================================
+
 @bp.get("/get/<int:material_id>")
 @require_company_and_permission(doctype="Material", action="READ")
 def get_material_detail(company_id: int, material_id: int):
+    """Student-facing material detail with user_state."""
     try:
         ok, msg, out = svc.get_material_detail(
             company_id=company_id,
@@ -335,26 +412,55 @@ def get_material_detail(company_id: int, material_id: int):
         return _handle_error(e)
 
 
+# =============================================================================
+# ADMIN DETAIL
+# =============================================================================
+
+@bp.get("/get/<int:material_id>/admin")
+@require_company_and_permission(doctype="Material", action="READ")
+def get_material_detail_admin(company_id: int, material_id: int):
+    """Admin-facing material detail (full data for editing)."""
+    try:
+        ok, msg, out = svc.get_material_detail_admin(
+            company_id=company_id,
+            material_id=material_id,
+            external_base=_external_base(),
+        )
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=404)
+
+    except Exception as e:
+        return _handle_error(e)
 
 
-
-# ------------------------------
+# =============================================================================
 # FILTER OPTIONS
-# ------------------------------
+# =============================================================================
+
 @bp.get("/filter-options")
 @require_company_and_permission(doctype="Material", action="READ")
 def get_material_filter_options(company_id: int):
+    """
+    Get filter options (semesters, courses, chapters) based on current selection.
+
+    Query params:
+    - academic_year_id: Filter by academic year
+    - semester_id: Filter by semester
+    - course_id: Filter by course
+    - department_id: Filter by department
+    - faculty_id: Filter by faculty
+    - search: Search text
+    """
     try:
         q = request.args
 
         filters: Dict[str, Any] = {
             "academic_year_id": q.get("academic_year_id", type=int),
             "semester_id": q.get("semester_id", type=int),
-            "course_offering_id": q.get("course_offering_id", type=int),  # NEW
-            "course_id": q.get("course_id", type=int),  # Keep for backward compatibility
+            "course_id": q.get("course_id", type=int),
+            "course_offering_id": q.get("course_offering_id", type=int),
             "chapter_id": q.get("chapter_id", type=int),
             "department_id": q.get("department_id", type=int),
-            "faculty_id": q.get("faculty_id", type=int),  # NEW
+            "faculty_id": q.get("faculty_id", type=int),
             "search": (q.get("search") or "").strip() or None,
         }
 
@@ -369,18 +475,14 @@ def get_material_filter_options(company_id: int):
         return _handle_error(e)
 
 
-
-# ------------------------------
+# =============================================================================
 # TRACK VIEW
-# ------------------------------
+# =============================================================================
+
 @bp.post("/<int:material_id>/view")
 @require_company_and_permission(doctype="Material", action="READ")
 def track_material_view(company_id: int, material_id: int):
-    """
-    Count view only when user intentionally opens the material.
-    Uses cooldown to avoid duplicate refresh spam.
-    Optional query param: ?cooldown_seconds=3600
-    """
+    """Track when a student views a material (with cooldown)."""
     try:
         cooldown_seconds = request.args.get("cooldown_seconds", type=int) or 3600
 
@@ -391,25 +493,20 @@ def track_material_view(company_id: int, material_id: int):
         )
         _commit_ok(ok)
 
-        if ok:
-            bump_detail("materials:detail", company_id, int(material_id))
-            bump_list("materials:list", company_id)
-            return api_success(message=msg, data=out, status_code=200)
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
 
-        return api_error(msg, status_code=400)
     except Exception as e:
         return _handle_error(e)
 
 
-# ------------------------------
+# =============================================================================
 # TRACK DOWNLOAD
-# ------------------------------
+# =============================================================================
+
 @bp.post("/<int:material_id>/download")
 @require_company_and_permission(doctype="Material", action="DOWNLOAD")
 def track_material_download(company_id: int, material_id: int):
-    """
-    Count download when user explicitly clicks download.
-    """
+    """Track when a student downloads a material."""
     try:
         ok, msg, out = svc.track_download(
             company_id=company_id,
@@ -417,24 +514,22 @@ def track_material_download(company_id: int, material_id: int):
         )
         _commit_ok(ok)
 
-        if ok:
-            bump_detail("materials:detail", company_id, int(material_id))
-            bump_list("materials:list", company_id)
-            return api_success(message=msg, data=out, status_code=200)
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
 
-        return api_error(msg, status_code=400)
     except Exception as e:
         return _handle_error(e)
 
 
-# ------------------------------
+# =============================================================================
 # FAVORITE TOGGLE
-# ------------------------------
+# =============================================================================
+
 @bp.post("/<int:material_id>/favorite")
 @require_company_and_permission(doctype="Material", action="READ")
 def set_material_favorite(company_id: int, material_id: int):
+    """Add or remove material from student's favorites."""
     try:
-        payload = MaterialFavoriteIn.model_validate(request.get_json(silent=True) or {})
+        payload = MaterialFavoriteIn.model_validate(_json_body())
 
         ok, msg, out = svc.set_favorite(
             company_id=company_id,
@@ -443,26 +538,24 @@ def set_material_favorite(company_id: int, material_id: int):
         )
         _commit_ok(ok)
 
-        if ok:
-            bump_detail("materials:detail", company_id, int(material_id))
-            bump_list("materials:list", company_id)
-            return api_success(message=msg, data=out, status_code=200)
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
 
-        return api_error(msg, status_code=400)
     except Exception as e:
         return _handle_error(e)
 
 
-# ------------------------------
-# MY FAVORITES
-# ------------------------------
-@bp.get("/favorites/list")
+# =============================================================================
+# MY FAVORITES LIST
+# =============================================================================
+
+@bp.get("/favorites")
 @require_company_and_permission(doctype="Material", action="READ")
 def list_my_favorites(company_id: int):
+    """List student's favorite materials."""
     try:
         q = request.args
         page = q.get("page", type=int) or 1
-        per_page = q.get("per_page", type=int) or 20
+        per_page = q.get("limit", type=int) or 20
 
         ok, msg, out = svc.list_my_favorites_page(
             company_id=company_id,
@@ -470,7 +563,7 @@ def list_my_favorites(company_id: int):
             per_page=per_page,
             external_base=_external_base(),
         )
-
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
     except Exception as e:
         return _handle_error(e)
