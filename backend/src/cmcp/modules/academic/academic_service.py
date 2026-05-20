@@ -4,7 +4,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional, Tuple, List, Set
 
 from flask import g
-from sqlalchemy import exists, select, update
+from sqlalchemy import exists, select, update, func, or_
 from sqlalchemy.exc import IntegrityError
 
 from cmcp.common.cache import cached_dropdown, cached_list, cached_detail
@@ -2307,6 +2307,184 @@ class AcademicService:
             strict_label=True,
         )
 
+    def dropdown_faculties_with_departments(
+            self,
+            *,
+            company_id: int,
+            search: str | None,
+            limit: int,
+            offset: int,
+            active_only: bool,
+            filters: dict | None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Dropdown for faculties with their departments nested inside.
+
+        When faculty_id is provided in filters, returns ONLY that faculty with ALL its departments.
+        """
+        # Build faculty query
+        faculty_query = select(Faculty).where(
+            Faculty.company_id == int(company_id),
+        )
+
+        # Apply active_only filter
+        if active_only:
+            faculty_query = faculty_query.where(Faculty.is_enabled == True)
+
+        # ✅ CRITICAL FIX: Apply faculty_id filter FIRST
+        if filters:
+            if filters.get("faculty_id"):
+                # This ensures ONLY the selected faculty is returned
+                faculty_query = faculty_query.where(Faculty.id == int(filters["faculty_id"]))
+
+            if filters.get("is_enabled") is not None:
+                faculty_query = faculty_query.where(Faculty.is_enabled == bool(filters["is_enabled"]))
+            if filters.get("name"):
+                faculty_query = faculty_query.where(Faculty.name.ilike(f"%{filters['name']}%"))
+            if filters.get("code"):
+                faculty_query = faculty_query.where(Faculty.code.ilike(f"%{filters['code']}%"))
+
+        # Apply search on faculty name/code
+        search_term = None
+        if search:
+            search_term = f"%{search.lower()}%"
+            faculty_query = faculty_query.where(
+                or_(
+                    func.lower(Faculty.name).like(search_term),
+                    func.lower(Faculty.code).like(search_term),
+                )
+            )
+
+        # Apply ordering and limits
+        faculty_query = faculty_query.order_by(Faculty.name.asc())
+
+        if limit:
+            faculty_query = faculty_query.limit(limit)
+        if offset:
+            faculty_query = faculty_query.offset(offset)
+
+        faculties = self.s.scalars(faculty_query).all()
+
+        # For each faculty (should be only 1 if faculty_id was provided), fetch ALL its departments
+        result = []
+        for faculty in faculties:
+            # Get ALL departments for this faculty (no limit)
+            dept_query = select(Department).where(
+                Department.company_id == int(company_id),
+                Department.faculty_id == int(faculty.id),
+            )
+
+            if active_only:
+                dept_query = dept_query.where(Department.is_enabled == True)
+
+            # Apply search to departments if needed
+            if search_term:
+                dept_query = dept_query.where(
+                    or_(
+                        func.lower(Department.name).like(search_term),
+                        func.lower(Department.code).like(search_term),
+                    )
+                )
+
+            dept_query = dept_query.order_by(Department.name.asc())
+            departments = self.s.scalars(dept_query).all()
+
+            result.append({
+                "id": int(faculty.id),
+                "name": faculty.name,
+                "code": faculty.code,
+                "departments": [
+                    {
+                        "id": int(dept.id),
+                        "name": dept.name,
+                        "code": dept.code,
+                    }
+                    for dept in departments
+                ],
+            })
+
+        return result
+
+    def dropdown_faculties_with_departments_public(
+            self,
+            *,
+            company_id: int,
+            search: str | None,
+            limit: int,
+            offset: int,
+            filters: dict | None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Public-facing dropdown for faculties with departments (no authentication).
+        Always shows only enabled items.
+
+        When faculty_id=3 is provided, returns ONLY faculty with ID 3 and ALL its departments.
+        """
+        return self.dropdown_faculties_with_departments(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=True,
+            filters=filters,
+        )
+
+    def dropdown_faculties_public(
+            self,
+            *,
+            company_id: int,
+            search: str | None,
+            limit: int,
+            offset: int,
+            filters: dict | None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Public-facing faculties dropdown (no authentication required).
+        Returns just faculties, no nested departments.
+        """
+        # Build faculty query
+        faculty_query = select(Faculty).where(
+            Faculty.company_id == int(company_id),
+            Faculty.is_enabled == True,  # Public only sees enabled
+        )
+
+        # Apply filters
+        if filters:
+            if filters.get("name"):
+                faculty_query = faculty_query.where(Faculty.name.ilike(f"%{filters['name']}%"))
+            if filters.get("code"):
+                faculty_query = faculty_query.where(Faculty.code.ilike(f"%{filters['code']}%"))
+            if filters.get("faculty_id"):
+                faculty_query = faculty_query.where(Faculty.id == int(filters["faculty_id"]))
+
+        # Apply search
+        if search:
+            search_term = f"%{search.lower()}%"
+            faculty_query = faculty_query.where(
+                or_(
+                    func.lower(Faculty.name).like(search_term),
+                    func.lower(Faculty.code).like(search_term),
+                )
+            )
+
+        # Apply ordering and pagination
+        faculty_query = faculty_query.order_by(Faculty.name.asc())
+
+        if limit:
+            faculty_query = faculty_query.limit(limit)
+        if offset:
+            faculty_query = faculty_query.offset(offset)
+
+        faculties = self.s.scalars(faculty_query).all()
+
+        return [
+            {
+                "id": int(f.id),
+                "name": f.name,
+                "code": f.code,
+            }
+            for f in faculties
+        ]
     def dropdown_courses(
         self,
         *,
@@ -2346,6 +2524,94 @@ class AcademicService:
             strict_label=True,
         )
 
+    def dropdown_departments_by_faculty(
+            self,
+            *,
+            company_id: int,
+            faculty_id: int,
+            search: str | None,
+            limit: int,
+            offset: int,
+            active_only: bool,
+    ) -> Dict[str, Any]:
+        """
+        Get departments dropdown for a specific faculty.
+
+        This is like dropdown_departments but simplified for public use.
+        Returns departments belonging ONLY to the specified faculty_id.
+        """
+        allowed_filters = {
+            "is_enabled": Department.is_enabled,
+            "name": Department.name,
+            "code": Department.code,
+            "faculty_id": Department.faculty_id,
+        }
+
+        sort_fields = {
+            "id": Department.id,
+            "name": Department.name,
+            "code": Department.code,
+            "created_at": getattr(Department, "created_at", Department.id),
+        }
+
+        extra_where = [Department.faculty_id == int(faculty_id)]
+
+        params = {
+            "search": search,
+            "limit": int(limit),
+            "offset": int(offset),
+            "active_only": bool(active_only),
+            "faculty_id": int(faculty_id),
+        }
+
+        def builder():
+            return self.department_svc.dropdown(
+                company_id=company_id,
+                search=search,
+                limit=limit,
+                offset=offset,
+                active_only=active_only,
+                search_columns=[Department.name, Department.code],
+                filters=None,  # No extra filters
+                allowed_filters=allowed_filters,
+                sort_fields=sort_fields,
+                default_sort=[Department.name.asc()],
+                value_field="id",
+                label_fields=["code", "name"],
+                meta_fields=["faculty_id", "code", "is_enabled"],
+                strict_label=True,
+                extra_where=extra_where,
+            )
+
+        return cached_dropdown(
+            name="departments_by_faculty",
+            company_id=company_id,
+            params=params,
+            ttl=600,
+            builder=builder,
+        )
+
+    def dropdown_departments_by_faculty_public(
+            self,
+            *,
+            company_id: int,
+            faculty_id: int,
+            search: str | None,
+            limit: int,
+            offset: int,
+    ) -> Dict[str, Any]:
+        """
+        Public-facing departments dropdown by faculty (no authentication).
+        Always shows only enabled departments.
+        """
+        return self.dropdown_departments_by_faculty(
+            company_id=company_id,
+            faculty_id=faculty_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=True,  # Public only sees enabled
+        )
     def dropdown_departments(
             self,
             *,

@@ -983,6 +983,38 @@ def faculties_with_departments_dropdown(company_id: int):
     return api_success(message="OK", data=data, status_code=200)
 
 
+@bp.get("/public/faculties/with-departments/dropdown")
+@public
+@rate_limit(key_prefix="public_faculties_with_depts_dropdown", limit=60, window=60)
+def public_faculties_with_departments_dropdown():
+    """
+    Public-facing dropdown for faculties with their departments.
+
+    Query params:
+    - search: Search by name or code
+    - limit: Max items (default 50)
+    - offset: Pagination offset
+    - filters: JSON string of filters
+    """
+    try:
+        company_id = resolve_company_id_for_public()
+        search, limit, offset, _, filters = dropdown_args(
+            parse_filters_func=_parse_filters,
+            parse_bool_func=_as_bool,
+        )
+
+        data = svc.dropdown_faculties_with_departments_public(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            filters=filters,
+        )
+
+        return api_success(message="OK", data=data, status_code=200)
+    except Exception as e:
+        return api_error(str(e), status_code=400)
+
 @bp.get("/departments/dropdown")
 @require_company_and_permission(doctype="Department", action="READ")
 def departments_dropdown(company_id: int):
@@ -1006,10 +1038,55 @@ def departments_dropdown(company_id: int):
         return api_error(str(e), status_code=400)
 
 
+# =============================================================================
+# PUBLIC DEPARTMENTS DROPDOWN BY FACULTY
+# =============================================================================
+
+@bp.get("/public/departments/by-faculty/dropdown")
+@public
+@rate_limit(key_prefix="public_departments_by_faculty_dropdown", limit=60, window=60)
+def public_departments_by_faculty_dropdown():
+    """
+    Public-facing dropdown for departments filtered by faculty_id.
+
+    Query params:
+    - faculty_id (required): Filter departments by this faculty
+    - search: Search by name or code
+    - limit: Max items (default 20)
+    - offset: Pagination offset
+    """
+    try:
+        company_id = resolve_company_id_for_public()
+
+        # Get required faculty_id
+        faculty_id = request.args.get("faculty_id", type=int)
+        if not faculty_id:
+            return api_error("faculty_id is required", status_code=400)
+
+        # Get optional params
+        search = request.args.get("search", "").strip() or None
+        limit = request.args.get("limit", type=int) or 20
+        offset = request.args.get("offset", type=int) or 0
+
+        # Validate limit
+        if limit > 100:
+            limit = 100
+
+        data = svc.dropdown_departments_by_faculty_public(
+            company_id=company_id,
+            faculty_id=faculty_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+        )
+
+        return api_success(message="OK", data=data, status_code=200)
+    except Exception as e:
+        return api_error(str(e), status_code=400)
 @bp.get("/public/faculties/with-departments/dropdown")
 @public
 @rate_limit(key_prefix="public_faculties_with_departments_dropdown", limit=60, window=60)
-def public_faculties_with_departments_dropdown():
+def public_faculties_with_departments_dropdown_public():
     try:
         company_id = resolve_company_id_for_public()
         search, limit, offset, _, filters = dropdown_args(

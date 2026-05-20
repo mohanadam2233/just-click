@@ -17,23 +17,18 @@ UNIVERSITIES: List[Dict[str, Any]] = [
         "super_admin_user": {
             "username": "jc_admin",
             "password": "ChangeMe!123",
-            # user_type is in your enum: ADMIN makes sense for Super Admin
             "user_type": "ADMIN",
         },
         "student_user": {
             "username": "jc_student1",
             "password": "ChangeMe!123",
             "user_type": "STUDENT",
-
-            # StudentProfile fields you requested
             "profile": {
                 "full_name": "Zahra Student",
                 "student_id": "C12291",
-
                 "faculty_code": "FCS",
                 "department_code": "IS",
                 "semester_number": 1,
-
                 "classroom_id": None,
                 "is_enabled": True,
             }
@@ -51,7 +46,6 @@ UNIVERSITIES: List[Dict[str, Any]] = [
                 {"number": 1, "name": "Semester 1"},
                 {"number": 2, "name": "Semester 2"},
             ],
-            # 8 subjects (spread across depts + semesters)
             "courses": [
                 # Semester 1
                 {"title": "Python Programming", "code": "PY101", "semester_number": 1, "department_code": "CA",
@@ -62,7 +56,6 @@ UNIVERSITIES: List[Dict[str, Any]] = [
                  "description": "Academic English writing, reading, and speaking fundamentals."},
                 {"title": "Computer Networks Fundamentals", "code": "NET101", "semester_number": 1, "department_code": "CN",
                  "description": "Networking basics: IP, routing, switching, and network models."},
-
                 # Semester 2
                 {"title": "Data Structures", "code": "DS102", "semester_number": 2, "department_code": "SE",
                  "description": "Arrays, linked lists, stacks, queues, trees, and complexity basics."},
@@ -73,7 +66,6 @@ UNIVERSITIES: List[Dict[str, Any]] = [
                 {"title": "Operating Systems Basics", "code": "OS102", "semester_number": 2, "department_code": "SE",
                  "description": "Processes, memory, scheduling, files, and OS fundamentals."},
             ],
-            # Optional: create a few chapters for each course
             "chapters_per_course": [
                 {"number": 1, "title": "Introduction"},
                 {"number": 2, "title": "Core Concepts"},
