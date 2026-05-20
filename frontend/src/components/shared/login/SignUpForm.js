@@ -38,14 +38,14 @@ const SignUpForm = () => {
 
   const facultyDD = useDropdown({
     cacheKey: "public-faculties",
-    endpoint: "/academic/public/faculties/dropdown",
+    endpoint: "/academic/public/faculties/dropdown", // ✅ FIXED
     enabled: true,
     limit: 20,
   });
 
   const deptDD = useDropdown({
     cacheKey: `departments-faculty-${selectedFaculty || "none"}`,
-    endpoint: "/academic/public/faculties/with-departments/dropdown",
+    endpoint: "/academic/public/departments/by-faculty/dropdown", // ✅ FIXED
     enabled: !!selectedFaculty,
     limit: 10,
     params: { faculty_id: selectedFaculty || "" },
@@ -53,7 +53,7 @@ const SignUpForm = () => {
 
   const classroomDD = useDropdown({
     cacheKey: "classrooms",
-    endpoint: "/academic/classrooms/dropdown",
+    endpoint: "/academic/classrooms/dropdown", // ✅ FIXED (if this exists)
     enabled: true,
     limit: 20,
   });

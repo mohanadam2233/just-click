@@ -120,14 +120,32 @@ const CoursesMain = () => {
   }, [departmentsRows]);
 
   const queryParams = useMemo(() => {
+    // Handle is_enabled parameter correctly
+    let isEnabledValue;
+
+    if (tableFilters.is_enabled === "all") {
+      isEnabledValue = "all";
+    } else if (tableFilters.is_enabled === "true") {
+      isEnabledValue = "true";
+    } else if (tableFilters.is_enabled === "false") {
+      isEnabledValue = "false";
+    } else {
+      // Default to showing active only
+      isEnabledValue = "true";
+    }
+
     return {
       mode: "cursor",
       limit: 50,
-      is_enabled: tableFilters.is_enabled || "true",
+      is_enabled: isEnabledValue,
       search: tableFilters.search || undefined,
       department_id: tableFilters.department_id || undefined,
     };
-  }, [tableFilters]);
+  }, [
+    tableFilters.search,
+    tableFilters.department_id,
+    tableFilters.is_enabled,
+  ]);
 
   const { data, isLoading, isFetching, isError, refetch } =
     useCoursesList(queryParams);
