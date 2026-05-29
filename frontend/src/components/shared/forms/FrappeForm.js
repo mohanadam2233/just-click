@@ -57,6 +57,15 @@ const FrappeForm = ({
       error ? "border-red-300 dark:border-red-500/50" : "border-transparent"
     } rounded focus:bg-white dark:focus:bg-slate-900 focus:ring-1 focus:border-blue-500 focus:ring-blue-500 outline-none text-gray-900 dark:text-gray-200 transition-colors`;
 
+    // --- NEW: Card type ---
+    if (field.type === "card") {
+      return (
+        <div className="col-span-12">
+          {field.cardComponent ? field.cardComponent(field.cardProps) : null}
+        </div>
+      );
+    }
+
     return (
       <div className="flex flex-col sm:flex-row mb-4 flex-1">
         <div className="sm:w-28 lg:w-32 xl:w-36 flex-shrink-0 mb-1 sm:mb-0 sm:pr-3 flex sm:items-center sm:justify-start">
@@ -201,7 +210,7 @@ const FrappeForm = ({
 
               {(field.fileProps?.readUrl || field.fileProps?.downloadUrl) && (
                 <div className="flex flex-wrap items-center gap-2">
-                  {field.fileProps?.readUrl ? (
+                  {/* {field.fileProps?.readUrl ? (
                     <button
                       type="button"
                       onClick={() =>
@@ -215,7 +224,7 @@ const FrappeForm = ({
                     >
                       Read current file
                     </button>
-                  ) : null}
+                  ) : null} */}
 
                   {field.fileProps?.downloadUrl ? (
                     <button
@@ -278,7 +287,8 @@ const FrappeForm = ({
     if (
       layoutType === "full" ||
       layoutType === "stacked" ||
-      field.type === "child-table"
+      field.type === "child-table" ||
+      field.type === "card" // card spans full width
     ) {
       return "sm:col-span-12";
     }
