@@ -225,6 +225,386 @@ class AcademicRepo:
             return (name or "").strip() or ""
         return (name or "").strip() or f"Semester {int(number)}"
 
+    # =========================================================
+    # DROPDOWN HELPERS
+    # =========================================================
+
+    @staticmethod
+    def _clean_join(parts: list[Any], sep: str = " — ") -> str:
+        return sep.join([str(p).strip() for p in parts if str(p or "").strip()])
+
+    def _offering_label(
+            self,
+            *,
+            course_title: str | None,
+            course_code: str | None,
+            custom_title: str | None,
+            department_name: str | None,
+            semester_number: int | None,
+            semester_name: str | None,
+            academic_year_name: str | None = None,
+    ) -> str:
+        course_name = (custom_title or course_title or "").strip()
+        semester_label = (
+            self._semester_name_only(semester_number, semester_name)
+            if semester_number is not None
+            else None
+        )
+
+        # UI dropdown label:
+        # PY101 — Python — Computer Applications — Semester 5
+        # or Python — Computer Applications — Semester 5
+        return self._clean_join([
+            course_code,
+            course_name,
+            department_name,
+            semester_label,
+        ])
+
+    def _offering_full_label(
+            self,
+            *,
+            course_title: str | None,
+            course_code: str | None,
+            custom_title: str | None,
+            department_name: str | None,
+            semester_number: int | None,
+            semester_name: str | None,
+            academic_year_name: str | None,
+    ) -> str:
+        base = self._offering_label(
+            course_title=course_title,
+            course_code=course_code,
+            custom_title=custom_title,
+            department_name=department_name,
+            semester_number=semester_number,
+            semester_name=semester_name,
+            academic_year_name=academic_year_name,
+        )
+
+        if academic_year_name:
+            return f"{base} — {academic_year_name}"
+
+        return base
+
+    # =========================================================
+    # MATERIAL FORM DROPDOWNS
+    # =========================================================
+
+    @staticmethod
+    def _material_semester_name(number: int | None, name: str | None) -> str | None:
+        if number is None and not name:
+            return None
+        nm = (name or "").strip()
+        return nm or f"Semester {int(number)}"
+
+    def dropdown_course_offerings_for_material(
+            self,
+            *,
+            company_id: int,
+            search: str | None,
+            limit: int,
+            offset: int,
+            active_only: bool,
+            filters: dict | None,
+    ) -> list[dict[str, Any]]:
+        """
+        Course Offering dropdown for Material form.
+
+        Frontend saves:
+            value / id = course_offering_id
+
+        Dropdown label:
+            custom_title if exists, else course title
+
+        Meta:
+            only fields needed for frontend read-only display.
+        """
+
+        filters = dict(filters or {})
+
+        stmt = (
+            select(
+                CourseOffering.id.label("id"),
+                CourseOffering.custom_title.label("custom_title"),
+
+                Course.title.label("course_title"),
+
+                Department.name.label("department_name"),
+
+                Semester.number.label("semester_number"),
+                Semester.name.label("semester_name"),
+            )
+            .select_from(CourseOffering)
+            .outerjoin(
+                Course,
+                and_(
+                    Course.id == CourseOffering.course_id,
+                    Course.company_id == int(company_id),
+                ),
+            )
+            .outerjoin(
+                Department,
+                and_(
+                    Department.id == CourseOffering.department_id,
+                    Department.company_id == int(company_id),
+                ),
+            )
+            .outerjoin(
+                Semester,
+                and_(
+                    Semester.id == CourseOffering.semester_id,
+                    Semester.company_id == int(company_id),
+                ),
+            )
+            .outerjoin(
+                AcademicYear,
+                and_(
+                    AcademicYear.id == Semester.academic_year_id,
+                    AcademicYear.company_id == int(company_id),
+                ),
+            )
+            .where(CourseOffering.company_id == int(company_id))
+        )
+
+        # Important: only filter CourseOffering active status.
+        # Do not block result because Course/Department status may be old/disabled.
+        if active_only:
+            stmt = stmt.where(CourseOffering.is_enabled.is_(True))
+
+        if filters.get("course_id"):
+            stmt = stmt.where(CourseOffering.course_id == int(filters["course_id"]))
+
+        if filters.get("department_id"):
+            stmt = stmt.where(CourseOffering.department_id == int(filters["department_id"]))
+
+        if filters.get("semester_id"):
+            stmt = stmt.where(CourseOffering.semester_id == int(filters["semester_id"]))
+
+        if filters.get("academic_year_id"):
+            stmt = stmt.where(AcademicYear.id == int(filters["academic_year_id"]))
+
+        if filters.get("is_enabled") is not None:
+            stmt = stmt.where(CourseOffering.is_enabled == bool(filters["is_enabled"]))
+
+        if search:
+            raw = search.strip()
+            like = f"%{raw.lower()}%"
+
+            stmt = stmt.where(
+                or_(
+                    func.lower(func.coalesce(Course.title, "")).like(like),
+                    func.lower(func.coalesce(CourseOffering.custom_title, "")).like(like),
+                    func.lower(func.coalesce(Department.name, "")).like(like),
+                    func.lower(func.coalesce(Semester.name, "")).like(like),
+                    func.lower(func.coalesce(AcademicYear.name, "")).like(like),
+                    func.cast(Semester.number, db.String).like(f"%{raw}%"),
+                )
+            )
+
+        stmt = stmt.order_by(
+            Course.title.asc().nullslast(),
+            Department.name.asc().nullslast(),
+            Semester.number.asc().nullslast(),
+            CourseOffering.id.asc(),
+        )
+
+        stmt = stmt.limit(min(int(limit or 20), 100)).offset(int(offset or 0))
+
+        rows = self.s.execute(stmt).all()
+
+        data: list[dict[str, Any]] = []
+
+        for r in rows:
+            course_title = r.course_title
+            custom_title = r.custom_title
+            department_name = r.department_name
+            semester_name = self._material_semester_name(r.semester_number, r.semester_name)
+
+            # label is simple. Frontend can design/combine meta however it wants.
+            label = (custom_title or course_title or f"Offering #{int(r.id)}").strip()
+
+            data.append({
+                "id": int(r.id),
+                "value": int(r.id),
+                "label": label,
+                "meta": {
+                    "course_title": course_title,
+                    "custom_title": custom_title,
+                    "department_name": department_name,
+                    "semester_name": semester_name,
+                },
+            })
+
+        return data
+
+    def get_course_offering_material_meta(
+            self,
+            *,
+            company_id: int,
+            offering_id: int,
+            active_only: bool = False,
+    ) -> dict[str, Any] | None:
+        """
+        Get selected offering details for read-only Material form display.
+        """
+
+        stmt = (
+            select(
+                CourseOffering.id.label("id"),
+                CourseOffering.custom_title.label("custom_title"),
+
+                Course.title.label("course_title"),
+
+                Department.name.label("department_name"),
+
+                Semester.number.label("semester_number"),
+                Semester.name.label("semester_name"),
+            )
+            .select_from(CourseOffering)
+            .outerjoin(
+                Course,
+                and_(
+                    Course.id == CourseOffering.course_id,
+                    Course.company_id == int(company_id),
+                ),
+            )
+            .outerjoin(
+                Department,
+                and_(
+                    Department.id == CourseOffering.department_id,
+                    Department.company_id == int(company_id),
+                ),
+            )
+            .outerjoin(
+                Semester,
+                and_(
+                    Semester.id == CourseOffering.semester_id,
+                    Semester.company_id == int(company_id),
+                ),
+            )
+            .where(
+                CourseOffering.company_id == int(company_id),
+                CourseOffering.id == int(offering_id),
+            )
+            .limit(1)
+        )
+
+        if active_only:
+            stmt = stmt.where(CourseOffering.is_enabled.is_(True))
+
+        r = self.s.execute(stmt).first()
+
+        if not r:
+            return None
+
+        semester_name = self._material_semester_name(r.semester_number, r.semester_name)
+
+        label = (r.custom_title or r.course_title or f"Offering #{int(r.id)}").strip()
+
+        return {
+            "id": int(r.id),
+            "value": int(r.id),
+            "label": label,
+            "meta": {
+                "course_title": r.course_title,
+                "custom_title": r.custom_title,
+                "department_name": r.department_name,
+                "semester_name": semester_name,
+            },
+        }
+
+    def dropdown_chapters_by_offering_for_material(
+            self,
+            *,
+            company_id: int,
+            course_offering_id: int,
+            search: str | None,
+            limit: int,
+            offset: int,
+            active_only: bool,
+            include_general_option: bool = True,
+    ) -> list[dict[str, Any]]:
+        """
+        Dependent Chapter dropdown.
+        Only returns chapters that belong to the selected course_offering_id.
+        """
+
+        offering_exists = self.s.scalar(
+            select(
+                exists().where(
+                    CourseOffering.company_id == int(company_id),
+                    CourseOffering.id == int(course_offering_id),
+                )
+            )
+        )
+
+        if not offering_exists:
+            return []
+
+        stmt = (
+            select(
+                CourseChapter.id,
+                CourseChapter.number,
+                CourseChapter.title,
+                CourseChapter.description,
+                CourseChapter.is_enabled,
+            )
+            .where(
+                CourseChapter.company_id == int(company_id),
+                CourseChapter.course_offering_id == int(course_offering_id),
+            )
+        )
+
+        if active_only:
+            stmt = stmt.where(CourseChapter.is_enabled.is_(True))
+
+        if search:
+            raw = search.strip()
+            like = f"%{raw.lower()}%"
+
+            stmt = stmt.where(
+                or_(
+                    func.lower(func.coalesce(CourseChapter.title, "")).like(like),
+                    func.lower(func.coalesce(CourseChapter.description, "")).like(like),
+                    func.cast(CourseChapter.number, db.String).like(f"%{raw}%"),
+                )
+            )
+
+        stmt = stmt.order_by(CourseChapter.number.asc(), CourseChapter.id.asc())
+        stmt = stmt.limit(min(int(limit or 50), 100)).offset(int(offset or 0))
+
+        rows = self.s.execute(stmt).all()
+
+        data: list[dict[str, Any]] = []
+
+        if include_general_option and not search and int(offset or 0) == 0:
+            data.append({
+                "id": None,
+                "value": None,
+                "label": "No chapter / General material",
+                "meta": {
+                    "title": "General material",
+                    "number": None,
+                    "description": None,
+                    "is_general": True,
+                },
+            })
+
+        for r in rows:
+            data.append({
+                "id": int(r.id),
+                "value": int(r.id),
+                "label": f"Chapter {int(r.number)} — {r.title}",
+                "meta": {
+                    "title": r.title,
+                    "number": int(r.number),
+                    "description": r.description,
+                    "is_general": False,
+                },
+            })
+
+        return data
     # ----------------------------
     # Exists checks
     # ----------------------------

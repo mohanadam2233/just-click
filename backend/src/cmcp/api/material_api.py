@@ -130,25 +130,49 @@ def create_material(company_id: int):
     except Exception as e:
         return _handle_error(e)
 
+
 @bp.put("/<int:material_id>/update")
 @require_company_and_permission(doctype="Material", action="UPDATE")
 def update_material(company_id: int, material_id: int):
     """
     Update a single material.
 
-    Cannot change: course_offering_id, chapter_id, material_type.
+    Supports:
+    - JSON: application/json
+    - Multipart: multipart/form-data
+      - payload JSON optional when only replacing file
+      - file optional when only updating fields
     """
     try:
         file_storage = None
 
         if request.content_type and "multipart/form-data" in request.content_type:
-            payload_raw = request.form.get("payload")
-            if not payload_raw:
-                return api_error("Missing 'payload' JSON in form-data.", status_code=422)
-            payload = MaterialUpdateIn.model_validate(json.loads(payload_raw))
             file_storage = request.files.get("file")
+            payload_raw = request.form.get("payload")
+
+            if payload_raw:
+                payload_data = json.loads(payload_raw)
+            else:
+                # Allow file-only update.
+                # Also support simple form fields like title=xxx if frontend sends them directly.
+                payload_data = {
+                    k: v
+                    for k, v in request.form.items()
+                    if k != "payload"
+                }
+
+            if not payload_data and not file_storage:
+                return api_error("Nothing to update.", status_code=422)
+
+            payload = MaterialUpdateIn.model_validate(payload_data)
+
         else:
-            payload = MaterialUpdateIn.model_validate(request.get_json(silent=True) or {})
+            payload_data = request.get_json(silent=True) or {}
+
+            if not payload_data:
+                return api_error("Nothing to update.", status_code=422)
+
+            payload = MaterialUpdateIn.model_validate(payload_data)
 
         ok, msg, out = svc.update_material(
             company_id=company_id,
@@ -157,17 +181,17 @@ def update_material(company_id: int, material_id: int):
             file_storage=file_storage,
             external_base=_external_base(),
         )
+
         _commit_ok(ok)
+
         if ok:
             bump_detail("materials:detail", company_id, int(material_id))
             bump_list("materials:list", company_id)
 
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
 
-
     except Exception as e:
         return _handle_error(e)
-
 
 @bp.put("/bulk-update")
 @require_company_and_permission(doctype="Material", action="UPDATE")

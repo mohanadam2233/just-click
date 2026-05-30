@@ -333,7 +333,7 @@ class MaterialsService:
                 self.s.flush()
 
                 return True, "Material created successfully", {
-                    "material": self._material_record(material)
+                    "material": self._clean_material_out(material)
                 }
 
         except (BusinessValidationError, NotFoundError) as e:
@@ -361,7 +361,9 @@ class MaterialsService:
         """
         Update a single material.
 
-        Cannot change: course_offering_id, chapter_id, material_type
+        Current behavior:
+        - Does not require file unless a new file is uploaded.
+        - Does not allow changing course_offering_id, chapter_id, material_type.
         """
         try:
             material = self.repo.get_material(material_id, company_id=company_id)
@@ -380,11 +382,15 @@ class MaterialsService:
                     raise BusinessValidationError(ERR_CANNOT_CHANGE_CHAPTER)
 
             if "material_type" in data and data["material_type"] is not None:
-                if str(data["material_type"]).lower() != material.material_type.value.lower():
+                current_type = getattr(material.material_type, "value", str(material.material_type)).lower()
+                if str(data["material_type"]).lower() != current_type:
                     raise BusinessValidationError(ERR_CANNOT_CHANGE_TYPE)
 
-            # Validate file against existing type
-            _validate_file_against_type(material.material_type.value, file_storage)
+            current_type = getattr(material.material_type, "value", str(material.material_type)).lower()
+
+            # ✅ FIX: only validate file when replacing/uploading a new file
+            if file_storage:
+                _validate_file_against_type(current_type, file_storage)
 
             patch: Dict[str, Any] = {}
 
@@ -392,7 +398,11 @@ class MaterialsService:
             if "title" in data and data["title"] is not None:
                 new_title = _require_text(data["title"], "Title")
 
-                if new_title.lower() != (material.title or "").lower():
+                current_title_norm = (material.title or "").strip().casefold()
+                new_title_norm = new_title.strip().casefold()
+
+                # Only check duplicate if title really changed
+                if new_title_norm != current_title_norm:
                     if self.repo.title_exists_in_scope(
                             company_id=company_id,
                             course_offering_id=int(material.course_offering_id),
@@ -401,9 +411,9 @@ class MaterialsService:
                             exclude_id=int(material.id),
                     ):
                         raise BusinessValidationError(ERR_MATERIAL_TITLE_EXISTS)
+
                     patch["title"] = new_title
 
-            # Other updatable fields
             if "description" in data:
                 patch["description"] = _safe_text(data["description"])
 
@@ -419,13 +429,13 @@ class MaterialsService:
             if "file_size_mb" in data:
                 patch["file_size_mb"] = _validate_file_size_mb(data["file_size_mb"])
 
-            if "file_url" in data and material.material_type.value == "link":
+            if "file_url" in data and current_type == "link":
                 patch["file_url"] = _validate_link_url(data["file_url"])
 
             # Update counts if provided
             if "page_count" in data or "slide_count" in data:
                 page_count, slide_count = _validate_counts(
-                    material.material_type.value,
+                    current_type,
                     data.get("page_count", material.page_count),
                     data.get("slide_count", material.slide_count),
                 )
@@ -433,25 +443,24 @@ class MaterialsService:
                 patch["slide_count"] = slide_count
 
             with self.s.begin_nested():
-                self.repo.update_material(material, patch)
+                if patch:
+                    self.repo.update_material(material, patch)
 
-                # Handle file upload
-                if file_storage and material.material_type.value != "link":
+                # Replace file only if file uploaded
+                if file_storage and current_type != "link":
                     self._upload_material_file(material, file_storage, external_base)
 
                 self.s.flush()
 
                 return True, "Material updated successfully", {
-                    "material": self._material_record(material)
+                    "material": self._clean_material_out(material)
                 }
 
         except (BusinessValidationError, NotFoundError) as e:
             return False, str(e), None
-        except IntegrityError as e:
-
+        except IntegrityError:
             return False, "Database constraint error.", None
         except Exception as e:
-
             return False, f"Unexpected error: {e}", None
 
     # =========================================================

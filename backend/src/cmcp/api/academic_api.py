@@ -416,7 +416,14 @@ def list_academic_years(company_id: int):
     except Exception as e:
         return _handle_error(e)
 
+def _query_bool(value, default: bool = False) -> bool:
+    if value is None:
+        return bool(default)
 
+    if isinstance(value, bool):
+        return value
+
+    return str(value).strip().lower() in {"1", "true", "yes", "y", "on"}
 # =========================================================
 # SEMESTER
 # =========================================================
@@ -1184,5 +1191,102 @@ def chapters_dropdown(company_id: int):
             filters=filters,
         )
         return api_success(message="OK", data=data, status_code=200)
+    except Exception as e:
+        return api_error(str(e), status_code=400)
+
+@bp.get("/course-offerings/material-dropdown")
+@require_company_and_permission(doctype="CourseOffering", action="READ")
+def course_offerings_material_dropdown(company_id: int):
+    try:
+        search, limit, offset, active_only, filters = dropdown_args(
+            parse_filters_func=_parse_filters,
+            parse_bool_func=_as_bool,
+        )
+
+        filters = dict(filters or {})
+
+        course_id = request.args.get("course_id", type=int)
+        department_id = request.args.get("department_id", type=int)
+        semester_id = request.args.get("semester_id", type=int)
+        academic_year_id = request.args.get("academic_year_id", type=int)
+
+        if course_id:
+            filters["course_id"] = course_id
+
+        if department_id:
+            filters["department_id"] = department_id
+
+        if semester_id:
+            filters["semester_id"] = semester_id
+
+        if academic_year_id:
+            filters["academic_year_id"] = academic_year_id
+
+        data = svc.dropdown_course_offerings_for_material(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            filters=filters,
+        )
+
+        return api_success(message="OK", data=data, status_code=200)
+
+    except Exception as e:
+        return api_error(str(e), status_code=400)
+
+
+@bp.get("/course-offerings/<int:offering_id>/material-meta")
+@require_company_and_permission(doctype="CourseOffering", action="READ")
+def course_offering_material_meta(company_id: int, offering_id: int):
+    try:
+        active_only = _query_bool(request.args.get("active_only"), default=False)
+
+        data = svc.get_course_offering_material_meta(
+            company_id=company_id,
+            offering_id=offering_id,
+            active_only=active_only,
+        )
+
+        if not data:
+            return api_error("Course offering not found", status_code=404)
+
+        return api_success(message="OK", data=data, status_code=200)
+
+    except Exception as e:
+        return api_error(str(e), status_code=400)
+
+
+@bp.get("/course-offerings/<int:course_offering_id>/chapters/dropdown")
+@require_company_and_permission(doctype="Chapter", action="READ")
+def course_offering_chapters_material_dropdown(company_id: int, course_offering_id: int):
+    try:
+        search = request.args.get("search", "").strip() or None
+        limit = request.args.get("limit", type=int) or 50
+        offset = request.args.get("offset", type=int) or 0
+
+        active_only = _query_bool(
+            request.args.get("active_only"),
+            default=True,
+        )
+
+        include_general_option = _query_bool(
+            request.args.get("include_general_option"),
+            default=True,
+        )
+
+        data = svc.dropdown_chapters_by_offering_for_material(
+            company_id=company_id,
+            course_offering_id=course_offering_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            include_general_option=include_general_option,
+        )
+
+        return api_success(message="OK", data=data, status_code=200)
+
     except Exception as e:
         return api_error(str(e), status_code=400)

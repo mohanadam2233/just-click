@@ -2721,3 +2721,56 @@ class AcademicService:
             meta_fields=["course_id", "department_id", "semester_id", "custom_title", "credit_hours", "is_enabled"],
             strict_label=True,
         )
+
+    def dropdown_course_offerings_for_material(
+            self,
+            *,
+            company_id: int,
+            search: str | None,
+            limit: int,
+            offset: int,
+            active_only: bool,
+            filters: dict | None,
+    ):
+        return self.repo.dropdown_course_offerings_for_material(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            filters=filters,
+        )
+
+    def get_course_offering_material_meta(
+            self,
+            *,
+            company_id: int,
+            offering_id: int,
+            active_only: bool = False,
+    ):
+        return self.repo.get_course_offering_material_meta(
+            company_id=company_id,
+            offering_id=offering_id,
+            active_only=active_only,
+        )
+
+    def dropdown_chapters_by_offering_for_material(
+            self,
+            *,
+            company_id: int,
+            course_offering_id: int,
+            search: str | None,
+            limit: int,
+            offset: int,
+            active_only: bool,
+            include_general_option: bool = True,
+    ):
+        return self.repo.dropdown_chapters_by_offering_for_material(
+            company_id=company_id,
+            course_offering_id=course_offering_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=active_only,
+            include_general_option=include_general_option,
+        )
