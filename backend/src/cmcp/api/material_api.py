@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Optional
 
 from flask import Blueprint, request
 from pydantic import field_validator
+from pydantic import ValidationError
+
 
 from cmcp.common.api_response import api_success, api_error
 from cmcp.common.cache import bump_detail, bump_list
@@ -63,7 +65,50 @@ def _json_body() -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise BusinessValidationError("Request body must be a JSON object.")
     return payload
+def _clean_pydantic_error(e: ValidationError) -> str:
+    errors = e.errors() or []
+    if not errors:
+        return "Invalid request data."
 
+    first = errors[0]
+    loc = first.get("loc") or []
+    field = str(loc[-1]) if loc else "field"
+    err_type = first.get("type", "")
+    msg = first.get("msg", "Invalid value.")
+
+    labels = {
+        "course_offering_id": "Course offering",
+        "chapter_id": "Chapter",
+        "title": "Title",
+        "material_type": "Material type",
+        "file_url": "File URL",
+        "page_count": "Page count",
+        "slide_count": "Slide count",
+        "file_size_mb": "File size",
+        "learning_objectives": "Learning objectives",
+        "description": "Description",
+        "is_downloadable": "Download permission",
+        "is_enabled": "Status",
+    }
+
+    label = labels.get(field, field.replace("_", " ").title())
+
+    if err_type == "missing":
+        return f"{label} is required."
+
+    if err_type in {"int_parsing", "int_type"}:
+        return f"{label} must be a valid number."
+
+    if err_type in {"float_parsing", "float_type"}:
+        return f"{label} must be a valid decimal number."
+
+    if err_type in {"bool_parsing", "bool_type"}:
+        return f"{label} must be true or false."
+
+    if err_type in {"list_type"}:
+        return f"{label} must be a list."
+
+    return f"{label}: {msg}"
 
 class MaterialBulkUpdateIn(_BaseIn):
     """Frappe-style full-state sync for materials in an offering."""

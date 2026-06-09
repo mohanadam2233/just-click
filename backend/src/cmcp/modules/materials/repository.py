@@ -845,16 +845,23 @@ class MaterialsRepo:
     # -------------------------------------------------------------------------
 
     def get_material_detail(
-        self,
-        *,
-        company_id: int,
-        material_id: int,
+            self,
+            *,
+            company_id: int,
+            material_id: int,
     ) -> Optional[MaterialDetailRow]:
-        """Get single material detail with user state and scope check."""
-        base = self._base_stmt(company_id=company_id, filters={}, is_enabled=None)
-        row = self.s.execute(base.where(Material.id == material_id).limit(1)).first()
-        return MaterialDetailRow(**row._asdict()) if row else None
+        """Get single enabled material detail with user state and scope check."""
+        base = self._base_stmt(
+            company_id=company_id,
+            filters={},
+            is_enabled=True,
+        )
 
+        row = self.s.execute(
+            base.where(Material.id == int(material_id)).limit(1)
+        ).first()
+
+        return MaterialDetailRow(**row._asdict()) if row else None
     # -------------------------------------------------------------------------
     # ADMIN LIST
     # -------------------------------------------------------------------------
@@ -1573,3 +1580,124 @@ class MaterialsRepo:
                 rows.append(self.shape_material_list_row(detail_row, external_base=external_base))
 
         return rows, total, pages
+
+    def current_user_scope_for_debug(self, *, company_id: int) -> Dict[str, Any]:
+        """
+        Safe wrapper for service cache/debug use.
+        """
+        return self._current_user_scope(company_id=company_id)
+
+    def get_student_materials_empty_message(
+            self,
+            *,
+            company_id: int,
+            filters: Dict[str, Any],
+    ) -> str:
+        """
+        ERP-style empty-state message for student material list.
+        Keeps scope strict, but explains the empty result cleanly.
+        """
+        scope = self._current_user_scope(company_id=company_id)
+
+        if scope.get("profile_type") != "student":
+            return "No materials are available."
+
+        if not scope.get("department_id"):
+            return "Your student profile is not linked to a department. Please contact the academic office."
+
+        if filters.get("course_offering_id"):
+            offering_id = int(filters["course_offering_id"])
+
+            offering = (
+                self.s.query(
+                    CourseOffering.id.label("offering_id"),
+                    CourseOffering.department_id.label("department_id"),
+                    CourseOffering.semester_id.label("semester_id"),
+                    Department.name.label("department_name"),
+                    Faculty.id.label("faculty_id"),
+                    Faculty.name.label("faculty_name"),
+                    Course.title.label("course_title"),
+                )
+                .join(Department, Department.id == CourseOffering.department_id)
+                .join(Faculty, Faculty.id == Department.faculty_id)
+                .join(Course, Course.id == CourseOffering.course_id)
+                .filter(
+                    CourseOffering.company_id == int(company_id),
+                    CourseOffering.id == offering_id,
+                )
+                .first()
+            )
+
+            if not offering:
+                return "The selected course offering was not found."
+
+            if scope.get("department_id") and int(scope["department_id"]) != int(offering.department_id):
+                return "This course belongs to another department. Materials are only available for your department."
+
+            if scope.get("faculty_id") and int(scope["faculty_id"]) != int(offering.faculty_id):
+                return "This course belongs to another faculty. Materials are only available for your faculty."
+
+            return "No materials have been published for this course yet."
+
+        if filters.get("search"):
+            return "No materials matched your search within your department."
+
+        if filters.get("semester_id"):
+            return "No materials are available for the selected semester in your department."
+
+        return "No materials have been published for your department yet."
+
+    def get_student_material_access_message(
+            self,
+            *,
+            company_id: int,
+            material_id: int,
+    ) -> str:
+        """
+        ERP-style message for student detail when row is hidden by scope or unavailable.
+        """
+        scope = self._current_user_scope(company_id=company_id)
+
+        if scope.get("profile_type") != "student":
+            return "Material not found."
+
+        if not scope.get("department_id"):
+            return "Your student profile is not linked to a department. Please contact the academic office."
+
+        mat = (
+            self.s.query(
+                Material.id.label("material_id"),
+                Material.title.label("material_title"),
+                Material.is_enabled.label("material_enabled"),
+                CourseOffering.id.label("offering_id"),
+                CourseOffering.department_id.label("offering_department_id"),
+                CourseOffering.semester_id.label("offering_semester_id"),
+                Department.name.label("department_name"),
+                Faculty.id.label("offering_faculty_id"),
+                Faculty.name.label("faculty_name"),
+                Course.title.label("course_title"),
+            )
+            .join(CourseOffering, CourseOffering.id == Material.course_offering_id)
+            .join(Department, Department.id == CourseOffering.department_id)
+            .join(Faculty, Faculty.id == Department.faculty_id)
+            .join(Course, Course.id == CourseOffering.course_id)
+            .filter(
+                Material.company_id == int(company_id),
+                Material.id == int(material_id),
+            )
+            .first()
+        )
+
+        if not mat:
+            return "Material not found."
+
+        if not mat.material_enabled:
+            return "This material is currently unavailable."
+
+        if scope.get("department_id") and int(scope["department_id"]) != int(mat.offering_department_id):
+            return "This material belongs to another department. You can only access materials assigned to your department."
+
+        if scope.get("faculty_id") and int(scope["faculty_id"]) != int(mat.offering_faculty_id):
+            return "This material belongs to another faculty. You can only access materials assigned to your faculty."
+
+        return "This material is not available for your academic profile."

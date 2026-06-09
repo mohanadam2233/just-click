@@ -804,96 +804,6 @@ class MaterialsService:
             external_base: str,
     ) -> Tuple[bool, str, Dict[str, Any]]:
         limit = max(1, min(int(limit or 20), 100))
-
-        cur = _decode_cursor(cursor or "")
-
-        last_id = cur.get("last_id")
-        try:
-            last_id = int(last_id) if last_id is not None else None
-        except Exception:
-            last_id = None
-
-        last_priority = cur.get("last_priority")
-        try:
-            last_priority = int(last_priority) if last_priority is not None else None
-        except Exception:
-            last_priority = None
-
-        last_semester_number = cur.get("last_semester_number")
-        try:
-            last_semester_number = int(last_semester_number) if last_semester_number is not None else None
-        except Exception:
-            last_semester_number = None
-
-        user_id = getattr(getattr(g, "auth", None), "user_id", None)
-
-        params = {
-            "mode": "cursor",
-            "limit": limit,
-            "last_id": last_id,
-            "last_priority": last_priority,
-            "last_semester_number": last_semester_number,
-            "filters": filters,
-            "is_enabled": is_enabled,
-            "external_base": external_base,
-            "user_id": int(user_id) if user_id is not None else None,
-        }
-
-        def builder():
-            rows, total_count, has_more, next_cursor_payload = self.repo.list_materials_cursor(
-                company_id=company_id,
-                limit=limit,
-                last_id=last_id,
-                last_priority=last_priority,
-                last_semester_number=last_semester_number,
-                filters=filters,
-                is_enabled=is_enabled,
-            )
-
-            data = [self.repo.shape_material_list_row(r, external_base=external_base) for r in rows]
-
-            next_cursor = _encode_cursor(next_cursor_payload) if next_cursor_payload else None
-
-            return {
-                "data": data,
-                "pagination": {
-                    "limit": limit,
-                    "next_cursor": next_cursor,
-                    "has_more": bool(has_more),
-                },
-                "meta": {"total_count": int(total_count)},
-            }
-
-        out = cached_list(
-            entity="materials:list",
-            company_id=company_id,
-            params=params,
-            scope="default",
-            ttl=20,
-            builder=builder,
-        )
-
-        return True, "OK", out
-
-    # =========================================================
-    # LIST (PAGE)
-    # =========================================================
-
-    # -------------------------------------------------------------------------
-    # STUDENT LIST (Cursor)
-    # -------------------------------------------------------------------------
-
-    def list_materials_cursor(
-        self,
-        *,
-        company_id: int,
-        limit: int,
-        cursor: Optional[str],
-        filters: Dict[str, Any],
-        is_enabled: Optional[bool],
-        external_base: str,
-    ) -> Tuple[bool, str, Dict[str, Any]]:
-        limit = max(1, min(int(limit or 20), 100))
         cur = _decode_cursor(cursor)
 
         def _safe_int(val):
@@ -930,18 +840,30 @@ class MaterialsService:
                 filters=filters,
                 is_enabled=is_enabled,
             )
+
             data = [
                 self.repo.shape_material_list_row(r, external_base=external_base)
                 for r in rows
             ]
+
+            empty_message = None
+            if not data:
+                empty_message = self.repo.get_student_materials_empty_message(
+                    company_id=company_id,
+                    filters=filters,
+                )
+
             return {
                 "data": data,
+                "message": empty_message,
                 "pagination": {
                     "limit": limit,
                     "next_cursor": _encode_cursor(next_cursor_payload),
                     "has_more": bool(has_more),
                 },
-                "meta": {"total_count": int(total)},
+                "meta": {
+                    "total_count": int(total),
+                },
             }
 
         out = cached_list(
@@ -952,21 +874,22 @@ class MaterialsService:
             ttl=20,
             builder=builder,
         )
-        return True, "OK", out
 
+        msg = out.get("message") or "OK"
+        return True, msg, out
     # -------------------------------------------------------------------------
     # STUDENT LIST (Page)
     # -------------------------------------------------------------------------
 
     def list_materials_page(
-        self,
-        *,
-        company_id: int,
-        page: int,
-        per_page: int,
-        filters: Dict[str, Any],
-        is_enabled: Optional[bool],
-        external_base: str,
+            self,
+            *,
+            company_id: int,
+            page: int,
+            per_page: int,
+            filters: Dict[str, Any],
+            is_enabled: Optional[bool],
+            external_base: str,
     ) -> Tuple[bool, str, Dict[str, Any]]:
         allowed = {10, 20, 50, 100}
         per_page = per_page if int(per_page or 20) in allowed else 20
@@ -992,12 +915,22 @@ class MaterialsService:
                 filters=filters,
                 is_enabled=is_enabled,
             )
+
             data = [
                 self.repo.shape_material_list_row(r, external_base=external_base)
                 for r in rows
             ]
+
+            empty_message = None
+            if not data:
+                empty_message = self.repo.get_student_materials_empty_message(
+                    company_id=company_id,
+                    filters=filters,
+                )
+
             return {
                 "data": data,
+                "message": empty_message,
                 "pagination": {
                     "page": page,
                     "limit": per_page,
@@ -1014,43 +947,78 @@ class MaterialsService:
             ttl=20,
             builder=builder,
         )
-        return True, "OK", out
+
+        msg = out.get("message") or "OK"
+        return True, msg, out
 
     # -------------------------------------------------------------------------
     # STUDENT DETAIL
     # -------------------------------------------------------------------------
 
     def get_material_detail(
-        self,
-        *,
-        company_id: int,
-        material_id: int,
-        external_base: str,
+            self,
+            *,
+            company_id: int,
+            material_id: int,
+            external_base: str,
     ) -> Tuple[bool, str, Dict[str, Any]]:
+        """
+        Student-facing material detail.
+
+        Rules:
+        - Student can only see enabled materials inside their company.
+        - Student can only see materials for their own department/faculty scope.
+        - Cache must be user-aware because response includes user_state.
+        """
+
+        uid = getattr(getattr(g, "auth", None), "user_id", None)
+        uid_int = int(uid) if uid is not None else None
+
+        scope = self.repo.current_user_scope_for_debug(company_id=company_id)
+
+        params = {
+            "user_id": uid_int,
+            "material_id": int(material_id),
+            "external_base": external_base,
+            "profile_type": scope.get("profile_type"),
+            "department_id": scope.get("department_id"),
+            "faculty_id": scope.get("faculty_id"),
+            "semester_id": scope.get("semester_id"),
+        }
 
         def builder():
             row = self.repo.get_material_detail(
-                company_id=company_id, material_id=material_id
-            )
-            if not row:
-                return None
-            return self.repo.shape_material_detail_row(
-                row, external_base=external_base, company_id=company_id
+                company_id=company_id,
+                material_id=material_id,
             )
 
-        data = cached_detail(
-            entity="materials:detail",
+            if not row:
+                return None
+
+            return self.repo.shape_material_detail_row(
+                row,
+                external_base=external_base,
+                company_id=company_id,
+            )
+
+        # ✅ Keep TTL cache, but make student detail user/scope aware.
+        data = cached_list(
+            entity="materials:student:detail",
             company_id=company_id,
-            record_id=material_id,
-            ttl=30,
+            params=params,
+            scope="student",
+            ttl=20,
             builder=builder,
         )
 
         if data is None:
-            return False, "Material not found.", {}
+            reason = self.repo.get_student_material_access_message(
+                company_id=company_id,
+                material_id=material_id,
+            )
+            return False, reason, {}
 
         return True, "OK", {"data": data}
-
     # -------------------------------------------------------------------------
     # ADMIN LIST (Page)
     # -------------------------------------------------------------------------
