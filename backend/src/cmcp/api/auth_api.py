@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Optional
+
 from flask import Blueprint, request, session, make_response, current_app, g
 from werkzeug.exceptions import HTTPException
 from pydantic import ValidationError
@@ -25,6 +27,36 @@ auth_svc = AuthService()
 user_svc = UserService()
 edu_svc = EducationPeopleService()
 profile_page_svc = UserProfilePageService()
+
+
+def _resolve_company_id_for_profile(user: dict) -> Optional[int]:
+    raw = request.args.get("company_id")
+
+    if raw is None:
+        raw = request.headers.get("X-Company-ID")
+
+    if raw is None:
+        raw = session.get("company_id")
+
+    if raw is None:
+        raw = user.get("active_company_id")
+
+    try:
+        return int(raw) if raw is not None and raw != "" else None
+    except Exception:
+        return None
+def _delete_session_cookie(resp):
+    cookie_name = current_app.config.get("SESSION_COOKIE_NAME", "session")
+    cookie_domain = current_app.config.get("SESSION_COOKIE_DOMAIN", None)
+    cookie_path = current_app.config.get("SESSION_COOKIE_PATH", "/")
+
+    resp.delete_cookie(
+        cookie_name,
+        domain=cookie_domain,
+        path=cookie_path,
+    )
+
+    return resp
 @bp.post("/login")
 @public
 @rate_limit(key_prefix="login", limit=5, window=60, include_username=True)
@@ -124,14 +156,14 @@ def verify_email():
     return api_error(message=msg, status_code=400)
 
 @bp.get("/me/profile-page")
-@require_company_and_permission(doctype="User", action="READ")
-def my_profile_page(company_id: int):
+def my_profile_page():
     user = get_current_user()
+    company_id = _resolve_company_id_for_profile(user)
 
     try:
         data = profile_page_svc.get_my_profile_page(
             user_id=int(user["user_id"]),
-            active_company_id=int(company_id),
+            active_company_id=company_id,
             roles=user.get("roles") or [],
         )
 
@@ -142,15 +174,17 @@ def my_profile_page(company_id: int):
             data={"profile": out.model_dump()},
             status_code=200,
         )
+
     except HTTPException as e:
         return api_error(e.description or str(e), status_code=e.code or 400)
     except Exception as e:
         return api_error(f"Unexpected error: {e}", status_code=500)
 
+
 @bp.patch("/me/profile-page/update")
-@require_company_and_permission(doctype="User", action="UPDATE")
-def update_my_profile_page(company_id: int):
+def update_my_profile_page():
     user = get_current_user()
+    company_id = _resolve_company_id_for_profile(user)
     payload = request.get_json(silent=True) or {}
 
     try:
@@ -158,27 +192,40 @@ def update_my_profile_page(company_id: int):
 
         data = profile_page_svc.update_my_profile_page(
             user_id=int(user["user_id"]),
-            active_company_id=int(company_id),
+            active_company_id=company_id,
             data=req.model_dump(exclude_unset=True),
             roles=user.get("roles") or [],
         )
 
+        logout_current_session = bool(data.pop("_logout_current_session", False))
+
         out = UserProfilePageOut(**data)
 
-        return api_success(
-            message="Profile updated successfully.",
-            data={"profile": out.model_dump()},
-            status_code=200,
+        resp = make_response(
+            api_success(
+                message=(
+                    "Profile updated successfully. Please log in again."
+                    if logout_current_session
+                    else "Profile updated successfully."
+                ),
+                data={
+                    "profile": out.model_dump(),
+                    "logged_out": logout_current_session,
+                },
+                status_code=200,
+            )
         )
+
+        if logout_current_session:
+            session.clear()
+            session.permanent = False
+            _delete_session_cookie(resp)
+
+        return resp
+
     except ValidationError as e:
         return api_error(f"Invalid request: {e}", status_code=400)
     except HTTPException as e:
         return api_error(e.description or str(e), status_code=e.code or 400)
     except Exception as e:
         return api_error(f"Unexpected error: {e}", status_code=500)
-
-
-# @bp.get("/materials")
-# @require_company_and_permission(doctype="Material", action="READ")
-# def list_materials():
-#     ...

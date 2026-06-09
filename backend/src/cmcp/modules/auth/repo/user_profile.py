@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from cmcp.config.database import db
 from cmcp.modules.auth.models import User, UserAffiliation
 from cmcp.modules.education_people.models import StudentProfile, StaffProfile, Classroom
-from cmcp.modules.academic.models import Faculty, Department
+from cmcp.modules.academic.models import Faculty, Department, Semester
 
 
 class UserProfileRepository:
@@ -43,6 +43,7 @@ class UserProfileRepository:
                 return exact
 
         enabled_affs = [a for a in affs if bool(a.is_enabled)]
+
         primary = next((a for a in enabled_affs if bool(a.is_primary)), None)
         if primary:
             return primary
@@ -52,7 +53,12 @@ class UserProfileRepository:
 
         return affs[0]
 
-    def get_student_profile(self, *, profile_id: int, company_id: int) -> Optional[StudentProfile]:
+    def get_student_profile(
+        self,
+        *,
+        profile_id: int,
+        company_id: int,
+    ) -> Optional[StudentProfile]:
         stmt = (
             select(StudentProfile)
             .where(
@@ -62,7 +68,12 @@ class UserProfileRepository:
         )
         return db.session.scalar(stmt)
 
-    def get_staff_profile(self, *, profile_id: int, company_id: int) -> Optional[StaffProfile]:
+    def get_staff_profile(
+        self,
+        *,
+        profile_id: int,
+        company_id: int,
+    ) -> Optional[StaffProfile]:
         stmt = (
             select(StaffProfile)
             .where(
@@ -72,31 +83,68 @@ class UserProfileRepository:
         )
         return db.session.scalar(stmt)
 
-    def get_faculty(self, *, faculty_id: Optional[int], company_id: Optional[int] = None) -> Optional[Faculty]:
+    def get_faculty(
+        self,
+        *,
+        faculty_id: Optional[int],
+        company_id: Optional[int] = None,
+    ) -> Optional[Faculty]:
         if not faculty_id:
             return None
 
         stmt = select(Faculty).where(Faculty.id == int(faculty_id))
+
         if company_id is not None and hasattr(Faculty, "company_id"):
             stmt = stmt.where(Faculty.company_id == int(company_id))
+
         return db.session.scalar(stmt)
 
-    def get_department(self, *, department_id: Optional[int], company_id: Optional[int] = None) -> Optional[Department]:
+    def get_department(
+        self,
+        *,
+        department_id: Optional[int],
+        company_id: Optional[int] = None,
+    ) -> Optional[Department]:
         if not department_id:
             return None
 
         stmt = select(Department).where(Department.id == int(department_id))
+
         if company_id is not None and hasattr(Department, "company_id"):
             stmt = stmt.where(Department.company_id == int(company_id))
+
         return db.session.scalar(stmt)
 
-    def get_classroom(self, *, classroom_id: Optional[int], company_id: Optional[int] = None) -> Optional[Classroom]:
+    def get_classroom(
+        self,
+        *,
+        classroom_id: Optional[int],
+        company_id: Optional[int] = None,
+    ) -> Optional[Classroom]:
         if not classroom_id:
             return None
 
         stmt = select(Classroom).where(Classroom.id == int(classroom_id))
+
         if company_id is not None:
             stmt = stmt.where(Classroom.company_id == int(company_id))
+
+        return db.session.scalar(stmt)
+
+    def get_semester(
+        self,
+        *,
+        semester_id: Optional[int],
+        company_id: Optional[int] = None,
+    ) -> Optional[Semester]:
+        if not semester_id:
+            return None
+
+        stmt = select(Semester).where(Semester.id == int(semester_id))
+
+        if company_id is not None and hasattr(Semester, "company_id"):
+            stmt = stmt.where(Semester.company_id == int(company_id))
+
         return db.session.scalar(stmt)
 
     def email_exists_for_other_user(self, *, email: str, exclude_user_id: int) -> bool:

@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from typing import Optional, List
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class LoginRequest(BaseModel):
     username: str
     password: str
-    company_id: Optional[int] = None  # optional: lets UI choose active company
+    company_id: Optional[int] = None
 
 
 class ChangeMyPasswordRequest(BaseModel):
@@ -38,11 +38,12 @@ class UserProfileOut(BaseModel):
 
     affiliations: List[AffiliationOut]
 
-    # RBAC (for frontend)
     active_company_id: Optional[int] = None
     roles: List[str] = []
     permissions: List[str] = []
     is_company_admin: bool = False
+
+
 class ProfileFacultyOut(BaseModel):
     id: int
     name: str
@@ -59,9 +60,13 @@ class ProfileClassroomOut(BaseModel):
     room_number: Optional[str] = None
 
 
+class ProfileSemesterOut(BaseModel):
+    id: int
+    name: str
+    number: Optional[int] = None
+
+
 class UserProfilePageOut(BaseModel):
-    # IMPORTANT:
-    # id = profile id (student_profiles.id OR staff_profiles.id)
     id: Optional[int] = None
     user_id: int
 
@@ -72,7 +77,7 @@ class UserProfilePageOut(BaseModel):
     user_is_enabled: bool
     profile_is_enabled: Optional[bool] = None
 
-    profile_type: Optional[str] = None  # "student" | "staff"
+    profile_type: Optional[str] = None
 
     full_name: Optional[str] = None
     student_id: Optional[str] = None
@@ -81,20 +86,38 @@ class UserProfilePageOut(BaseModel):
     faculty: Optional[ProfileFacultyOut] = None
     department: Optional[ProfileDepartmentOut] = None
     classroom: Optional[ProfileClassroomOut] = None
+    semester: Optional[ProfileSemesterOut] = None
 
     roles: List[str] = []
 
+    can_edit: List[str] = []
+    security: dict = Field(default_factory=dict)
+
 
 class UpdateMyProfilePageRequest(BaseModel):
+    # Account fields
     email: Optional[EmailStr] = None
+
+    # Profile fields
+    full_name: Optional[str] = None
+
+    # Staff/admin editable profile fields
+    staff_id: Optional[str] = None
+    faculty_id: Optional[int] = None
+    department_id: Optional[int] = None
+
+    # Admin-only account/profile switches
     status: Optional[str] = None
     user_is_enabled: Optional[bool] = None
     profile_is_enabled: Optional[bool] = None
 
-    full_name: Optional[str] = None
-    faculty_id: Optional[int] = None
-    department_id: Optional[int] = None
-    classroom_id: Optional[int] = None
+    # Password section, Frappe-style
+    set_new_password: Optional[bool] = False
+    new_password: Optional[str] = None
+    logout_from_all_devices: Optional[bool] = False
 
+    # Student protected fields.
+    # We keep them in schema so frontend mistakes return a clean error from service.
     student_id: Optional[str] = None
-    staff_id: Optional[str] = None
+    classroom_id: Optional[int] = None
+    semester_id: Optional[int] = None
