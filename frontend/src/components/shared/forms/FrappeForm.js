@@ -60,7 +60,7 @@ const FrappeForm = ({
         ? "bg-gray-100 dark:bg-slate-800/70 text-gray-500 dark:text-gray-400 cursor-not-allowed focus:ring-0 focus:border-transparent"
         : ""
     }`;
-    // --- NEW: Card type ---
+
     if (field.type === "card") {
       return (
         <div className="col-span-12">
@@ -81,30 +81,23 @@ const FrappeForm = ({
         </div>
 
         <div className="flex-1 max-w-[460px]">
-          {/* {(field.type === "text" || field.type === "number") && (
+          {(field.type === "text" ||
+            field.type === "number" ||
+            field.type === "password") && (
             <input
-              type={field.type}
-              value={value ?? ""}
-              onChange={(e) =>
-                onChange(
-                  field.name,
-                  field.type === "number"
-                    ? e.target.value === ""
-                      ? ""
-                      : Number(e.target.value)
-                    : e.target.value,
-                )
-              }
-              placeholder={field.placeholder || ""}
-              className={inputClasses}
-            />
-          )} */}
-          {(field.type === "text" || field.type === "number") && (
-            <input
+              key={field.inputKey || field.name}
               type={field.type}
               value={value ?? ""}
               readOnly={!!field.readOnly}
               disabled={!!field.disabled}
+              name={field.inputName || field.name}
+              autoComplete={
+                field.autoComplete ||
+                (field.type === "password" ? "new-password" : "off")
+              }
+              data-lpignore={field.type === "password" ? "true" : undefined}
+              data-1p-ignore={field.type === "password" ? "true" : undefined}
+              data-form-type={field.type === "password" ? "other" : undefined}
               onChange={(e) => {
                 if (field.readOnly || field.disabled) return;
 
@@ -121,10 +114,16 @@ const FrappeForm = ({
               className={inputClasses}
             />
           )}
+
           {field.type === "textarea" && (
             <textarea
               value={value ?? ""}
-              onChange={(e) => onChange(field.name, e.target.value)}
+              readOnly={!!field.readOnly}
+              disabled={!!field.disabled}
+              onChange={(e) => {
+                if (field.readOnly || field.disabled) return;
+                onChange(field.name, e.target.value);
+              }}
               placeholder={field.placeholder || ""}
               className={`${inputClasses} min-h-[100px] resize-y`}
             />
@@ -133,7 +132,11 @@ const FrappeForm = ({
           {field.type === "select" && (
             <select
               value={value ?? ""}
-              onChange={(e) => onChange(field.name, e.target.value)}
+              disabled={!!field.disabled || !!field.readOnly}
+              onChange={(e) => {
+                if (field.readOnly || field.disabled) return;
+                onChange(field.name, e.target.value);
+              }}
               className={inputClasses}
             >
               <option value="" disabled>
@@ -150,7 +153,10 @@ const FrappeForm = ({
           {field.type === "async-dropdown" && (
             <AsyncDropdown
               value={value}
-              onChange={(val) => onChange(field.name, val)}
+              onChange={(val) => {
+                if (field.readOnly || field.disabled) return;
+                onChange(field.name, val);
+              }}
               options={field.dropdownProps?.options || []}
               isLoading={field.dropdownProps?.isLoading}
               hasMore={field.dropdownProps?.hasMore}
@@ -159,23 +165,37 @@ const FrappeForm = ({
               placeholder={field.placeholder || "Select..."}
               inputClassName={inputClasses}
               getSublabel={field.dropdownProps?.getSublabel}
+              disabled={!!field.disabled || !!field.readOnly}
             />
           )}
 
           {field.type === "tags" && (
             <TagInput
               value={Array.isArray(value) ? value : []}
-              onChange={(val) => onChange(field.name, val)}
+              onChange={(val) => {
+                if (field.readOnly || field.disabled) return;
+                onChange(field.name, val);
+              }}
               placeholder={field.placeholder || "Type and press Enter"}
             />
           )}
 
           {field.type === "checkbox" && (
-            <label className="flex items-start gap-3 pt-1 cursor-pointer select-none">
+            <label
+              className={`flex items-start gap-3 pt-1 select-none ${
+                field.readOnly || field.disabled
+                  ? "cursor-not-allowed opacity-70"
+                  : "cursor-pointer"
+              }`}
+            >
               <input
                 type="checkbox"
                 checked={!!value}
-                onChange={(e) => onChange(field.name, e.target.checked)}
+                disabled={!!field.disabled || !!field.readOnly}
+                onChange={(e) => {
+                  if (field.readOnly || field.disabled) return;
+                  onChange(field.name, e.target.checked);
+                }}
                 className="mt-1 h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
               />
               <div className="min-w-0">
@@ -199,7 +219,10 @@ const FrappeForm = ({
                   <input
                     type="file"
                     className="hidden"
+                    disabled={!!field.disabled || !!field.readOnly}
                     onChange={(e) => {
+                      if (field.readOnly || field.disabled) return;
+
                       const file = e.target.files?.[0];
                       if (!file) return;
 
@@ -234,22 +257,6 @@ const FrappeForm = ({
 
               {(field.fileProps?.readUrl || field.fileProps?.downloadUrl) && (
                 <div className="flex flex-wrap items-center gap-2">
-                  {/* {field.fileProps?.readUrl ? (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        window.open(
-                          field.fileProps.readUrl,
-                          "_blank",
-                          "noopener,noreferrer",
-                        )
-                      }
-                      className="inline-flex items-center justify-center rounded border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800 px-3 py-1.5 text-xs font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-slate-700"
-                    >
-                      Read current file
-                    </button>
-                  ) : null} */}
-
                   {field.fileProps?.downloadUrl ? (
                     <button
                       type="button"
@@ -312,7 +319,7 @@ const FrappeForm = ({
       layoutType === "full" ||
       layoutType === "stacked" ||
       field.type === "child-table" ||
-      field.type === "card" // card spans full width
+      field.type === "card"
     ) {
       return "sm:col-span-12";
     }

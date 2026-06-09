@@ -4,23 +4,65 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { authApi } from "./api";
 import { authKeys } from "./keys";
 
-export function useMyProfilePage(opts = {}) {
+export function useMyProfilePage(params = {}, opts = {}) {
   return useQuery({
-    queryKey: [...authKeys.me(), "profile-page"],
-    queryFn: authApi.getMyProfilePage,
+    queryKey: [...authKeys.profilePage(), params],
+    queryFn: () => authApi.getMyProfilePage(params),
     staleTime: 5 * 60 * 1000,
+    refetchOnWindowFocus: false,
     ...opts,
   });
 }
 
 export function useUpdateMyProfilePage(opts = {}) {
   const qc = useQueryClient();
+
   return useMutation({
     mutationFn: authApi.updateMyProfilePage,
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: [...authKeys.me(), "profile-page"] });
-      qc.invalidateQueries({ queryKey: authKeys.me() });
+
+    onSuccess: async (data, variables, context) => {
+      const profile = data?.data?.profile;
+      const loggedOut = Boolean(data?.data?.logged_out);
+
+      if (profile) {
+        qc.setQueriesData(
+          {
+            queryKey: authKeys.profilePage(),
+            exact: false,
+          },
+          (old) => {
+            if (!old) return old;
+
+            return {
+              ...old,
+              data: {
+                ...(old.data || {}),
+                profile,
+              },
+            };
+          },
+        );
+      }
+
+      if (loggedOut) {
+        qc.setQueryData(authKeys.me(), null);
+        qc.removeQueries({ queryKey: authKeys.root });
+      } else {
+        await qc.invalidateQueries({ queryKey: authKeys.profilePage() });
+        await qc.invalidateQueries({ queryKey: authKeys.me() });
+      }
+
+      if (typeof opts.onSuccess === "function") {
+        opts.onSuccess(data, variables, context);
+      }
     },
+
+    onError: (error, variables, context) => {
+      if (typeof opts.onError === "function") {
+        opts.onError(error, variables, context);
+      }
+    },
+
     ...opts,
   });
 }
@@ -42,6 +84,7 @@ export function useLogin() {
     mutationFn: authApi.login,
     onSuccess: async () => {
       await qc.invalidateQueries({ queryKey: authKeys.me() });
+      await qc.invalidateQueries({ queryKey: authKeys.profilePage() });
     },
   });
 }
@@ -52,13 +95,8 @@ export function useLogout() {
   return useMutation({
     mutationFn: authApi.logout,
     onSuccess: async () => {
-      // clear current user immediately
       qc.setQueryData(authKeys.me(), null);
-
-      // remove all auth cache
       qc.removeQueries({ queryKey: authKeys.root });
-
-      // optional: invalidate everything depending on auth
       await qc.invalidateQueries();
     },
   });
