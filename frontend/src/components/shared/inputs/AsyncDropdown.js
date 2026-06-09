@@ -49,8 +49,13 @@ function normalizeOption(opt, index) {
     };
   }
 
-  const rawValue =
-    opt.value ?? opt.id ?? opt.code ?? opt.slug ?? opt.label ?? index;
+  const hasOwn = (key) => Object.prototype.hasOwnProperty.call(opt, key);
+
+  const rawValue = hasOwn("value")
+    ? opt.value
+    : hasOwn("id")
+      ? opt.id
+      : (opt.code ?? opt.slug ?? opt.label ?? index);
 
   const rawLabel =
     opt.label ??
@@ -64,8 +69,7 @@ function normalizeOption(opt, index) {
   const label = rawLabel == null ? "" : String(rawLabel);
 
   const keyBase =
-    opt.value ??
-    opt.id ??
+    rawValue ??
     opt.code ??
     opt.slug ??
     opt.label ??
@@ -203,9 +207,10 @@ export default function AsyncDropdown({
     setHighlightedIndex(0);
     updateMenuPosition();
 
-    onSearch?.(""); // reset search
-    onLoadMore?.(); // 👈 force fetch
-  }, [disabled, onSearch, updateMenuPosition, onLoadMore]);
+    // Do not reset search here.
+    // Search should only reset after select/clear, not every focus/click.
+  }, [disabled, updateMenuPosition]);
+
   const handleSelect = useCallback(
     (opt) => {
       onChange?.(opt.value, opt.raw ?? opt);

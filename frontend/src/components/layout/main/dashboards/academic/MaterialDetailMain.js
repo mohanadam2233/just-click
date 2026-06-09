@@ -3,82 +3,36 @@
 import FrappeForm from "@/components/shared/forms/FrappeForm";
 import Preloader from "@/components/shared/others/Preloader";
 import {
-  useChaptersDropdown,
-  useCoursesDropdown,
+  useCourseOfferingChaptersDropdown,
+  useCourseOfferingsMaterialDropdown,
 } from "@/features/academic/hooks";
 import {
-  useDeleteMaterial,
-  useMaterialDetail,
+  useAdminMaterialDetail,
   useUpdateMaterial,
 } from "@/features/materials/hooks";
 import useNotify from "@/hooks/useNotify";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 
-// ------------------------------
-// Constants & helpers
-// ------------------------------
-const TRACKED_FIELDS = [
-  "course_offering_id",
-  "chapter_id",
-  "title",
-  "material_type",
-  "file",
-  "file_size_mb",
-  "slide_count",
-  "learning_objectives",
-  "description",
-  "semester",
-  "academic_year",
-  "department",
-  "is_downloadable",
-  "is_enabled",
-];
-
-const MATERIAL_TYPE_OPTIONS = [
-  { label: "PDF", value: "pdf" },
-  { label: "Slides", value: "slides" },
-  { label: "Video", value: "video" },
-  { label: "Other", value: "other" },
-];
-
-const materialSchema = z
-  .object({
-    course_offering_id: z.number().min(1, "Please select a course offering"),
-    chapter_id: z.number().optional().nullable(),
-    title: z.string().min(1, "Title is required").max(200, "Title too long"),
-    material_type: z.string().min(1, "Material type is required"),
-    file: z.any().optional(),
-    file_size_mb: z.number().optional().nullable(),
-    slide_count: z.number().optional().nullable(),
-    learning_objectives: z.array(z.string()).optional().default([]),
-    description: z.string().optional(),
-    semester: z.string().optional(),
-    academic_year: z.string().optional(),
-    department: z.string().optional(),
-    is_downloadable: z.boolean().default(true),
-    is_enabled: z.boolean().default(true),
-  })
-  .superRefine((data, ctx) => {
-    if (
-      data.material_type === "slides" &&
-      (!data.slide_count || data.slide_count <= 0)
-    ) {
-      ctx.addIssue({
-        path: ["slide_count"],
-        message: "Slide count must be greater than 0 for slides",
-        code: z.ZodIssueCode.custom,
-      });
-    }
-  });
+const materialSchema = z.object({
+  course_offering_id: z.number().min(1, "Please select a course offering"),
+  chapter_id: z.number().optional().nullable(),
+  title: z.string().min(1, "Title is required").max(200, "Title too long"),
+  material_type: z.string().optional().nullable(),
+  file_size_mb: z.number().optional().nullable(),
+  page_count: z.number().optional().nullable(),
+  slide_count: z.number().optional().nullable(),
+  learning_objectives: z.array(z.string()).optional().default([]),
+  description: z.string().optional(),
+  is_downloadable: z.boolean().default(true),
+  is_enabled: z.boolean().default(true),
+});
 
 function normalizeDropdownValue(value) {
   if (value == null) return "";
-
-  if (typeof value === "string" || typeof value === "number") {
+  if (typeof value === "string" || typeof value === "number")
     return String(value);
-  }
 
   if (typeof value === "object") {
     if (value.value != null) return String(value.value);
@@ -88,312 +42,292 @@ function normalizeDropdownValue(value) {
   return "";
 }
 
-function extractDetailRecord(res) {
-  return res?.data?.data?.data ?? res?.data?.data ?? res?.data ?? null;
+function normalizeNullableNumber(value) {
+  const normalized = normalizeDropdownValue(value);
+  if (!normalized) return null;
+
+  const n = Number(normalized);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-function extractDropdownRows(res) {
-  return res?.data?.data?.data ?? res?.data?.data ?? res?.data ?? [];
+function normalizeOptionalNumber(value) {
+  if (value === "" || value === null || value === undefined) return null;
+
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : null;
 }
 
-function normalizeMaterialToForm(material) {
-  if (!material) return null;
+function unwrapMaterial(res) {
+  return res?.data?.data || res?.data?.material || res?.data || null;
+}
 
-  return {
-    course_offering_id: material.course_offering?.id || "",
-    chapter_id: material.chapter?.id || "",
-    title: material.title || "",
-    material_type: material.material_type || "",
-    file: null,
-    file_size_mb: material.file?.size_mb ?? "",
-    slide_count: material.file?.slide_count ?? "",
-    learning_objectives: Array.isArray(material.learning_objectives)
-      ? material.learning_objectives
-      : [],
-    description: material.description || "",
-    semester: material.semester?.name || material.semester || "",
-    academic_year: material.academic_year?.name || material.academic_year || "",
-    department: material.department?.name || material.department || "",
-    is_downloadable: material.flags?.is_downloadable ?? true,
-    is_enabled: material.flags?.is_enabled ?? true,
+function formatMaterialType(type) {
+  const map = {
+    other: "Other",
+    pdf: "PDF",
+    slides: "Slides",
+    doc: "Document",
+    video: "Video",
+    link: "External Link",
   };
+
+  return map[type] || type || "—";
 }
 
-function getComparableValue(key, value) {
-  if (key === "file") {
-    if (!value) return "";
-    if (typeof value === "string") return value;
-    return value.name || "";
+function formatLength(material) {
+  const type = material?.material_type || "other";
+  const file = material?.file || {};
+
+  if (type === "slides") {
+    return file.slide_count ? `${file.slide_count} slides` : "—";
   }
 
-  if (key === "learning_objectives") {
-    return Array.isArray(value)
-      ? value.map((item) => String(item).trim()).filter(Boolean)
-      : [];
-  }
-
-  if (key === "chapter_id") {
-    return value || "";
-  }
-
-  return value;
-}
-
-function getChangedFields(initial, current) {
-  const changed = {};
-
-  TRACKED_FIELDS.forEach((key) => {
-    const oldVal = getComparableValue(key, initial?.[key]);
-    const newVal = getComparableValue(key, current?.[key]);
-
-    if (JSON.stringify(oldVal) !== JSON.stringify(newVal)) {
-      changed[key] = current[key];
-    }
-  });
-
-  return changed;
-}
-
-function buildMaterialPayload(values) {
-  return {
-    course_offering_id: Number(values.course_offering_id),
-    chapter_id: values.chapter_id ? Number(values.chapter_id) : null,
-    title: values.title,
-    material_type: values.material_type,
-    slide_count:
-      values.material_type === "slides"
-        ? values.slide_count
-          ? Number(values.slide_count)
-          : null
-        : null,
-    file_size_mb: values.file_size_mb ? Number(values.file_size_mb) : null,
-    learning_objectives: Array.isArray(values.learning_objectives)
-      ? values.learning_objectives
-      : [],
-    description: values.description || "",
-    semester: values.semester || "",
-    academic_year: values.academic_year || "",
-    department: values.department || "",
-    is_downloadable: !!values.is_downloadable,
-    is_enabled: !!values.is_enabled,
-  };
-}
-
-function mapCourseOptions(items = []) {
-  return items.map((item) => ({
-    label: item?.custom_title || item?.title || `Course #${item.id}`,
-    value: String(item.id),
-    meta: { code: item?.course?.code || "" },
-  }));
-}
-
-function mapChapterOptions(items = []) {
-  return items.map((item) => ({
-    label: item?.title || `Chapter #${item.id}`,
-    value: String(item.id),
-  }));
-}
-
-function getFileIcon(materialType) {
-  if (materialType === "slides") return "icofont-file-powerpoint";
-  if (materialType === "pdf") return "icofont-file-pdf";
-  if (materialType === "video") return "icofont-video-cam";
-  return "icofont-file";
-}
-
-function formatFileSize(sizeMb) {
-  if (!sizeMb && sizeMb !== 0) return "—";
-  return `${sizeMb} MB`;
-}
-
-function getPagesOrSlidesLabel(material) {
-  if (material?.material_type === "slides") {
-    const slides = material.file?.slide_count;
-    return slides ? `${slides} slides` : "—";
-  }
-
-  if (material?.material_type === "pdf") {
-    const pages = material.file?.page_count;
-    return pages ? `${pages} pages` : "—";
+  if (type === "pdf" || type === "doc") {
+    return file.page_count ? `${file.page_count} pages` : "—";
   }
 
   return "—";
 }
 
-// ------------------------------
-// File Summary Card Component
-// ------------------------------
-const FileSummaryCard = ({ material }) => {
-  const file = material?.file || {};
-  const stats = material?.stats || { view_count: 0, download_count: 0 };
-  const materialType = material?.material_type;
+const MATERIAL_TYPES = [
+  { label: "Other / Setup Later", value: "other" },
+  { label: "PDF Document", value: "pdf" },
+  { label: "Presentation (Slides)", value: "slides" },
+  { label: "Document", value: "doc" },
+  { label: "Video", value: "video" },
+  { label: "External Link", value: "link" },
+];
 
-  const items = [
-    ["Type", file?.extension?.toUpperCase() || "—"],
-    ["Size", formatFileSize(file?.size_mb)],
-    ["Length", getPagesOrSlidesLabel(material)],
-    ["Views", stats.view_count || 0],
-    ["Downloads", stats.download_count || 0],
-  ];
-
-  const iconClass = getFileIcon(materialType);
-
-  return (
-    <div className="bg-lightGrey11 dark:bg-gray-800 p-6 rounded-2xl border border-secondaryColor/20">
-      <div className="flex items-center gap-3 mb-4">
-        <div className="w-12 h-12 bg-secondaryColor rounded-xl flex items-center justify-center text-white text-2xl">
-          <i className={iconClass}></i>
-        </div>
-
-        <div>
-          <h4 className="font-bold text-blackColor dark:text-white">
-            File Summary
-          </h4>
-          <p className="text-xs text-secondaryColor font-bold uppercase">
-            {materialType === "slides"
-              ? "Presentation"
-              : materialType || "Material"}
-          </p>
-        </div>
-      </div>
-
-      <div className="space-y-3 text-sm">
-        {items.map(([label, value]) => (
-          <div key={label} className="flex items-center justify-between gap-3">
-            <span className="text-paragraphColor dark:text-gray-400">
-              {label}
-            </span>
-            <span className="font-bold text-blackColor dark:text-white uppercase">
-              {value}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-};
-
-// ------------------------------
-// Main Component
-// ------------------------------
-const MaterialDetailMain = ({ id }) => {
+const EditMaterialMain = ({ id }) => {
   const router = useRouter();
   const notify = useNotify();
 
-  const [values, setValues] = useState(null);
-  const [initialValues, setInitialValues] = useState(null);
+  const materialId = Number(id);
+
+  const { data: detailRes, isLoading: isLoadingDetail } =
+    useAdminMaterialDetail(materialId, {
+      enabled: !!materialId,
+    });
+
+  const updateMutation = useUpdateMaterial();
+
+  const [values, setValues] = useState({
+    course_offering_id: "",
+    chapter_id: "",
+    title: "",
+    material_type: "other",
+    file_size_mb: "",
+    page_count: "",
+    slide_count: "",
+    learning_objectives: [],
+    description: "",
+    is_downloadable: true,
+    is_enabled: true,
+    file: null,
+
+    readonly_course: "",
+    readonly_course_code: "",
+    readonly_offering: "",
+    readonly_department: "",
+    readonly_semester: "",
+    readonly_academic_year: "",
+    readonly_chapter: "",
+    readonly_credit_hours: "",
+
+    readonly_file_type: "",
+    readonly_file_size: "",
+    readonly_file_length: "",
+    readonly_views: "",
+    readonly_downloads: "",
+    readonly_file_url: "",
+  });
+
   const [errors, setErrors] = useState({});
-  const hasInitialized = useRef(false);
+  const [offeringSearch, setOfferingSearch] = useState("");
+  const [chapterSearch, setChapterSearch] = useState("");
 
-  const { data: detailRes, isLoading, isError } = useMaterialDetail(id);
-  const material = useMemo(() => extractDetailRecord(detailRes), [detailRes]);
-
-  const { data: coursesRes, isLoading: isLoadingCourses } = useCoursesDropdown(
-    { limit: 20, active_only: true },
-    { staleTime: 60_000 },
-  );
-
-  const courseRows = useMemo(
-    () => extractDropdownRows(coursesRes),
-    [coursesRes],
-  );
-
-  const coursesOptions = useMemo(
-    () => mapCourseOptions(courseRows),
-    [courseRows],
-  );
-
-  const normalizedCourseId = normalizeDropdownValue(values?.course_offering_id);
-
-  const { data: chaptersRes, isLoading: isLoadingChapters } =
-    useChaptersDropdown(
-      { course_offering_id: normalizedCourseId, limit: 20, active_only: true },
-      { enabled: !!normalizedCourseId, staleTime: 60_000 },
-    );
-
-  const chapterRows = useMemo(
-    () => extractDropdownRows(chaptersRes),
-    [chaptersRes],
-  );
-
-  const chapterOptions = useMemo(
-    () => mapChapterOptions(chapterRows),
-    [chapterRows],
-  );
+  const material = unwrapMaterial(detailRes);
 
   useEffect(() => {
     if (!material) return;
 
-    const normalized = normalizeMaterialToForm(material);
+    const file = material.file || {};
+    const course = material.course || {};
+    const offering = material.course_offering || {};
+    const chapter = material.chapter || {};
+    const department = material.department || {};
+    const semester = material.semester || {};
+    const academicYear = material.academic_year || {};
+    const stats = material.stats || {};
 
-    if (!hasInitialized.current) {
-      setValues(normalized);
-      setInitialValues(normalized);
-      hasInitialized.current = true;
-    } else if (!initialValues) {
-      setValues(normalized);
-      setInitialValues(normalized);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const chapterText = chapter.id
+      ? chapter.number
+        ? `Chapter ${chapter.number} — ${chapter.title}`
+        : chapter.title
+      : "General material";
+
+    setValues({
+      course_offering_id:
+        offering.id !== null && offering.id !== undefined
+          ? String(offering.id)
+          : "",
+      chapter_id:
+        chapter.id !== null && chapter.id !== undefined
+          ? String(chapter.id)
+          : "",
+      title: material.title || "",
+      material_type: material.material_type || "other",
+      file_size_mb: file.size_mb ?? "",
+      page_count: file.page_count ?? "",
+      slide_count: file.slide_count ?? "",
+      learning_objectives: Array.isArray(material.learning_objectives)
+        ? material.learning_objectives
+        : [],
+      description: material.description || "",
+      is_downloadable: material.flags?.is_downloadable ?? true,
+      is_enabled: material.flags?.is_enabled ?? true,
+      file: null,
+
+      readonly_course: course.title || "—",
+      readonly_course_code: course.code || "—",
+      readonly_offering: offering.custom_title || course.title || "—",
+      readonly_department: department.name || "—",
+      readonly_semester: semester.name
+        ? semester.number
+          ? `${semester.name} (${semester.number})`
+          : semester.name
+        : "—",
+      readonly_academic_year: academicYear.name || "—",
+      readonly_chapter: chapterText,
+      readonly_credit_hours:
+        offering.credit_hours !== null && offering.credit_hours !== undefined
+          ? String(offering.credit_hours)
+          : "—",
+
+      readonly_file_type: formatMaterialType(material.material_type),
+      readonly_file_size: file.size_mb ? `${file.size_mb} MB` : "—",
+      readonly_file_length: formatLength(material),
+      readonly_views:
+        stats.view_count !== null && stats.view_count !== undefined
+          ? String(stats.view_count)
+          : "0",
+      readonly_downloads:
+        stats.download_count !== null && stats.download_count !== undefined
+          ? String(stats.download_count)
+          : "0",
+      readonly_file_url: file.url || file.read_url || "—",
+    });
   }, [material]);
 
-  const isDirty = useMemo(() => {
-    if (!values || !initialValues) return false;
-    return Object.keys(getChangedFields(initialValues, values)).length > 0;
-  }, [initialValues, values]);
+  const normalizedOfferingId = normalizeDropdownValue(
+    values.course_offering_id,
+  );
 
-  const updateMutation = useUpdateMaterial();
-  const deleteMutation = useDeleteMaterial();
+  const { data: offeringsRes, isLoading: isLoadingOfferings } =
+    useCourseOfferingsMaterialDropdown(
+      {
+        limit: 20,
+        search: offeringSearch || undefined,
+      },
+      {
+        staleTime: 60_000,
+      },
+    );
 
-  const fileInfo = material?.file || {};
-  const flags = material?.flags || {};
+  const offeringOptions = useMemo(() => {
+    const rows = Array.isArray(offeringsRes?.data)
+      ? offeringsRes.data
+      : offeringsRes?.data?.data || [];
 
-  const handleOpenRead = useCallback(() => {
-    const readUrl = fileInfo?.read_url || fileInfo?.url;
+    if (!material?.course_offering?.id) return rows;
 
-    if (!readUrl) {
-      notify.warning("No file available to read");
-      return;
-    }
+    const exists = rows.some(
+      (x) => String(x.value ?? x.id) === String(material.course_offering.id),
+    );
 
-    window.open(readUrl, "_blank", "noopener,noreferrer");
-  }, [fileInfo?.read_url, fileInfo?.url, notify]);
+    if (exists) return rows;
 
-  const handleOpenDownload = useCallback(() => {
-    if (!fileInfo?.url) {
-      notify.warning("No file available to download");
-      return;
-    }
-
-    window.open(fileInfo.url, "_blank", "noopener,noreferrer");
-  }, [fileInfo?.url, notify]);
-
-  const handleDelete = useCallback(() => {
-    if (confirm("Permanently delete this material?")) {
-      deleteMutation.mutate(id, {
-        onSuccess: () => {
-          notify.success("Material deleted");
-          router.push("/admin/dashboards/admin-academic/materials");
+    return [
+      {
+        id: material.course_offering.id,
+        value: material.course_offering.id,
+        label:
+          material.course_offering.custom_title ||
+          material.course?.title ||
+          `Offering ${material.course_offering.id}`,
+        meta: {
+          department_name: material.department?.name,
         },
-        onError: (err) => notify.error(err?.message || "Delete failed"),
-      });
-    }
-  }, [deleteMutation, id, notify, router]);
+      },
+      ...rows,
+    ];
+  }, [offeringsRes, material]);
+
+  const { data: chaptersRes, isLoading: isLoadingChapters } =
+    useCourseOfferingChaptersDropdown(
+      normalizedOfferingId,
+      {
+        search: chapterSearch || undefined,
+      },
+      {
+        enabled: !!normalizedOfferingId,
+        staleTime: 60_000,
+      },
+    );
+
+  const chapterOptions = useMemo(() => {
+    const rows = Array.isArray(chaptersRes?.data)
+      ? chaptersRes.data
+      : chaptersRes?.data?.data || [];
+
+    if (!material?.chapter?.id) return rows;
+
+    const exists = rows.some(
+      (x) => String(x.value ?? x.id) === String(material.chapter.id),
+    );
+
+    if (exists) return rows;
+
+    return [
+      {
+        id: material.chapter.id,
+        value: material.chapter.id,
+        label: material.chapter.number
+          ? `Chapter ${material.chapter.number} — ${material.chapter.title}`
+          : material.chapter.title,
+        meta: {
+          description: material.chapter.description,
+          is_general: false,
+        },
+      },
+      ...rows,
+    ];
+  }, [chaptersRes, material]);
 
   const handleChange = (field, value) => {
+    if (field.startsWith("readonly_")) return;
+
     setValues((prev) => {
       const next = { ...prev, [field]: value };
 
       if (field === "course_offering_id") {
         next.chapter_id = "";
+        setChapterSearch("");
       }
 
-      if (field === "material_type" && value !== "slides") {
-        next.slide_count = "";
+      if (field === "material_type") {
+        const type = normalizeDropdownValue(value) || "other";
+
+        if (type !== "slides") next.slide_count = "";
+        if (type !== "pdf" && type !== "doc") next.page_count = "";
       }
 
-      if (field === "file" && value?.size) {
-        next.file_size_mb = Number((value.size / (1024 * 1024)).toFixed(2));
+      if (field === "file_upload") {
+        next.file = value;
+
+        if (value) {
+          next.file_size_mb = Number((value.size / (1024 * 1024)).toFixed(2));
+        }
       }
 
       return next;
@@ -404,20 +338,26 @@ const MaterialDetailMain = ({ id }) => {
     }
   };
 
-  const handleSave = (e) => {
+  const handleSave = async (e) => {
     e?.preventDefault();
-
-    if (!values) return;
-
     setErrors({});
+
+    const materialType =
+      normalizeDropdownValue(values.material_type) || "other";
 
     const testData = {
       ...values,
-      course_offering_id: Number(values.course_offering_id),
-      chapter_id: values.chapter_id ? Number(values.chapter_id) : null,
-      material_type: values.material_type,
-      file_size_mb: values.file_size_mb ? Number(values.file_size_mb) : null,
-      slide_count: values.slide_count ? Number(values.slide_count) : null,
+      course_offering_id: Number(
+        normalizeDropdownValue(values.course_offering_id),
+      ),
+      chapter_id: normalizeNullableNumber(values.chapter_id),
+      material_type: materialType,
+      file_size_mb: normalizeOptionalNumber(values.file_size_mb),
+      page_count: normalizeOptionalNumber(values.page_count),
+      slide_count: normalizeOptionalNumber(values.slide_count),
+      learning_objectives: Array.isArray(values.learning_objectives)
+        ? values.learning_objectives
+        : [],
     };
 
     const result = materialSchema.safeParse(testData);
@@ -435,148 +375,92 @@ const MaterialDetailMain = ({ id }) => {
       return;
     }
 
-    if (!isDirty) {
-      notify.warning("No changes detected");
-      return;
-    }
-
-    const changed = getChangedFields(initialValues, values);
-    const payload = buildMaterialPayload(values);
-    const updatePayload = {};
-
-    Object.keys(changed).forEach((key) => {
-      if (key === "file") return;
-      updatePayload[key] = payload[key];
-    });
-
-    const fileToUpload = changed.file ? values.file : undefined;
+    const payload = {
+      course_offering_id: testData.course_offering_id,
+      chapter_id: testData.chapter_id,
+      title: testData.title.trim(),
+      material_type: testData.material_type || "other",
+      file_size_mb: testData.file_size_mb,
+      page_count:
+        testData.material_type === "pdf" || testData.material_type === "doc"
+          ? testData.page_count
+          : null,
+      slide_count:
+        testData.material_type === "slides" ? testData.slide_count : null,
+      learning_objectives: testData.learning_objectives
+        .map((x) => String(x).trim())
+        .filter(Boolean),
+      description: testData.description?.trim() || "",
+      is_downloadable: testData.is_downloadable,
+      is_enabled: testData.is_enabled,
+    };
 
     updateMutation.mutate(
-      { id, payload: updatePayload, file: fileToUpload },
+      {
+        id: materialId,
+        payload,
+        file: values.file || null,
+      },
       {
         onSuccess: () => {
-          notify.success("Material updated");
-
-          const nextValues = {
-            ...values,
-            file: null,
-          };
-
-          setValues(nextValues);
-          setInitialValues(nextValues);
+          notify.success("Material updated successfully!");
+          router.push("/admin/dashboards/admin-academic/materials");
         },
         onError: (error) => {
           const msg =
-            error?.response?.data?.message || error?.message || "Update failed";
+            error?.info?.message ||
+            error?.response?.data?.message ||
+            error?.message ||
+            "Failed to update material";
 
-          notify.error(msg);
+          notify.error(String(msg));
         },
       },
     );
   };
 
-  const headerActions = (
-    <>
-      <button
-        type="button"
-        onClick={handleOpenRead}
-        disabled={!(fileInfo?.read_url || fileInfo?.url)}
-        className="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-300 dark:hover:bg-slate-700"
-      >
-        <svg
-          className="w-4 h-4 mr-2"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2"
-            d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-          />
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2"
-            d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-          />
-        </svg>
-        Read
-      </button>
-
-      <button
-        type="button"
-        onClick={handleOpenDownload}
-        disabled={
-          !fileInfo?.url || !(flags?.is_downloadable ?? values?.is_downloadable)
-        }
-        className="inline-flex items-center rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50 dark:bg-slate-800 dark:border-slate-700 dark:text-gray-300 dark:hover:bg-slate-700"
-      >
-        <svg
-          className="w-4 h-4 mr-2"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2"
-            d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"
-          />
-        </svg>
-        Download
-      </button>
-
-      <button
-        type="button"
-        onClick={() =>
-          router.push("/admin/dashboards/admin-academic/materials")
-        }
-        className="inline-flex items-center rounded-lg bg-gray-900 px-3 py-2 text-sm font-medium text-white hover:bg-gray-800 dark:bg-gray-700 dark:hover:bg-gray-600"
-      >
-        <svg
-          className="w-4 h-4 mr-2"
-          fill="none"
-          stroke="currentColor"
-          viewBox="0 0 24 24"
-        >
-          <path
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            strokeWidth="2"
-            d="M10 19l-7-7m0 0l7-7m-7 7h18"
-          />
-        </svg>
-        Back
-      </button>
-    </>
-  );
-
-  const detailMenuOptions = useMemo(
-    () => [
-      { label: "Print", action: () => window.print() },
-      { label: "Delete", action: handleDelete },
-    ],
-    [handleDelete],
-  );
-
-  const currentFileName = fileInfo?.url?.split("/").pop() || "";
-
-  const fileMetaText = [
-    fileInfo?.extension?.toUpperCase(),
-    fileInfo?.size_mb ? `${fileInfo.size_mb} MB` : null,
-    fileInfo?.slide_count ? `${fileInfo.slide_count} slides` : null,
-    fileInfo?.page_count ? `${fileInfo.page_count} pages` : null,
-  ]
-    .filter(Boolean)
-    .join(" • ");
-
   const formFields = [
     {
-      section: "Basic Information",
+      section: "Editable Information",
       fields: [
+        {
+          name: "course_offering_id",
+          label: "Course Offering",
+          type: "async-dropdown",
+          required: true,
+          layout: "half",
+          placeholder: "Search or select course offering",
+          dropdownProps: {
+            options: offeringOptions,
+            isLoading: isLoadingOfferings,
+            hasMore: false,
+            setSearch: setOfferingSearch,
+            getSublabel: (opt) => {
+              const dept = opt?.meta?.department_name;
+              return dept ? `Department: ${dept}` : "";
+            },
+          },
+        },
+        {
+          name: "chapter_id",
+          label: "Chapter",
+          type: "async-dropdown",
+          required: false,
+          layout: "half",
+          placeholder: normalizedOfferingId
+            ? "Search or select chapter"
+            : "Select course offering first",
+          dropdownProps: {
+            options: chapterOptions,
+            isLoading: isLoadingChapters,
+            hasMore: false,
+            setSearch: setChapterSearch,
+            getSublabel: (opt) => {
+              if (opt?.meta?.is_general) return "General material";
+              return opt?.meta?.description || "";
+            },
+          },
+        },
         {
           name: "title",
           label: "Title",
@@ -586,101 +470,68 @@ const MaterialDetailMain = ({ id }) => {
           placeholder: "e.g., Database Architecture Slides",
         },
         {
-          name: "course_offering_id",
-          label: "Course Offering",
-          type: "async-dropdown",
-          required: true,
-          layout: "stacked",
-          placeholder: "Select course offering",
-          dropdownProps: {
-            options: coursesOptions,
-            isLoading: isLoadingCourses,
-            hasMore: false,
-            getSublabel: (opt) =>
-              opt?.meta?.code ? `Code: ${opt.meta.code}` : "",
-          },
-        },
-        {
-          name: "chapter_id",
-          label: "Chapter",
-          type: "async-dropdown",
-          required: false,
-          layout: "stacked",
-          placeholder: normalizedCourseId
-            ? "Select chapter"
-            : "Select course offering first",
-          dropdownProps: {
-            options: chapterOptions,
-            isLoading: isLoadingChapters,
-            hasMore: false,
-          },
-        },
-      ],
-    },
-    {
-      section: "Academic Details",
-      fields: [
-        {
-          name: "semester",
-          label: "Semester",
-          type: "text",
-          layout: "half",
-          placeholder: "e.g., Semester 1",
-        },
-
-        {
-          name: "department",
-          label: "Department",
-          type: "text",
-          layout: "half",
-          placeholder: "e.g., Computer Science",
-        },
-      ],
-    },
-    {
-      section: "Content",
-      fields: [
-        {
           name: "material_type",
           label: "Material Type",
           type: "async-dropdown",
-          required: true,
-          layout: "third",
+          required: false,
+          layout: "half",
           placeholder: "Select type",
           dropdownProps: {
-            options: MATERIAL_TYPE_OPTIONS,
+            options: MATERIAL_TYPES,
             isLoading: false,
             hasMore: false,
+          },
+        },
+      ],
+    },
+    {
+      section: "Material File",
+      fields: [
+        {
+          name: "file_upload",
+          label: "Replace File",
+          type: "file",
+          layout: "full",
+          fileProps: {
+            buttonLabel: "Choose File",
+            currentFileName: material?.file?.url
+              ? material.file.url.split("/").pop()
+              : "",
+            downloadUrl: material?.file?.url || material?.file?.read_url || "",
+            helperText:
+              "Optional. Select a new file only if you want to upload or replace the current file.",
           },
         },
         {
           name: "file_size_mb",
           label: "File Size (MB)",
           type: "number",
-          layout: "third",
-          placeholder: "Auto-filled on upload",
+          layout: "half",
+          placeholder: "Auto-filled when you select a file",
         },
+      ],
+    },
+    {
+      section: "Additional Details",
+      fields: [
         {
           name: "slide_count",
           label: "Slide Count",
           type: "number",
-          layout: "third",
+          layout: "half",
           placeholder: "e.g., 45",
-          condition: (vals) => vals.material_type === "slides",
+          condition: (vals) =>
+            normalizeDropdownValue(vals.material_type) === "slides",
         },
         {
-          name: "file",
-          label: "File",
-          type: "file",
-          layout: "full",
-          fileProps: {
-            buttonLabel: "Replace File",
-            helperText:
-              "Upload a new version. File size and slide count will update automatically.",
-            currentFileName: currentFileName,
-            readUrl: fileInfo?.read_url || fileInfo?.url || "",
-            downloadUrl: fileInfo?.url || "",
-            metaText: fileMetaText,
+          name: "page_count",
+          label: "Page Count",
+          type: "number",
+          layout: "half",
+          placeholder: "e.g., 20",
+          condition: (vals) => {
+            const type = normalizeDropdownValue(vals.material_type);
+            return type === "pdf" || type === "doc";
           },
         },
         {
@@ -689,82 +540,160 @@ const MaterialDetailMain = ({ id }) => {
           type: "tags",
           layout: "full",
           placeholder: "Type objective and press Enter",
-          description: "Press Enter or comma to add each learning objective.",
         },
         {
           name: "description",
           label: "Description",
           type: "textarea",
           layout: "full",
-          placeholder: "Short summary...",
+          placeholder: "Short summary of the material...",
+        },
+        {
+          name: "is_downloadable",
+          label: "Downloadable",
+          type: "checkbox",
+          layout: "half",
+          checkboxLabel: "Allow students to download",
+          checkboxDescription:
+            "If unchecked, the material will be viewable only online.",
+        },
+        {
+          name: "is_enabled",
+          label: "Enabled",
+          type: "checkbox",
+          layout: "half",
+          checkboxLabel: "Publish this material",
+          checkboxDescription:
+            "If unchecked, students will not see this material.",
         },
       ],
     },
     {
-      section: "Access Control",
+      section: "Academic Context",
       fields: [
         {
-          name: "is_downloadable",
-          label: "Download Access",
-          type: "checkbox",
+          name: "readonly_course",
+          label: "Course",
+          type: "text",
           layout: "half",
-          checkboxLabel: "Allow Download",
-          checkboxDescription: "Students can download this file.",
+          readOnly: true,
         },
         {
-          name: "is_enabled",
-          label: "Visibility",
-          type: "checkbox",
+          name: "readonly_course_code",
+          label: "Course Code",
+          type: "text",
           layout: "half",
-          checkboxLabel: "Enabled",
-          checkboxDescription: "Material is visible to students.",
+          readOnly: true,
+        },
+        {
+          name: "readonly_offering",
+          label: "Offering",
+          type: "text",
+          layout: "half",
+          readOnly: true,
+        },
+        {
+          name: "readonly_department",
+          label: "Department",
+          type: "text",
+          layout: "half",
+          readOnly: true,
+        },
+        {
+          name: "readonly_semester",
+          label: "Semester",
+          type: "text",
+          layout: "half",
+          readOnly: true,
+        },
+        {
+          name: "readonly_academic_year",
+          label: "Academic Year",
+          type: "text",
+          layout: "half",
+          readOnly: true,
+        },
+        {
+          name: "readonly_chapter",
+          label: "Chapter",
+          type: "text",
+          layout: "full",
+          readOnly: true,
+        },
+        {
+          name: "readonly_credit_hours",
+          label: "Credit Hours",
+          type: "text",
+          layout: "half",
+          readOnly: true,
+        },
+      ],
+    },
+    {
+      section: "File Summary",
+      fields: [
+        {
+          name: "readonly_file_type",
+          label: "Type",
+          type: "text",
+          layout: "half",
+          readOnly: true,
+        },
+        {
+          name: "readonly_file_size",
+          label: "Size",
+          type: "text",
+          layout: "half",
+          readOnly: true,
+        },
+        {
+          name: "readonly_file_length",
+          label: "Length",
+          type: "text",
+          layout: "half",
+          readOnly: true,
+        },
+        {
+          name: "readonly_views",
+          label: "Views",
+          type: "text",
+          layout: "half",
+          readOnly: true,
+        },
+        {
+          name: "readonly_downloads",
+          label: "Downloads",
+          type: "text",
+          layout: "half",
+          readOnly: true,
+        },
+        {
+          name: "readonly_file_url",
+          label: "File URL",
+          type: "text",
+          layout: "full",
+          readOnly: true,
         },
       ],
     },
   ];
 
-  if (isLoading || !values) return <Preloader />;
-
-  if (isError) {
-    return (
-      <div className="p-10 text-center text-red-500">
-        Failed to load material.
-      </div>
-    );
-  }
-
-  const formTitle = `${id} - ${values?.title || "Material"}`;
-
-  const formStatus = updateMutation.isPending
-    ? "Saving..."
-    : isDirty
-      ? "Not Saved"
-      : "Saved";
+  if (isLoadingDetail || isLoadingOfferings) return <Preloader />;
 
   return (
     <div className="max-w-7xl mx-auto w-full px-4 sm:px-6">
-      <div className="flex flex-col lg:flex-row gap-6">
-        <div className="flex-1 min-w-0">
-          <FrappeForm
-            title={formTitle}
-            status={formStatus}
-            fields={formFields}
-            menuOptions={detailMenuOptions}
-            values={values}
-            errors={errors}
-            onChange={handleChange}
-            onSave={handleSave}
-            isSaving={updateMutation.isPending}
-            headerActions={headerActions}
-          />
-        </div>
-
-        <div className="lg:w-80 flex-shrink-0">
-          <FileSummaryCard material={material} />
-        </div>
-      </div>
+      <FrappeForm
+        title="Edit Material"
+        status={values.is_enabled ? "Published" : "Draft"}
+        fields={formFields}
+        values={values}
+        errors={errors}
+        onChange={handleChange}
+        onSave={handleSave}
+        isSaving={updateMutation.isPending}
+      />
     </div>
   );
 };
 
-export default MaterialDetailMain;
+export default EditMaterialMain;

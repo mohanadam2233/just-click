@@ -305,3 +305,26 @@ export const {
   useDelete: useDeleteAcademicYear,
   useBulkDelete: useBulkDeleteAcademicYears,
 } = academicYearsGeneric;
+
+export const useCourseOfferingsMaterialDropdown = (params = {}, options = {}) =>
+  useQuery({
+    queryKey: academicKeys.courseOfferings.materialDropdown(params),
+    queryFn: () => academicApi.getCourseOfferingsMaterialDropdown(params),
+    ...options,
+  });
+
+export const useCourseOfferingChaptersDropdown = (
+  courseOfferingId,
+  params = {},
+  options = {},
+) =>
+  useQuery({
+    queryKey: academicKeys.courseOfferings.chaptersDropdown(
+      courseOfferingId,
+      params,
+    ),
+    queryFn: () =>
+      academicApi.getCourseOfferingChaptersDropdown(courseOfferingId, params),
+    enabled: !!courseOfferingId,
+    ...options,
+  });

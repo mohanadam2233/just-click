@@ -21,4 +21,21 @@ export const academicKeys = {
   chapters: generateEntityKeys("chapters"),
   semesters: generateEntityKeys("semesters"),
   academicYears: generateEntityKeys("academic-years"),
+
+  courseOfferings: {
+    root: () => [...rootKey, "course-offerings"],
+    materialDropdown: (params = {}) => [
+      ...rootKey,
+      "course-offerings",
+      "material-dropdown",
+      params,
+    ],
+    chaptersDropdown: (courseOfferingId, params = {}) => [
+      ...rootKey,
+      "course-offerings",
+      courseOfferingId,
+      "chapters-dropdown",
+      params,
+    ],
+  },
 };

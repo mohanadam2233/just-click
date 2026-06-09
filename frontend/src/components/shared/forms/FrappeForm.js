@@ -55,8 +55,11 @@ const FrappeForm = ({
 
     const inputClasses = `w-full px-3 py-1.5 text-sm bg-gray-50 dark:bg-slate-800 border ${
       error ? "border-red-300 dark:border-red-500/50" : "border-transparent"
-    } rounded focus:bg-white dark:focus:bg-slate-900 focus:ring-1 focus:border-blue-500 focus:ring-blue-500 outline-none text-gray-900 dark:text-gray-200 transition-colors`;
-
+    } rounded focus:bg-white dark:focus:bg-slate-900 focus:ring-1 focus:border-blue-500 focus:ring-blue-500 outline-none text-gray-900 dark:text-gray-200 transition-colors ${
+      field.readOnly || field.disabled
+        ? "bg-gray-100 dark:bg-slate-800/70 text-gray-500 dark:text-gray-400 cursor-not-allowed focus:ring-0 focus:border-transparent"
+        : ""
+    }`;
     // --- NEW: Card type ---
     if (field.type === "card") {
       return (
@@ -78,7 +81,7 @@ const FrappeForm = ({
         </div>
 
         <div className="flex-1 max-w-[460px]">
-          {(field.type === "text" || field.type === "number") && (
+          {/* {(field.type === "text" || field.type === "number") && (
             <input
               type={field.type}
               value={value ?? ""}
@@ -95,8 +98,29 @@ const FrappeForm = ({
               placeholder={field.placeholder || ""}
               className={inputClasses}
             />
-          )}
+          )} */}
+          {(field.type === "text" || field.type === "number") && (
+            <input
+              type={field.type}
+              value={value ?? ""}
+              readOnly={!!field.readOnly}
+              disabled={!!field.disabled}
+              onChange={(e) => {
+                if (field.readOnly || field.disabled) return;
 
+                onChange(
+                  field.name,
+                  field.type === "number"
+                    ? e.target.value === ""
+                      ? ""
+                      : Number(e.target.value)
+                    : e.target.value,
+                );
+              }}
+              placeholder={field.placeholder || ""}
+              className={inputClasses}
+            />
+          )}
           {field.type === "textarea" && (
             <textarea
               value={value ?? ""}

@@ -10,7 +10,7 @@ import { materialsApi } from "./api";
 import { materialsKeys } from "./keys";
 
 /**
- * Get single material
+ * Student detail
  */
 export function useMaterialDetail(id, options = {}) {
   return useQuery({
@@ -22,7 +22,19 @@ export function useMaterialDetail(id, options = {}) {
 }
 
 /**
- * Normal paginated list
+ * Admin detail
+ */
+export function useAdminMaterialDetail(id, options = {}) {
+  return useQuery({
+    queryKey: materialsKeys.adminDetail(id),
+    queryFn: () => materialsApi.getAdminMaterial(id),
+    enabled: !!id,
+    ...options,
+  });
+}
+
+/**
+ * Student paginated list
  */
 export function useMaterialsList(params = {}, options = {}) {
   return useQuery({
@@ -33,7 +45,18 @@ export function useMaterialsList(params = {}, options = {}) {
 }
 
 /**
- * Infinite / cursor list
+ * Admin paginated list
+ */
+export function useAdminMaterialsList(params = {}, options = {}) {
+  return useQuery({
+    queryKey: materialsKeys.adminList(params),
+    queryFn: () => materialsApi.getAdminMaterialsList(params),
+    ...options,
+  });
+}
+
+/**
+ * Student infinite / cursor list
  */
 export function useInfiniteMaterialsList(baseParams = {}, options = {}) {
   return useInfiniteQuery({
@@ -82,6 +105,7 @@ export function useCreateMaterial(options = {}) {
     mutationFn: materialsApi.createMaterial,
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: materialsKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: materialsKeys.adminLists() });
 
       if (options.onSuccess) {
         options.onSuccess(data, variables, context);
@@ -103,9 +127,13 @@ export function useUpdateMaterial(options = {}) {
       const id = variables?.id;
 
       queryClient.invalidateQueries({ queryKey: materialsKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: materialsKeys.adminLists() });
 
       if (id) {
         queryClient.invalidateQueries({ queryKey: materialsKeys.detail(id) });
+        queryClient.invalidateQueries({
+          queryKey: materialsKeys.adminDetail(id),
+        });
       }
 
       if (options.onSuccess) {
@@ -126,9 +154,11 @@ export function useDeleteMaterial(options = {}) {
     mutationFn: materialsApi.deleteMaterial,
     onSuccess: (data, id, context) => {
       queryClient.invalidateQueries({ queryKey: materialsKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: materialsKeys.adminLists() });
 
       if (id) {
         queryClient.removeQueries({ queryKey: materialsKeys.detail(id) });
+        queryClient.removeQueries({ queryKey: materialsKeys.adminDetail(id) });
       }
 
       if (options.onSuccess) {
@@ -149,10 +179,12 @@ export function useBulkDeleteMaterials(options = {}) {
     mutationFn: materialsApi.bulkDeleteMaterials,
     onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: materialsKeys.lists() });
+      queryClient.invalidateQueries({ queryKey: materialsKeys.adminLists() });
 
       const ids = variables?.ids || [];
       ids.forEach((id) => {
         queryClient.removeQueries({ queryKey: materialsKeys.detail(id) });
+        queryClient.removeQueries({ queryKey: materialsKeys.adminDetail(id) });
       });
 
       if (options.onSuccess) {

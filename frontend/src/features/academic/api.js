@@ -205,4 +205,21 @@ export const academicApi = {
       method: "POST",
       body: JSON.stringify({ ids }),
     }),
+
+  // --- Course Offerings / Materials Dropdowns ---
+  getCourseOfferingsMaterialDropdown: (params) =>
+    fetchJSON(
+      `/academic/course-offerings/material-dropdown${toQueryString(params)}`,
+      {
+        method: "GET",
+      },
+    ),
+
+  getCourseOfferingChaptersDropdown: (courseOfferingId, params = {}) =>
+    fetchJSON(
+      `/academic/course-offerings/${courseOfferingId}/chapters/dropdown${toQueryString(params)}`,
+      {
+        method: "GET",
+      },
+    ),
 };
