@@ -25,7 +25,17 @@ const materialSchema = z.object({
   is_downloadable: z.boolean().default(true),
   is_enabled: z.boolean().default(true),
 });
-
+function extractMaterialId(res) {
+  return (
+    res?.data?.material?.material_id ||
+    res?.data?.material?.id ||
+    res?.data?.material_id ||
+    res?.material?.material_id ||
+    res?.material?.id ||
+    res?.material_id ||
+    null
+  );
+}
 function normalizeDropdownValue(value) {
   if (value == null) return "";
   if (typeof value === "string" || typeof value === "number")
@@ -230,8 +240,18 @@ const CreateMaterialMain = () => {
         file: values.file || null,
       },
       {
-        onSuccess: () => {
+        onSuccess: (res) => {
           notify.success("Material created successfully!");
+
+          const materialId = extractMaterialId(res);
+
+          if (materialId) {
+            router.push(
+              `/admin/dashboards/admin-academic/materials/${materialId}`,
+            );
+            return;
+          }
+
           router.push("/admin/dashboards/admin-academic/materials");
         },
         onError: (error) => {

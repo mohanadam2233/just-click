@@ -28,7 +28,17 @@ const materialSchema = z.object({
   is_downloadable: z.boolean().default(true),
   is_enabled: z.boolean().default(true),
 });
-
+function extractMaterialId(res) {
+  return (
+    res?.data?.material?.material_id ||
+    res?.data?.material?.id ||
+    res?.data?.material_id ||
+    res?.material?.material_id ||
+    res?.material?.id ||
+    res?.material_id ||
+    null
+  );
+}
 function normalizeDropdownValue(value) {
   if (value == null) return "";
   if (typeof value === "string" || typeof value === "number")
@@ -404,7 +414,7 @@ const EditMaterialMain = ({ id }) => {
       {
         onSuccess: () => {
           notify.success("Material updated successfully!");
-          router.push("/admin/dashboards/admin-academic/materials");
+          // Stay on the current detail page.
         },
         onError: (error) => {
           const msg =
