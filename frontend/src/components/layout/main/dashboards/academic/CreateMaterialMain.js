@@ -91,36 +91,47 @@ const CreateMaterialMain = () => {
     values.course_offering_id,
   );
 
-  const { data: offeringsRes, isLoading: isLoadingOfferings } =
-    useCourseOfferingsMaterialDropdown(
-      {
-        limit: 20,
-        search: offeringSearch || undefined,
-      },
-      {
-        staleTime: 60_000,
-      },
-    );
+  const {
+    data: offeringsRes,
+    isLoading: isLoadingOfferings,
+    isFetching: isFetchingOfferings,
+  } = useCourseOfferingsMaterialDropdown(
+    {
+      limit: 20,
+      search: offeringSearch || undefined,
+    },
+    {
+      staleTime: 60_000,
+      placeholderData: (previousData) => previousData,
+    },
+  );
 
   const offeringOptions = Array.isArray(offeringsRes?.data)
     ? offeringsRes.data
     : offeringsRes?.data?.data || [];
 
-  const { data: chaptersRes, isLoading: isLoadingChapters } =
-    useCourseOfferingChaptersDropdown(
-      normalizedOfferingId,
-      {
-        search: chapterSearch || undefined,
-      },
-      {
-        enabled: !!normalizedOfferingId,
-        staleTime: 60_000,
-      },
-    );
+  const {
+    data: chaptersRes,
+    isLoading: isLoadingChapters,
+    isFetching: isFetchingChapters,
+  } = useCourseOfferingChaptersDropdown(
+    normalizedOfferingId,
+    {
+      search: chapterSearch || undefined,
+    },
+    {
+      enabled: !!normalizedOfferingId,
+      staleTime: 60_000,
+      placeholderData: (previousData) => previousData,
+    },
+  );
 
   const chapterOptions = Array.isArray(chaptersRes?.data)
     ? chaptersRes.data
     : chaptersRes?.data?.data || [];
+
+  const isInitialOfferingsLoading =
+    isLoadingOfferings && !offeringsRes && !offeringSearch;
 
   const handleChange = (field, value) => {
     setValues((prev) => {
@@ -249,7 +260,7 @@ const CreateMaterialMain = () => {
           placeholder: "Search or select course offering",
           dropdownProps: {
             options: offeringOptions,
-            isLoading: isLoadingOfferings,
+            isLoading: isLoadingOfferings || isFetchingOfferings,
             hasMore: false,
             setSearch: setOfferingSearch,
             getSublabel: (opt) => {
@@ -269,7 +280,7 @@ const CreateMaterialMain = () => {
             : "Select course offering first",
           dropdownProps: {
             options: chapterOptions,
-            isLoading: isLoadingChapters,
+            isLoading: isLoadingChapters || isFetchingChapters,
             hasMore: false,
             setSearch: setChapterSearch,
             getSublabel: (opt) => {
@@ -383,7 +394,7 @@ const CreateMaterialMain = () => {
     },
   ];
 
-  if (isLoadingOfferings) return <Preloader />;
+  if (isInitialOfferingsLoading) return <Preloader />;
 
   return (
     <div className="max-w-7xl mx-auto w-full px-4 sm:px-6">

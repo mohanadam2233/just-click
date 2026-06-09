@@ -678,7 +678,7 @@ const EditMaterialMain = ({ id }) => {
     },
   ];
 
-  if (isLoadingDetail || isLoadingOfferings) return <Preloader />;
+  if (isLoadingDetail) return <Preloader />;
 
   return (
     <div className="max-w-7xl mx-auto w-full px-4 sm:px-6">
