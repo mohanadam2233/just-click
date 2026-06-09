@@ -4,21 +4,21 @@ from __future__ import annotations
 from typing import Optional, List
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-
+ALLOWED_MATERIAL_TYPES = {"slides", "pdf", "doc", "video", "link", "other"}
 class _BaseIn(BaseModel):
     # reject unknown fields like company_id, course_id, etc.
     model_config = ConfigDict(extra="forbid")
 
-
 class MaterialCreateIn(_BaseIn):
-    # ✅ Material belongs to course offering, not direct course
     course_offering_id: int
     chapter_id: Optional[int] = None
 
     title: str = Field(..., min_length=1, max_length=200)
-    material_type: str
 
-    # optional if uploading file via multipart; service can set it after upload
+    # ✅ optional on create; service will default to "other"
+    material_type: Optional[str] = "other"
+
+    # optional because admin may create material first and upload file later
     file_url: Optional[str] = None
 
     page_count: Optional[int] = None
@@ -45,6 +45,20 @@ class MaterialCreateIn(_BaseIn):
             raise ValueError("chapter_id must be valid.")
         return v
 
+    @field_validator("material_type")
+    @classmethod
+    def validate_material_type(cls, v: Optional[str]):
+        if v is None or not str(v).strip():
+            return "other"
+
+        s = str(v).strip().lower()
+        allowed = {"slides", "pdf", "doc", "video", "link", "other"}
+
+        if s not in allowed:
+            raise ValueError("Material type must be one of: slides, pdf, doc, video, link, other.")
+
+        return s
+
     @field_validator("page_count", "slide_count")
     @classmethod
     def validate_counts(cls, v: Optional[int]):
@@ -61,11 +75,11 @@ class MaterialCreateIn(_BaseIn):
 
 
 class MaterialUpdateIn(_BaseIn):
-    # ✅ allow changing offering if admin made mistake
-    # If you do NOT want this, remove course_offering_id from update.
+    # Allow fixing setup mistakes
     course_offering_id: Optional[int] = None
     chapter_id: Optional[int] = None
 
+    # ✅ optional, but can be changed later
     material_type: Optional[str] = None
 
     title: Optional[str] = Field(default=None, min_length=1, max_length=200)
@@ -95,6 +109,23 @@ class MaterialUpdateIn(_BaseIn):
             raise ValueError("chapter_id must be valid.")
         return v
 
+    @field_validator("material_type")
+    @classmethod
+    def validate_material_type(cls, v: Optional[str]):
+        if v is None:
+            return None
+
+        s = str(v).strip().lower()
+        if not s:
+            return None
+
+        allowed = {"slides", "pdf", "doc", "video", "link", "other"}
+
+        if s not in allowed:
+            raise ValueError("Material type must be one of: slides, pdf, doc, video, link, other.")
+
+        return s
+
     @field_validator("page_count", "slide_count")
     @classmethod
     def validate_counts(cls, v: Optional[int]):
@@ -108,8 +139,6 @@ class MaterialUpdateIn(_BaseIn):
         if v is not None and v < 0:
             raise ValueError("file_size_mb cannot be negative.")
         return v
-
-
 class MaterialTrackEventOut(BaseModel):
     material_id: int
     user_id: int

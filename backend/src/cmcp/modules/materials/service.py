@@ -114,25 +114,78 @@ def _parse_material_type(raw: Any) -> MaterialTypeEnum:
     except ValueError:
         raise BusinessValidationError(ERR_MATERIAL_TYPE_INVALID)
 
+def _validate_counts_relaxed(
+    material_type: str,
+    page_count: Any,
+    slide_count: Any,
+) -> Tuple[Optional[int], Optional[int]]:
+    """
+    Relaxed counts for setup-first workflow.
 
+    Rules:
+    - counts are optional
+    - page_count and slide_count cannot both be set
+    - slides can only use slide_count
+    - pdf/doc can only use page_count
+    - video/link/other should not use counts
+    """
+    t = (material_type or "other").strip().lower()
+
+    def _to_int_or_none(value: Any, label: str) -> Optional[int]:
+        if value is None or value == "":
+            return None
+        try:
+            n = int(value)
+        except Exception:
+            raise BusinessValidationError(f"{label} must be a valid number.")
+        if n < 1:
+            raise BusinessValidationError(f"{label} must be at least 1.")
+        return n
+
+    page = _to_int_or_none(page_count, "Page count")
+    slide = _to_int_or_none(slide_count, "Slide count")
+
+    if page is not None and slide is not None:
+        raise BusinessValidationError("Use either page count or slide count, not both.")
+
+    if t == "slides":
+        if page is not None:
+            raise BusinessValidationError("Slides materials use slide count, not page count.")
+        return None, slide
+
+    if t in {"pdf", "doc"}:
+        if slide is not None:
+            raise BusinessValidationError("PDF/DOC materials use page count, not slide count.")
+        return page, None
+
+    if t in {"video", "link", "other"}:
+        if page is not None or slide is not None:
+            raise BusinessValidationError("This material type does not use page count or slide count.")
+        return None, None
+
+    return None, None
 def _validate_file_against_type(material_type: str, file_storage: Optional[FileStorage]) -> None:
-    """Validate file matches material type requirements."""
-    t = material_type.lower()
+    """
+    File is optional.
 
-    if t == "link":
-        return
-
-    if t in ("slides", "pdf", "doc", "video") and not file_storage:
-        raise BusinessValidationError(ERR_FILE_REQUIRED_FOR_TYPE)
+    Admin may create the material record first, then upload the file later.
+    If a file is provided, validate extension against material_type.
+    """
+    t = (material_type or "other").strip().lower()
 
     if not file_storage:
+        return
+
+    if t == "link":
         return
 
     ext = os.path.splitext(file_storage.filename or "")[1].lower()
     allowed = ALLOWED_EXTENSIONS_BY_TYPE.get(t, set())
 
     if allowed and ext not in allowed:
-        raise BusinessValidationError(f"{ERR_FILE_TYPE_NOT_ALLOWED} Allowed: {', '.join(allowed)}")
+        raise BusinessValidationError(
+            f"{ERR_FILE_TYPE_NOT_ALLOWED} Allowed: {', '.join(sorted(allowed))}"
+        )
 
 
 def _validate_counts(
@@ -236,6 +289,13 @@ class MaterialsService:
             "title": (material.title or "").strip(),
         }
 
+    def _material_summary_out(self, material: Material) -> Dict[str, Any]:
+        """Small create/update response."""
+        return {
+            "material_id": int(material.id),
+            "title": material.title,
+        }
+
     # =========================================================
     # CREATE
     # =========================================================
@@ -251,23 +311,38 @@ class MaterialsService:
         """
         Create a single material.
 
-        Required: course_offering_id, title, material_type
+        Setup-first workflow:
+        - course_offering_id is required
+        - title is required
+        - material_type is optional; defaults to "other"
+        - file upload is optional for all material types
+        - counts are optional, but must match material_type if provided
         """
         try:
+            # -----------------------------
             # Validate course offering
+            # -----------------------------
             course_offering_id = int(data.get("course_offering_id") or 0)
             if not course_offering_id:
-                raise BusinessValidationError("course_offering_id is required.")
+                raise BusinessValidationError("Course offering is required.")
 
-            if not self.repo.course_offering_exists(company_id=company_id, offering_id=course_offering_id):
+            if not self.repo.course_offering_exists(
+                    company_id=company_id,
+                    offering_id=course_offering_id,
+            ):
                 raise NotFoundError(ERR_COURSE_OFFERING_NOT_FOUND)
 
+            # -----------------------------
             # Validate chapter if provided
+            # -----------------------------
             chapter_id = data.get("chapter_id")
             chapter_id = int(chapter_id) if chapter_id else None
 
             if chapter_id:
-                if not self.repo.chapter_exists(company_id=company_id, chapter_id=chapter_id):
+                if not self.repo.chapter_exists(
+                        company_id=company_id,
+                        chapter_id=chapter_id,
+                ):
                     raise NotFoundError(ERR_CHAPTER_NOT_FOUND)
 
                 if not self.repo.chapter_belongs_to_offering(
@@ -277,10 +352,11 @@ class MaterialsService:
                 ):
                     raise BusinessValidationError(ERR_CHAPTER_NOT_IN_OFFERING)
 
+            # -----------------------------
             # Validate title
+            # -----------------------------
             title = _require_text(data.get("title"), "Title")
 
-            # Check title uniqueness
             if self.repo.title_exists_in_scope(
                     company_id=company_id,
                     course_offering_id=course_offering_id,
@@ -289,23 +365,35 @@ class MaterialsService:
             ):
                 raise BusinessValidationError(ERR_MATERIAL_TITLE_EXISTS)
 
-            # Validate material type
-            material_type = _parse_material_type(data.get("material_type"))
+            # -----------------------------
+            # Material type: optional on create
+            # DB requires material_type, so default to "other"
+            # -----------------------------
+            material_type = _parse_material_type(data.get("material_type") or "other")
 
-            # Validate file
+            # -----------------------------
+            # File is optional. Validate only if uploaded.
+            # -----------------------------
             _validate_file_against_type(material_type.value, file_storage)
 
-            # Validate counts
-            page_count, slide_count = _validate_counts(
+            # -----------------------------
+            # Counts are optional, but must match type if provided.
+            # -----------------------------
+            page_count, slide_count = _validate_counts_relaxed(
                 material_type.value,
                 data.get("page_count"),
                 data.get("slide_count"),
             )
 
-            # Validate other fields
+            # -----------------------------
+            # Other optional fields
+            # -----------------------------
             file_size_mb = _validate_file_size_mb(data.get("file_size_mb"))
             learning_objectives = _validate_learning_objectives(data.get("learning_objectives"))
-            file_url = _validate_link_url(data.get("file_url")) if material_type.value == "link" else None
+
+            # Link URL is optional during setup.
+            # If provided, validate URL format.
+            file_url = _validate_link_url(data.get("file_url")) if data.get("file_url") else None
 
             with self.s.begin_nested():
                 payload = {
@@ -325,29 +413,24 @@ class MaterialsService:
                 }
 
                 material = self.repo.create_material(payload)
+                self.s.flush()
 
-                # Handle file upload
+                # Upload file only if provided.
+                # For link type, file_url comes from data["file_url"], not file upload.
                 if file_storage and material_type.value != "link":
                     self._upload_material_file(material, file_storage, external_base)
 
                 self.s.flush()
 
-                return True, "Material created successfully", {
-                    "material": self._clean_material_out(material)
+                return True, "Material created successfully.", {
+                    "material": self._material_summary_out(material)
                 }
-
         except (BusinessValidationError, NotFoundError) as e:
             return False, str(e), None
-        except IntegrityError as e:
-
-            return False, "Database constraint error. Please check unique fields.", None
+        except IntegrityError:
+            return False, "Database constraint error. Please check duplicate material title or invalid references.", None
         except Exception as e:
-
             return False, f"Unexpected error: {e}", None
-
-        # =========================================================
-        # UPDATE (Single)
-        # =========================================================
 
     def update_material(
             self,
@@ -361,47 +444,89 @@ class MaterialsService:
         """
         Update a single material.
 
-        Current behavior:
-        - Does not require file unless a new file is uploaded.
-        - Does not allow changing course_offering_id, chapter_id, material_type.
+        Setup-first workflow:
+        - file upload is optional
+        - material_type can be changed later
+        - counts are optional, but must match the final material_type
+        - course_offering_id and chapter_id remain protected unless you intentionally allow moving
         """
         try:
             material = self.repo.get_material(material_id, company_id=company_id)
             if not material:
                 raise NotFoundError(ERR_MATERIAL_NOT_FOUND)
 
-            # Prevent changing immutable fields
-            if "course_offering_id" in data and data["course_offering_id"] is not None:
-                if int(data["course_offering_id"]) != int(material.course_offering_id):
-                    raise BusinessValidationError(ERR_CANNOT_CHANGE_OFFERING)
-
-            if "chapter_id" in data:
-                incoming = int(data["chapter_id"]) if data["chapter_id"] else None
-                current = int(material.chapter_id) if material.chapter_id else None
-                if current != incoming:
-                    raise BusinessValidationError(ERR_CANNOT_CHANGE_CHAPTER)
-
-            if "material_type" in data and data["material_type"] is not None:
-                current_type = getattr(material.material_type, "value", str(material.material_type)).lower()
-                if str(data["material_type"]).lower() != current_type:
-                    raise BusinessValidationError(ERR_CANNOT_CHANGE_TYPE)
-
-            current_type = getattr(material.material_type, "value", str(material.material_type)).lower()
-
-            # ✅ FIX: only validate file when replacing/uploading a new file
-            if file_storage:
-                _validate_file_against_type(current_type, file_storage)
-
             patch: Dict[str, Any] = {}
 
-            # Update title with uniqueness check
+            # -----------------------------
+            # Prevent moving offering unless you explicitly want to allow it.
+            # Safer for final project: do not move material between offerings here.
+            # -----------------------------
+            if "course_offering_id" in data and data["course_offering_id"] is not None:
+                incoming_offering_id = int(data["course_offering_id"])
+                if incoming_offering_id != int(material.course_offering_id):
+                    raise BusinessValidationError(ERR_CANNOT_CHANGE_OFFERING)
+
+            # -----------------------------
+            # Prevent changing chapter unless you intentionally allow it.
+            # -----------------------------
+            if "chapter_id" in data:
+                incoming_chapter_id = int(data["chapter_id"]) if data["chapter_id"] else None
+                current_chapter_id = int(material.chapter_id) if material.chapter_id else None
+
+                if incoming_chapter_id != current_chapter_id:
+                    raise BusinessValidationError(ERR_CANNOT_CHANGE_CHAPTER)
+
+            # -----------------------------
+            # Material type can be changed later
+            # -----------------------------
+            current_type = getattr(material.material_type, "value", str(material.material_type)).lower()
+            new_type = current_type
+            material_type_enum = material.material_type
+
+            if "material_type" in data and data["material_type"]:
+                new_type = str(data["material_type"]).strip().lower()
+                material_type_enum = _parse_material_type(new_type)
+
+            # -----------------------------
+            # File is optional. Validate only if uploaded.
+            # -----------------------------
+            if file_storage:
+                _validate_file_against_type(new_type, file_storage)
+
+            # -----------------------------
+            # Validate counts using final material type.
+            #
+            # If material type changes, old counts are cleared unless new counts are sent.
+            # Example: other -> slides clears old page_count and accepts slide_count if provided.
+            # -----------------------------
+            page_count = material.page_count
+            slide_count = material.slide_count
+
+            type_changed = new_type != current_type
+            count_fields_sent = "page_count" in data or "slide_count" in data
+
+            if type_changed or count_fields_sent:
+                page_count, slide_count = _validate_counts_relaxed(
+                    new_type,
+                    data.get("page_count", None if type_changed else material.page_count),
+                    data.get("slide_count", None if type_changed else material.slide_count),
+                )
+
+                patch["page_count"] = page_count
+                patch["slide_count"] = slide_count
+
+            if type_changed:
+                patch["material_type"] = material_type_enum
+
+            # -----------------------------
+            # Title
+            # -----------------------------
             if "title" in data and data["title"] is not None:
                 new_title = _require_text(data["title"], "Title")
 
                 current_title_norm = (material.title or "").strip().casefold()
                 new_title_norm = new_title.strip().casefold()
 
-                # Only check duplicate if title really changed
                 if new_title_norm != current_title_norm:
                     if self.repo.title_exists_in_scope(
                             company_id=company_id,
@@ -414,6 +539,9 @@ class MaterialsService:
 
                     patch["title"] = new_title
 
+            # -----------------------------
+            # Normal editable fields
+            # -----------------------------
             if "description" in data:
                 patch["description"] = _safe_text(data["description"])
 
@@ -429,37 +557,34 @@ class MaterialsService:
             if "file_size_mb" in data:
                 patch["file_size_mb"] = _validate_file_size_mb(data["file_size_mb"])
 
-            if "file_url" in data and current_type == "link":
-                patch["file_url"] = _validate_link_url(data["file_url"])
-
-            # Update counts if provided
-            if "page_count" in data or "slide_count" in data:
-                page_count, slide_count = _validate_counts(
-                    current_type,
-                    data.get("page_count", material.page_count),
-                    data.get("slide_count", material.slide_count),
-                )
-                patch["page_count"] = page_count
-                patch["slide_count"] = slide_count
+            # -----------------------------
+            # Link URL:
+            # - optional
+            # - if sent empty, clear it
+            # - if sent non-empty, validate URL
+            # -----------------------------
+            if "file_url" in data:
+                patch["file_url"] = _validate_link_url(data["file_url"]) if data["file_url"] else None
 
             with self.s.begin_nested():
                 if patch:
                     self.repo.update_material(material, patch)
 
-                # Replace file only if file uploaded
-                if file_storage and current_type != "link":
+                # Replace/upload physical file only if provided.
+                # Use new_type because admin may change type and upload in the same request.
+                if file_storage and new_type != "link":
                     self._upload_material_file(material, file_storage, external_base)
 
                 self.s.flush()
 
-                return True, "Material updated successfully", {
-                    "material": self._clean_material_out(material)
+                return True, "Material updated successfully.", {
+                    "material": self._material_summary_out(material)
                 }
 
         except (BusinessValidationError, NotFoundError) as e:
             return False, str(e), None
         except IntegrityError:
-            return False, "Database constraint error.", None
+            return False, "Database constraint error. Please check duplicate material title or invalid references.", None
         except Exception as e:
             return False, f"Unexpected error: {e}", None
 

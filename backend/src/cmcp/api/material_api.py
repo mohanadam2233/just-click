@@ -148,10 +148,24 @@ def create_material(company_id: int):
             payload_raw = request.form.get("payload")
             if not payload_raw:
                 return api_error("Missing 'payload' JSON in form-data.", status_code=422)
-            payload = MaterialCreateIn.model_validate(json.loads(payload_raw))
+
+            try:
+                payload_data = json.loads(payload_raw)
+            except Exception:
+                return api_error("Invalid payload JSON.", status_code=400)
+
+            try:
+                payload = MaterialCreateIn.model_validate(payload_data)
+            except ValidationError as e:
+                return api_error(_clean_pydantic_error(e), status_code=400)
+
             file_storage = request.files.get("file")
+
         else:
-            payload = MaterialCreateIn.model_validate(request.get_json(silent=True) or {})
+            try:
+                payload = MaterialCreateIn.model_validate(request.get_json(silent=True) or {})
+            except ValidationError as e:
+                return api_error(_clean_pydantic_error(e), status_code=400)
 
         ok, msg, out = svc.create_material(
             company_id=company_id,
@@ -159,22 +173,28 @@ def create_material(company_id: int):
             file_storage=file_storage,
             external_base=_external_base(),
         )
+
         _commit_ok(ok)
 
-        # ✅ invalidate AFTER commit
+        # ✅ keep cache invalidation
         if ok:
             bump_list("materials:list", company_id)
-            # if create returns id, bump detail too
-            mid = (out or {}).get("data", {}).get("material_id") or (out or {}).get("material_id")
+
+            mid = (
+                (out or {}).get("data", {}).get("material_id")
+                or (out or {}).get("data", {}).get("material", {}).get("id")
+                or (out or {}).get("material_id")
+                or (out or {}).get("material", {}).get("id")
+            )
+
             if mid:
                 bump_detail("materials:detail", company_id, int(mid))
+                bump_detail("materials:admin:detail", company_id, int(mid))
 
         return api_success(message=msg, data=out, status_code=201) if ok else api_error(msg, status_code=400)
 
-
     except Exception as e:
         return _handle_error(e)
-
 
 @bp.put("/<int:material_id>/update")
 @require_company_and_permission(doctype="Material", action="UPDATE")
@@ -196,10 +216,11 @@ def update_material(company_id: int, material_id: int):
             payload_raw = request.form.get("payload")
 
             if payload_raw:
-                payload_data = json.loads(payload_raw)
+                try:
+                    payload_data = json.loads(payload_raw)
+                except Exception:
+                    return api_error("Invalid payload JSON.", status_code=400)
             else:
-                # Allow file-only update.
-                # Also support simple form fields like title=xxx if frontend sends them directly.
                 payload_data = {
                     k: v
                     for k, v in request.form.items()
@@ -209,7 +230,10 @@ def update_material(company_id: int, material_id: int):
             if not payload_data and not file_storage:
                 return api_error("Nothing to update.", status_code=422)
 
-            payload = MaterialUpdateIn.model_validate(payload_data)
+            try:
+                payload = MaterialUpdateIn.model_validate(payload_data)
+            except ValidationError as e:
+                return api_error(_clean_pydantic_error(e), status_code=400)
 
         else:
             payload_data = request.get_json(silent=True) or {}
@@ -217,7 +241,10 @@ def update_material(company_id: int, material_id: int):
             if not payload_data:
                 return api_error("Nothing to update.", status_code=422)
 
-            payload = MaterialUpdateIn.model_validate(payload_data)
+            try:
+                payload = MaterialUpdateIn.model_validate(payload_data)
+            except ValidationError as e:
+                return api_error(_clean_pydantic_error(e), status_code=400)
 
         ok, msg, out = svc.update_material(
             company_id=company_id,
@@ -229,8 +256,10 @@ def update_material(company_id: int, material_id: int):
 
         _commit_ok(ok)
 
+        # ✅ keep cache invalidation
         if ok:
             bump_detail("materials:detail", company_id, int(material_id))
+            bump_detail("materials:admin:detail", company_id, int(material_id))
             bump_list("materials:list", company_id)
 
         return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
@@ -411,7 +440,7 @@ def list_materials(company_id: int):
 # =============================================================================
 
 @bp.get("/list/admin")
-@require_company_and_permission(doctype="Material", action="READ")
+@require_company_and_permission(doctype="Material", action="READ", admin_only=True)
 def list_materials_admin(company_id: int):
     """
     Admin-facing material list (minimal data for tables).
@@ -486,7 +515,7 @@ def get_material_detail(company_id: int, material_id: int):
 # =============================================================================
 
 @bp.get("/get/<int:material_id>/admin")
-@require_company_and_permission(doctype="Material", action="READ")
+@require_company_and_permission(doctype="Material", action="READ", admin_only=True)
 def get_material_detail_admin(company_id: int, material_id: int):
     """Admin-facing material detail (full data for editing)."""
     try:

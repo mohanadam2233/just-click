@@ -91,15 +91,22 @@ def require_permission(doctype: str, action: str):
 
 
 
-def require_company_and_permission(*, doctype: str, action: str, company_param: str = "company_id"):
+def require_company_and_permission(
+    *,
+    doctype: str,
+    action: str,
+    company_param: str = "company_id",
+    admin_only: bool = False,
+):
     """
     Standard decorator:
     - resolves company_id from:
         1) ?company_id=
         2) JSON body {"company_id": ...}
         3) g.auth.active_company_id
-    - enforces scope
+    - enforces company scope
     - checks permission
+    - optionally requires admin access
     - injects company_id into route kwargs
     """
     def _dec(fn: Callable[..., Any]):
@@ -129,18 +136,86 @@ def require_company_and_permission(*, doctype: str, action: str, company_param: 
             if cid is None:
                 return jsonify({"message": "company_id is required."}), 400
 
-            # scope check
             try:
                 ensure_company_scope(company_id=int(cid))
             except PermissionError as e:
                 return jsonify({"message": str(e)}), 403
 
-            # permission check
             if not has_permission(doctype=doctype, action=action):
-                return jsonify({"message": f"You do not have permission to perform this action ({doctype}:{action})."}), 403
+                return jsonify({
+                    "message": f"You do not have permission to perform this action ({doctype}:{action})."
+                }), 403
+
+            # ✅ Extra admin-only route protection
+            if admin_only:
+                is_admin = (
+                    bool(getattr(ctx, "is_system_owner", False))
+                    or bool(getattr(ctx, "is_system_admin", False))
+                    or bool(getattr(ctx, "is_company_admin", False))
+                )
+
+                if not is_admin:
+                    return jsonify({
+                        "message": "You do not have permission to access the admin materials area."
+                    }), 403
 
             kwargs["company_id"] = int(cid)
             return fn(*args, **kwargs)
 
         return _wrapped
     return _dec
+
+#
+# def require_company_and_permission(*, doctype: str, action: str, company_param: str = "company_id"):
+#     """
+#     Standard decorator:
+#     - resolves company_id from:
+#         1) ?company_id=
+#         2) JSON body {"company_id": ...}
+#         3) g.auth.active_company_id
+#     - enforces scope
+#     - checks permission
+#     - injects company_id into route kwargs
+#     """
+#     def _dec(fn: Callable[..., Any]):
+#         @wraps(fn)
+#         def _wrapped(*args, **kwargs):
+#             ctx = _ctx()
+#             if not ctx:
+#                 return jsonify({"message": "Unauthorized"}), 401
+#
+#             # 1) query param
+#             cid = request.args.get(company_param, type=int)
+#
+#             # 2) json body
+#             if cid is None:
+#                 body = request.get_json(silent=True) or {}
+#                 if isinstance(body, dict):
+#                     raw = body.get(company_param)
+#                     try:
+#                         cid = int(raw) if raw is not None else None
+#                     except Exception:
+#                         cid = None
+#
+#             # 3) active company
+#             if cid is None:
+#                 cid = int(ctx.active_company_id) if ctx.active_company_id else None
+#
+#             if cid is None:
+#                 return jsonify({"message": "company_id is required."}), 400
+#
+#             # scope check
+#             try:
+#                 ensure_company_scope(company_id=int(cid))
+#             except PermissionError as e:
+#                 return jsonify({"message": str(e)}), 403
+#
+#             # permission check
+#             if not has_permission(doctype=doctype, action=action):
+#                 return jsonify({"message": f"You do not have permission to perform this action ({doctype}:{action})."}), 403
+#
+#             kwargs["company_id"] = int(cid)
+#             return fn(*args, **kwargs)
+#
+#         return _wrapped
+#     return _dec
