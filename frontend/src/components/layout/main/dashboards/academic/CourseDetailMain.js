@@ -529,6 +529,9 @@ const CourseDetailMain = ({ id }) => {
   const [values, setValues] = useState(null);
   const [initialValues, setInitialValues] = useState(null);
   const [errors, setErrors] = useState({});
+  const [departmentSearch, setDepartmentSearch] = useState("");
+  const [semesterSearch, setSemesterSearch] = useState("");
+
   const [chapterModal, setChapterModal] = useState({
     open: false,
     offeringIndex: null,
@@ -539,11 +542,39 @@ const CourseDetailMain = ({ id }) => {
   const { data: response, isLoading, isError } = useCourseDetail(id);
   const courseData = useMemo(() => extractDetailRecord(response), [response]);
 
-  const { data: departmentsResponse, isLoading: isLoadingDepts } =
-    useDepartmentsDropdown({ limit: 20, offset: 0, active_only: true });
+  const {
+    data: departmentsResponse,
+    isLoading: isLoadingDepts,
+    isFetching: isFetchingDepts,
+  } = useDepartmentsDropdown(
+    {
+      limit: 20,
+      offset: 0,
+      active_only: true,
+      search: departmentSearch || undefined,
+    },
+    {
+      staleTime: 60_000,
+      placeholderData: (previousData) => previousData,
+    },
+  );
 
-  const { data: semestersResponse, isLoading: isLoadingSems } =
-    useSemestersDropdown({ limit: 20, offset: 0, active_only: true });
+  const {
+    data: semestersResponse,
+    isLoading: isLoadingSems,
+    isFetching: isFetchingSems,
+  } = useSemestersDropdown(
+    {
+      limit: 20,
+      offset: 0,
+      active_only: true,
+      search: semesterSearch || undefined,
+    },
+    {
+      staleTime: 60_000,
+      placeholderData: (previousData) => previousData,
+    },
+  );
 
   const updateMutation = useUpdateCourse();
   const deleteMutation = useDeleteCourse();
@@ -732,6 +763,8 @@ const CourseDetailMain = ({ id }) => {
 
           setValues(nextValues);
           setInitialValues(nextValues);
+
+          // Stay on this same detail page.
         },
         onError: (err) => {
           notify.error(err?.message || "Failed to update course");
@@ -830,13 +863,14 @@ const CourseDetailMain = ({ id }) => {
               width: "min-w-[200px]",
               type: "async-dropdown",
               required: true,
-              placeholder: "Select department",
+              placeholder: "Search department",
               editableInTable: true,
               editableInModal: true,
               dropdownProps: {
                 options: departmentOptions,
-                isLoading: isLoadingDepts,
+                isLoading: isLoadingDepts || isFetchingDepts,
                 hasMore: false,
+                setSearch: setDepartmentSearch,
                 getSublabel: (opt) =>
                   opt?.meta?.code ? `Code: ${opt.meta.code}` : "",
               },
@@ -847,13 +881,14 @@ const CourseDetailMain = ({ id }) => {
               width: "min-w-[160px]",
               type: "async-dropdown",
               required: true,
-              placeholder: "Select semester",
+              placeholder: "Search semester",
               editableInTable: true,
               editableInModal: true,
               dropdownProps: {
                 options: semesterOptions,
-                isLoading: isLoadingSems,
+                isLoading: isLoadingSems || isFetchingSems,
                 hasMore: false,
+                setSearch: setSemesterSearch,
                 getSublabel: (opt) => opt?.meta?.code || "",
               },
             },
@@ -934,7 +969,14 @@ const CourseDetailMain = ({ id }) => {
         },
       },
     ],
-    [departmentOptions, semesterOptions, isLoadingDepts, isLoadingSems],
+    [
+      departmentOptions,
+      semesterOptions,
+      isLoadingDepts,
+      isFetchingDepts,
+      isLoadingSems,
+      isFetchingSems,
+    ],
   );
 
   const menuOptions = useMemo(

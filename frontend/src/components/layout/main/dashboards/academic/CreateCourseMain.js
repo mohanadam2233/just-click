@@ -61,6 +61,20 @@ function extractDropdownRows(res) {
   return res?.data?.data?.data ?? res?.data?.data ?? res?.data ?? [];
 }
 
+function extractCourseId(res) {
+  return (
+    res?.data?.course?.course_id ||
+    res?.data?.course?.id ||
+    res?.data?.course_id ||
+    res?.data?.id ||
+    res?.course?.course_id ||
+    res?.course?.id ||
+    res?.course_id ||
+    res?.id ||
+    null
+  );
+}
+
 function makeRowId(prefix, id, index) {
   return `${prefix}-${id ?? `new-${index}`}`;
 }
@@ -414,22 +428,47 @@ const CreateCourseMain = () => {
   });
 
   const [errors, setErrors] = useState({});
+  const [departmentSearch, setDepartmentSearch] = useState("");
+  const [semesterSearch, setSemesterSearch] = useState("");
+
   const [chapterModal, setChapterModal] = useState({
     open: false,
     offeringIndex: null,
   });
 
-  const { data: deptsRes, isLoading: isLoadingDepts } = useDepartmentsDropdown({
-    limit: 20,
-    offset: 0,
-    active_only: true,
-  });
+  const {
+    data: deptsRes,
+    isLoading: isLoadingDepts,
+    isFetching: isFetchingDepts,
+  } = useDepartmentsDropdown(
+    {
+      limit: 20,
+      offset: 0,
+      active_only: true,
+      search: departmentSearch || undefined,
+    },
+    {
+      staleTime: 60_000,
+      placeholderData: (previousData) => previousData,
+    },
+  );
 
-  const { data: semsRes, isLoading: isLoadingSems } = useSemestersDropdown({
-    limit: 20,
-    offset: 0,
-    active_only: true,
-  });
+  const {
+    data: semsRes,
+    isLoading: isLoadingSems,
+    isFetching: isFetchingSems,
+  } = useSemestersDropdown(
+    {
+      limit: 20,
+      offset: 0,
+      active_only: true,
+      search: semesterSearch || undefined,
+    },
+    {
+      staleTime: 60_000,
+      placeholderData: (previousData) => previousData,
+    },
+  );
 
   const departmentRows = useMemo(() => {
     const rows = extractDropdownRows(deptsRes);
@@ -545,8 +584,16 @@ const CreateCourseMain = () => {
     const payload = buildCreatePayload(cleanedValues);
 
     createMutation.mutate(payload, {
-      onSuccess: () => {
+      onSuccess: (res) => {
         notify.success("Course created successfully");
+
+        const courseId = extractCourseId(res);
+
+        if (courseId) {
+          router.push(`/admin/dashboards/admin-academic/courses/${courseId}`);
+          return;
+        }
+
         router.push("/admin/dashboards/admin-academic/courses");
       },
       onError: (err) => {
@@ -625,13 +672,14 @@ const CreateCourseMain = () => {
               width: "min-w-[200px]",
               type: "async-dropdown",
               required: true,
-              placeholder: "Select department",
+              placeholder: "Search department",
               editableInTable: true,
               editableInModal: true,
               dropdownProps: {
                 options: departmentOptions,
-                isLoading: isLoadingDepts,
+                isLoading: isLoadingDepts || isFetchingDepts,
                 hasMore: false,
+                setSearch: setDepartmentSearch,
                 getSublabel: (opt) =>
                   opt?.meta?.code ? `Code: ${opt.meta.code}` : "",
               },
@@ -642,17 +690,17 @@ const CreateCourseMain = () => {
               width: "min-w-[130px]",
               type: "async-dropdown",
               required: true,
-              placeholder: "Select semester",
+              placeholder: "Search semester",
               editableInTable: true,
               editableInModal: true,
               dropdownProps: {
                 options: semesterOptions,
-                isLoading: isLoadingSems,
+                isLoading: isLoadingSems || isFetchingSems,
                 hasMore: false,
+                setSearch: setSemesterSearch,
                 getSublabel: (opt) => opt?.meta?.code || "",
               },
             },
-
             {
               key: "chapters_count",
               label: "Chapters",
@@ -712,7 +760,14 @@ const CreateCourseMain = () => {
         },
       },
     ],
-    [departmentOptions, semesterOptions, isLoadingDepts, isLoadingSems],
+    [
+      departmentOptions,
+      semesterOptions,
+      isLoadingDepts,
+      isFetchingDepts,
+      isLoadingSems,
+      isFetchingSems,
+    ],
   );
 
   return (
