@@ -20,7 +20,8 @@ from cmcp.core.tenant_resolver import resolve_company_id_for_public
 from cmcp.modules.auth.deps import get_current_user
 from cmcp.modules.auth.models import UserStatusEnum, User, UserAffiliation
 from cmcp.security.rbac_guards import require_company_and_permission, require_permission
-
+from pydantic import BaseModel, Field
+from typing import List
 from cmcp.modules.education_people.schemas import (
     BulkDeleteIn,
     ClassroomCreate, ClassroomUpdate, StudentRegisterIn, BulkApproveIn,
@@ -89,7 +90,13 @@ def _handle_error(e: Exception):
         return api_error(str(e), status_code=400)
     return api_error(str(e), status_code=400)
 
+class ResendApprovalEmailIn(BaseModel):
+    send_now: bool = True
 
+
+class BulkResendApprovalEmailIn(BaseModel):
+    user_ids: List[int] = Field(default_factory=list)
+    send_now: bool = False
 # =========================================================
 # CLASSROOM
 # =========================================================
@@ -203,6 +210,64 @@ def approve_student(company_id: int, user_id: int):
         return api_success(message=msg, data={"user_id": user_id}, status_code=200) if ok else api_error(msg, status_code=400)
     except Exception as e:
         return _handle_error(e)
+
+
+@bp.post("/students/<int:user_id>/approval-email/resend")
+@require_company_and_permission(doctype="Student Profile", action="UPDATE")
+def resend_student_approval_email(company_id: int, user_id: int):
+    admin = get_current_user()
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        req = ResendApprovalEmailIn(**payload)
+
+        ok, msg, out = svc.resend_student_approval_email(
+            company_id=int(company_id),
+            user_id=int(user_id),
+            admin_user_id=int(admin["user_id"]),
+            send_now=bool(req.send_now),
+        )
+
+        if ok:
+            db.session.commit()
+            return api_success(message=msg, data=out or {}, status_code=200)
+
+        db.session.rollback()
+        return api_error(msg, status_code=400)
+
+    except Exception as e:
+        db.session.rollback()
+        return api_error(str(e), status_code=400)
+
+
+@bp.post("/students/approval-email/resend-bulk")
+@require_company_and_permission(doctype="Student Profile", action="UPDATE")
+def bulk_resend_student_approval_emails(company_id: int):
+    admin = get_current_user()
+    payload = request.get_json(silent=True) or {}
+
+    try:
+        req = BulkResendApprovalEmailIn(**payload)
+
+        ok, msg, out = svc.bulk_resend_student_approval_emails(
+            company_id=int(company_id),
+            user_ids=req.user_ids,
+            admin_user_id=int(admin["user_id"]),
+            send_now=bool(req.send_now),
+        )
+
+        if ok:
+            db.session.commit()
+            return api_success(message=msg, data=out or {}, status_code=200)
+
+        db.session.rollback()
+        return api_error(msg, data=out or {}, status_code=400)
+
+    except Exception as e:
+        db.session.rollback()
+        return api_error(str(e), status_code=400)
+
+
 @bp.post("/students/bulk-approve")
 @require_company_and_permission(doctype="Student", action="APPROVE")
 def bulk_approve_students(company_id: int):

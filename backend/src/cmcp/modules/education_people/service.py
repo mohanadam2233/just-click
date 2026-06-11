@@ -20,7 +20,11 @@ from cmcp.modules.academic.models import Faculty, Department
 from cmcp.common.email.service import EmailService, _utcnow
 from cmcp.common.security.tokens import generate_email_verify_token, verify_token
 from cmcp.common.security.passwords import generate_temp_password, hash_password
+from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 
+from cmcp.common.cache import bump_user_profile
+from cmcp.common.cache.session_manager import remove_session
 from cmcp.modules.education_people.repository import EducationPeopleRepo
 from cmcp.modules.education_people.validation import (
     require_text,
@@ -288,7 +292,7 @@ class EducationPeopleService:
 
             return False, f"Registration failed: could not send verification email. ({str(e)})", None
 
-            return False, f"Registration failed: could not send verification email. ({str(e)})", None
+
         # =========================================================
         # STEP 4: Verify email
         # =========================================================
@@ -329,68 +333,316 @@ class EducationPeopleService:
 
         return True, "✅ Email Verified Successfully! Your account is now pending admin approval."
 
-        # =========================================================
-        # STEP 6: Admin approve (temp password length 6)
-        # =========================================================
+    # =========================================================
+    # STEP 6: Admin approve (temp password length 6)
+    # =========================================================
 
-    def admin_approve(self, *, user_id: int, admin_user_id: int) -> Tuple[bool, str]:
-        user = self.s.query(User).filter(User.id == int(user_id)).first()
+    def _approval_email_payload_for_student(self, *, user: User, prof: StudentProfile, temp_pw: str) -> Dict[str, Any]:
+        faculty_name = ""
+        department_name = ""
+
+        fac = self.s.query(Faculty).filter(
+            Faculty.id == prof.faculty_id,
+            Faculty.company_id == prof.company_id,
+        ).first()
+
+        dep = self.s.query(Department).filter(
+            Department.id == prof.department_id,
+            Department.company_id == prof.company_id,
+        ).first()
+
+        if fac:
+            faculty_name = fac.name or ""
+
+        if dep:
+            department_name = dep.name or ""
+
+        base_url = (os.getenv("APP_BASE_URL", "").rstrip("/")) or "http://localhost:3000"
+        login_link = f"{base_url}/login"
+
+        return {
+            "full_name": prof.full_name,
+            "student_id": user.username,
+            "temp_password": temp_pw,
+            "login_link": login_link,
+            "expires_hours": int(os.getenv("TEMP_PASSWORD_TTL_HOURS", "24")),
+            "faculty_name": faculty_name,
+            "department_name": department_name,
+        }
+
+    def _send_or_queue_approval_email(
+            self,
+            *,
+            user: User,
+            prof: StudentProfile,
+            temp_pw: str,
+            send_now: bool,
+    ):
+        row = self.email_svc.enqueue(
+            to_email=user.email,
+            subject="Your Jamhuriya University Portal Account is Approved!",
+            template="approved",
+            payload=self._approval_email_payload_for_student(
+                user=user,
+                prof=prof,
+                temp_pw=temp_pw,
+            ),
+            ref_type="User",
+            ref_id=user.id,
+        )
+
+        self.s.flush([row])
+
+        if send_now:
+            self.email_svc.send_outbox_row_now(row)
+
+        return row
+
+    def _set_new_temp_password(self, *, user: User) -> str:
+        temp_pw = generate_temp_password(6)
+
+        user.password_hash = hash_password(temp_pw)
+        user.must_change_password = True
+        user.temp_password_expires_at = _utcnow() + timedelta(
+            hours=int(os.getenv("TEMP_PASSWORD_TTL_HOURS", "24"))
+        )
+
+        return temp_pw
+
+    def admin_approve(
+            self,
+            *,
+            user_id: int,
+            admin_user_id: int,
+            send_now: bool = True,
+    ) -> Tuple[bool, str]:
+        user = (
+            self.s.query(User)
+            .options(joinedload(User.affiliations))
+            .filter(User.id == int(user_id))
+            .first()
+        )
+
         if not user:
             return False, "User not found."
+
+        if user.user_type != UserTypeEnum.STUDENT:
+            return False, "Only student accounts can be approved here."
 
         if user.status != UserStatusEnum.PENDING_APPROVAL:
             return False, "User is not pending approval."
 
-        # ✅ safe even if request already has transaction
-        with self.s.begin_nested():
-            temp_pw = generate_temp_password(6)
+        prof = (
+            self.s.query(StudentProfile)
+            .filter(StudentProfile.user_id == int(user.id))
+            .first()
+        )
 
-            user.password_hash = hash_password(temp_pw)
-            user.must_change_password = True
-            user.temp_password_expires_at = _utcnow() + timedelta(hours=int(os.getenv("TEMP_PASSWORD_TTL_HOURS", "24")))
+        if not prof:
+            return False, "Student profile not found."
 
-            user.is_enabled = True
-            user.status = UserStatusEnum.ACTIVE
-            user.approved_at = _utcnow()
-            user.approved_by = int(admin_user_id)
+        try:
+            with self.s.begin_nested():
+                temp_pw = self._set_new_temp_password(user=user)
 
-            for aff in (user.affiliations or []):
-                aff.is_enabled = True
+                user.is_enabled = True
+                user.status = UserStatusEnum.ACTIVE
+                user.approved_at = _utcnow()
+                user.approved_by = int(admin_user_id)
 
-            prof = self.s.query(StudentProfile).filter(StudentProfile.user_id == user.id).first()
+                for aff in user.affiliations or []:
+                    aff.is_enabled = True
 
-            faculty_name = ""
-            department_name = ""
-            if prof:
-                fac = self.s.query(Faculty).filter(Faculty.id == prof.faculty_id).first()
-                dep = self.s.query(Department).filter(Department.id == prof.department_id).first()
-                faculty_name = fac.name if fac else ""
-                department_name = dep.name if dep else ""
+                self._send_or_queue_approval_email(
+                    user=user,
+                    prof=prof,
+                    temp_pw=temp_pw,
+                    send_now=send_now,
+                )
 
-            base_url = (os.getenv("APP_BASE_URL", "").rstrip("/")) or "http://localhost:3000"
-            login_link = f"{base_url}/login"
+                self.s.flush()
 
-            self.email_svc.enqueue(
-                to_email=user.email,
-                subject="Your Jamhuriya University Portal Account is Approved!",
-                template="approved",
-                payload={
-                    "full_name": (prof.full_name if prof else ""),
-                    "student_id": user.username,
-                    "temp_password": temp_pw,
-                    "login_link": login_link,
-                    "expires_hours": int(os.getenv("TEMP_PASSWORD_TTL_HOURS", "24")),
-                    "faculty_name": faculty_name,
-                    "department_name": department_name,
-                },
-                ref_type="User",
-                ref_id=user.id,
+            try:
+                bump_user_profile(int(user.id), int(prof.company_id))
+                remove_session(int(user.id))
+            except Exception:
+                log.warning("Post-approval cache/session cleanup failed.", exc_info=True)
+
+            return True, "Approved and approval email sent." if send_now else "Approved and email queued."
+
+        except Exception as e:
+            log.exception("admin_approve failed user_id=%s", user_id)
+            try:
+                self.s.rollback()
+            except Exception:
+                pass
+            return False, f"Approval failed: could not send approval email. ({str(e)})"
+
+    def resend_student_approval_email(
+            self,
+            *,
+            company_id: int,
+            user_id: int,
+            admin_user_id: int,
+            send_now: bool = True,
+    ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
+        row = (
+            self.s.query(User, StudentProfile)
+            .join(StudentProfile, StudentProfile.user_id == User.id)
+            .filter(
+                User.id == int(user_id),
+                StudentProfile.company_id == int(company_id),
+                User.user_type == UserTypeEnum.STUDENT,
             )
+            .first()
+        )
 
-            self.s.flush()  # ✅ ensure outbox row has id before route commit
+        if not row:
+            return False, "Student user not found.", None
 
-        return True, "Approved and email queued."
+        user, prof = row
 
+        if user.status != UserStatusEnum.ACTIVE or not user.is_enabled:
+            return False, "Student must be approved and active before resending login email.", None
+
+        if not user.email_verified_at:
+            return False, "Student email is not verified yet.", None
+
+        try:
+            with self.s.begin_nested():
+                temp_pw = self._set_new_temp_password(user=user)
+
+                self._send_or_queue_approval_email(
+                    user=user,
+                    prof=prof,
+                    temp_pw=temp_pw,
+                    send_now=send_now,
+                )
+
+                self.s.flush()
+
+            try:
+                bump_user_profile(int(user.id), int(company_id))
+                remove_session(int(user.id))
+            except Exception:
+                log.warning("Post-resend cache/session cleanup failed.", exc_info=True)
+
+            return True, "Approval email resent with a new temporary password.", {
+                "user_id": int(user.id),
+                "email": user.email,
+            }
+
+        except Exception as e:
+            log.exception("resend_student_approval_email failed user_id=%s", user_id)
+            try:
+                self.s.rollback()
+            except Exception:
+                pass
+            return False, f"Could not resend approval email. ({str(e)})", None
+
+    def bulk_resend_student_approval_emails(
+            self,
+            *,
+            company_id: int,
+            user_ids: List[int],
+            admin_user_id: int,
+            send_now: bool = False,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        clean_ids = sorted({int(x) for x in (user_ids or []) if int(x or 0) > 0})
+
+        if not clean_ids:
+            return False, "No student users selected.", {
+                "queued": 0,
+                "sent": 0,
+                "skipped": [],
+            }
+
+        max_bulk = int(os.getenv("APPROVAL_EMAIL_BULK_MAX", "200"))
+        if len(clean_ids) > max_bulk:
+            return False, f"Cannot process more than {max_bulk} students at once.", {
+                "queued": 0,
+                "sent": 0,
+                "skipped": [],
+            }
+
+        rows = (
+            self.s.query(User, StudentProfile)
+            .join(StudentProfile, StudentProfile.user_id == User.id)
+            .filter(
+                User.id.in_(clean_ids),
+                StudentProfile.company_id == int(company_id),
+                User.user_type == UserTypeEnum.STUDENT,
+            )
+            .all()
+        )
+
+        found_by_id = {int(user.id): (user, prof) for user, prof in rows}
+        skipped = []
+        processed = 0
+
+        try:
+            with self.s.begin_nested():
+                for uid in clean_ids:
+                    pair = found_by_id.get(uid)
+
+                    if not pair:
+                        skipped.append({"user_id": uid, "reason": "Student user not found."})
+                        continue
+
+                    user, prof = pair
+
+                    if user.status != UserStatusEnum.ACTIVE or not user.is_enabled:
+                        skipped.append({
+                            "user_id": uid,
+                            "reason": "Student is not approved and active.",
+                        })
+                        continue
+
+                    if not user.email_verified_at:
+                        skipped.append({
+                            "user_id": uid,
+                            "reason": "Student email is not verified.",
+                        })
+                        continue
+
+                    temp_pw = self._set_new_temp_password(user=user)
+
+                    self._send_or_queue_approval_email(
+                        user=user,
+                        prof=prof,
+                        temp_pw=temp_pw,
+                        send_now=send_now,
+                    )
+
+                    processed += 1
+
+                self.s.flush()
+
+            for uid in clean_ids:
+                try:
+                    bump_user_profile(int(uid), int(company_id))
+                    remove_session(int(uid))
+                except Exception:
+                    pass
+
+            return True, "Approval emails processed.", {
+                "queued": 0 if send_now else processed,
+                "sent": processed if send_now else 0,
+                "skipped": skipped,
+            }
+
+        except Exception as e:
+            log.exception("bulk_resend_student_approval_emails failed")
+            try:
+                self.s.rollback()
+            except Exception:
+                pass
+
+            return False, f"Could not process approval emails. ({str(e)})", {
+                "queued": 0,
+                "sent": 0,
+                "skipped": skipped,
+            }
     # =========================================================
     # LIST (CURSOR)
     # =========================================================
