@@ -16,7 +16,7 @@ import calendar as py_calendar
 from cmcp.modules.auth.models import User, UserAffiliation, UserStatusEnum, UserTypeEnum, LinkedEntityTypeEnum
 from cmcp.modules.education_people.models import StudentProfile, Classroom, StaffProfile
 from cmcp.modules.academic.models import Faculty, Department
-
+from cmcp.modules.education_people.onboarding_repository import OnboardingQueueRepository
 from cmcp.common.email.service import EmailService, _utcnow
 from cmcp.common.security.tokens import generate_email_verify_token, verify_token
 from cmcp.common.security.passwords import generate_temp_password, hash_password
@@ -55,7 +55,7 @@ class EducationPeopleService:
     def __init__(self, repo: Optional[EducationPeopleRepo] = None, session: Optional[Session] = None):
         self.repo = repo or EducationPeopleRepo(session=session)
         self.s: Session = self.repo.s
-
+        self.onboarding_repo = OnboardingQueueRepository(self.s)
         self.classroom_svc = BaseService(Classroom, session=self.s)
         self.student_svc = BaseService(StudentProfile, session=self.s)
         self.staff_svc = BaseService(StaffProfile, session=self.s)
@@ -1110,4 +1110,60 @@ class EducationPeopleService:
         return True, "Dashboard data fetched successfully", {
             "data": data,
             "generated_at": now.isoformat(),
+        }
+
+    def list_onboarding_students_page(
+            self,
+            *,
+            company_id: int,
+            page: int,
+            per_page: int,
+            filters: Dict[str, Any],
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        rows, total, pages = self.onboarding_repo.list_onboarding_students_page(
+            company_id=int(company_id),
+            page=int(page or 1),
+            per_page=int(per_page or 20),
+            filters=filters or {},
+        )
+
+        data = [self.onboarding_repo.shape_onboarding_list_row(r) for r in rows]
+
+        message = "OK"
+        if not data:
+            status = (filters.get("status") or "pending_approval").strip().lower()
+            if status == "pending_email":
+                message = "No students are waiting for email verification."
+            elif status in {"pending", "pending_approval"}:
+                message = "No students are waiting for approval."
+            else:
+                message = "No students found."
+
+        return True, message, {
+            "data": data,
+            "message": None if data else message,
+            "pagination": {
+                "page": int(page or 1),
+                "limit": int(per_page or 20),
+                "total": int(total),
+                "has_more": int(page or 1) < int(pages),
+            },
+        }
+
+    def get_onboarding_student_detail(
+            self,
+            *,
+            company_id: int,
+            user_id: int,
+    ) -> Tuple[bool, str, Dict[str, Any]]:
+        row = self.onboarding_repo.get_onboarding_student_detail(
+            company_id=int(company_id),
+            user_id=int(user_id),
+        )
+
+        if not row:
+            return False, "Student onboarding record not found.", {}
+
+        return True, "OK", {
+            "data": self.onboarding_repo.shape_onboarding_detail_row(row)
         }

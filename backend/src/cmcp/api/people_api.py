@@ -529,3 +529,66 @@ def admin_dashboard_summary(company_id: int):
         )
     except Exception as e:
         return _handle_error(e)
+
+
+
+@bp.get("/onboarding/students/list")
+@require_company_and_permission(
+    doctype="Student Profile",
+    action="READ",
+    admin_only=True,
+)
+def list_onboarding_students(company_id: int):
+    try:
+        q = request.args
+
+        filters = {
+            "status": (q.get("status") or "pending_approval").strip(),
+            "faculty_id": q.get("faculty_id", type=int),
+            "department_id": q.get("department_id", type=int),
+            "semester_id": q.get("semester_id", type=int),
+            "classroom_id": q.get("classroom_id", type=int),
+            "search": (q.get("search") or "").strip() or None,
+        }
+
+        verified_raw = q.get("email_verified")
+        if verified_raw is not None:
+            s = str(verified_raw).strip().lower()
+            if s in {"1", "true", "yes"}:
+                filters["email_verified"] = True
+            elif s in {"0", "false", "no"}:
+                filters["email_verified"] = False
+
+        page = q.get("page", type=int) or 1
+        per_page = q.get("limit", type=int) or 20
+
+        ok, msg, out = svc.list_onboarding_students_page(
+            company_id=int(company_id),
+            page=page,
+            per_page=per_page,
+            filters=filters,
+        )
+
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=400)
+
+    except Exception as e:
+        return _handle_error(e)
+
+
+@bp.get("/onboarding/students/<int:user_id>")
+@require_company_and_permission(
+    doctype="Student Profile",
+    action="READ",
+    admin_only=True,
+)
+def get_onboarding_student_detail(company_id: int, user_id: int):
+    try:
+        ok, msg, out = svc.get_onboarding_student_detail(
+            company_id=int(company_id),
+            user_id=int(user_id),
+        )
+
+        return api_success(message=msg, data=out, status_code=200) if ok else api_error(msg, status_code=404)
+
+    except Exception as e:
+        return _handle_error(e)
