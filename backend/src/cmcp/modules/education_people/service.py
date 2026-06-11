@@ -20,7 +20,7 @@ from cmcp.modules.academic.models import Faculty, Department
 from cmcp.common.email.service import EmailService, _utcnow
 from cmcp.common.security.tokens import generate_email_verify_token, verify_token
 from cmcp.common.security.passwords import generate_temp_password, hash_password
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.orm import joinedload
 
 from cmcp.common.cache import bump_user_profile
@@ -40,6 +40,7 @@ from cmcp.modules.education_people.validation import (
     normalize_email,
 )
 from cmcp.modules.materials.service import _encode_cursor, _decode_cursor
+from cmcp.modules.rbac.models import Role, UserRole
 
 log = logging.getLogger(__name__)
 
@@ -337,7 +338,13 @@ class EducationPeopleService:
     # STEP 6: Admin approve (temp password length 6)
     # =========================================================
 
-    def _approval_email_payload_for_student(self, *, user: User, prof: StudentProfile, temp_pw: str) -> Dict[str, Any]:
+    def _approval_email_payload_for_student(
+            self,
+            *,
+            user: User,
+            prof: StudentProfile,
+            temp_pw: str,
+    ) -> Dict[str, Any]:
         faculty_name = ""
         department_name = ""
 
@@ -358,25 +365,23 @@ class EducationPeopleService:
             department_name = dep.name or ""
 
         base_url = (os.getenv("APP_BASE_URL", "").rstrip("/")) or "http://localhost:3000"
-        login_link = f"{base_url}/login"
 
         return {
             "full_name": prof.full_name,
             "student_id": user.username,
             "temp_password": temp_pw,
-            "login_link": login_link,
+            "login_link": f"{base_url}/login",
             "expires_hours": int(os.getenv("TEMP_PASSWORD_TTL_HOURS", "24")),
             "faculty_name": faculty_name,
             "department_name": department_name,
         }
 
-    def _send_or_queue_approval_email(
+    def _enqueue_approval_email(
             self,
             *,
             user: User,
             prof: StudentProfile,
             temp_pw: str,
-            send_now: bool,
     ):
         row = self.email_svc.enqueue(
             to_email=user.email,
@@ -388,15 +393,20 @@ class EducationPeopleService:
                 temp_pw=temp_pw,
             ),
             ref_type="User",
-            ref_id=user.id,
+            ref_id=int(user.id),
         )
-
         self.s.flush([row])
-
-        if send_now:
-            self.email_svc.send_outbox_row_now(row)
-
         return row
+
+    def _send_approval_email_best_effort(self, row) -> None:
+        try:
+            self.email_svc.send_outbox_row_now(row)
+        except Exception:
+            log.warning(
+                "Approval email immediate send failed; outbox worker will retry. outbox_id=%s",
+                getattr(row, "id", None),
+                exc_info=True,
+            )
 
     def _set_new_temp_password(self, *, user: User) -> str:
         temp_pw = generate_temp_password(6)
@@ -409,6 +419,50 @@ class EducationPeopleService:
 
         return temp_pw
 
+    def _ensure_user_role_by_name(
+            self,
+            *,
+            company_id: int,
+            user_id: int,
+            role_name: str,
+    ) -> None:
+        """
+        Assign a global Role to a user inside this company.
+
+        Important:
+        - Role has NO company_id in your setup.
+        - UserRole has company_id because assignment is company-scoped.
+        """
+        role = self.s.scalar(
+            select(Role).where(
+                func.lower(Role.name) == str(role_name).strip().lower(),
+                Role.is_enabled.is_(True),
+            )
+        )
+
+        if not role:
+            raise ValueError(f"Required role '{role_name}' does not exist or is disabled.")
+
+        existing = self.s.scalar(
+            select(UserRole).where(
+                UserRole.company_id == int(company_id),
+                UserRole.user_id == int(user_id),
+                UserRole.role_id == int(role.id),
+            )
+        )
+
+        if existing:
+            existing.is_enabled = True
+            return
+
+        self.s.add(
+            UserRole(
+                company_id=int(company_id),
+                user_id=int(user_id),
+                role_id=int(role.id),
+                is_enabled=True,
+            )
+        )
     def admin_approve(
             self,
             *,
@@ -451,14 +505,23 @@ class EducationPeopleService:
                 user.approved_by = int(admin_user_id)
 
                 for aff in user.affiliations or []:
-                    aff.is_enabled = True
+                    if int(aff.company_id) == int(prof.company_id):
+                        aff.is_enabled = True
 
-                self._send_or_queue_approval_email(
+                self._ensure_user_role_by_name(
+                    company_id=int(prof.company_id),
+                    user_id=int(user.id),
+                    role_name="Student",
+                )
+
+                row = self._enqueue_approval_email(
                     user=user,
                     prof=prof,
                     temp_pw=temp_pw,
-                    send_now=send_now,
                 )
+
+                if send_now:
+                    self._send_approval_email_best_effort(row)
 
                 self.s.flush()
 
@@ -468,7 +531,7 @@ class EducationPeopleService:
             except Exception:
                 log.warning("Post-approval cache/session cleanup failed.", exc_info=True)
 
-            return True, "Approved and approval email sent." if send_now else "Approved and email queued."
+            return True, "Approved and approval email sent."
 
         except Exception as e:
             log.exception("admin_approve failed user_id=%s", user_id)
@@ -476,7 +539,7 @@ class EducationPeopleService:
                 self.s.rollback()
             except Exception:
                 pass
-            return False, f"Approval failed: could not send approval email. ({str(e)})"
+            return False, f"Approval failed: {str(e)}"
 
     def resend_student_approval_email(
             self,
@@ -512,12 +575,20 @@ class EducationPeopleService:
             with self.s.begin_nested():
                 temp_pw = self._set_new_temp_password(user=user)
 
-                self._send_or_queue_approval_email(
+                self._ensure_user_role_by_name(
+                    company_id=int(company_id),
+                    user_id=int(user.id),
+                    role_name="Student",
+                )
+
+                email_row = self._enqueue_approval_email(
                     user=user,
                     prof=prof,
                     temp_pw=temp_pw,
-                    send_now=send_now,
                 )
+
+                if send_now:
+                    self._send_approval_email_best_effort(email_row)
 
                 self.s.flush()
 
@@ -586,7 +657,10 @@ class EducationPeopleService:
                     pair = found_by_id.get(uid)
 
                     if not pair:
-                        skipped.append({"user_id": uid, "reason": "Student user not found."})
+                        skipped.append({
+                            "user_id": uid,
+                            "reason": "Student user not found.",
+                        })
                         continue
 
                     user, prof = pair
@@ -607,12 +681,20 @@ class EducationPeopleService:
 
                     temp_pw = self._set_new_temp_password(user=user)
 
-                    self._send_or_queue_approval_email(
+                    self._ensure_user_role_by_name(
+                        company_id=int(company_id),
+                        user_id=int(user.id),
+                        role_name="Student",
+                    )
+
+                    email_row = self._enqueue_approval_email(
                         user=user,
                         prof=prof,
                         temp_pw=temp_pw,
-                        send_now=send_now,
                     )
+
+                    if send_now:
+                        self._send_approval_email_best_effort(email_row)
 
                     processed += 1
 
