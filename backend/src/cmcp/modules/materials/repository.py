@@ -1087,151 +1087,434 @@ class MaterialsRepo:
     # ----------------------------
     # Filter options (UPDATED)
     # ----------------------------
-        # -------------------------------------------------------------------------
-        # FILTER OPTIONS
-        # -------------------------------------------------------------------------
+    # -------------------------------------------------------------------------
+    # FILTER OPTIONS
+    # -------------------------------------------------------------------------
 
-        def _filters_base_stmt(self, *, company_id: int, filters: Dict[str, Any]):
-            """Lightweight base for filter option aggregations."""
-            scope = self._current_user_scope(company_id=company_id)
+    @staticmethod
+    def _clean_filter_options_filters(filters: Dict[str, Any] | None) -> Dict[str, Any]:
+        """
+        Remove empty values so SQL filters do not accidentally apply None.
+        """
+        clean: Dict[str, Any] = {}
 
-            stmt = (
-                select(
-                    Material.id.label("material_id"),
-                    Course.id.label("course_id"),
-                    Course.title.label("course_title"),
-                    CourseOffering.id.label("course_offering_id"),
-                    CourseChapter.id.label("chapter_id"),
-                    CourseChapter.title.label("chapter_title"),
-                    CourseChapter.number.label("chapter_number"),
-                    Semester.id.label("semester_id"),
-                    Semester.name.label("semester_name"),
-                    Semester.number.label("semester_number"),
-                    AcademicYear.id.label("academic_year_id"),
-                    AcademicYear.name.label("academic_year_name"),
-                    Department.id.label("department_id"),
-                    Department.name.label("department_name"),
-                    Faculty.id.label("faculty_id"),
-                    Faculty.name.label("faculty_name"),
-                )
-                .select_from(Material)
+        for k, v in dict(filters or {}).items():
+            if v is None:
+                continue
+            if isinstance(v, str) and not v.strip():
+                continue
+            clean[k] = v
+
+        return clean
+
+    def _filters_base_stmt(
+        self,
+        *,
+        company_id: int,
+        filters: Dict[str, Any] | None,
+        ignore: tuple[str, ...] = (),
+    ):
+        """
+        Lightweight base query for material filter dropdown options.
+
+        This query respects:
+        - company_id
+        - enabled materials only
+        - enabled courses only
+        - enabled course offerings only
+        - current user academic scope
+        - selected filters, except filters passed in ignore
+        """
+        filters = self._clean_filter_options_filters(filters)
+
+        for key in ignore:
+            filters.pop(key, None)
+
+        scope = self._current_user_scope(company_id=company_id)
+
+        stmt = (
+            select(
+                Material.id.label("material_id"),
+
+                Course.id.label("course_id"),
+                Course.title.label("course_title"),
+                Course.code.label("course_code"),
+
+                CourseOffering.id.label("course_offering_id"),
+                CourseOffering.custom_title.label("course_offering_custom_title"),
+
+                CourseChapter.id.label("chapter_id"),
+                CourseChapter.title.label("chapter_title"),
+                CourseChapter.number.label("chapter_number"),
+
+                Semester.id.label("semester_id"),
+                Semester.name.label("semester_name"),
+                Semester.number.label("semester_number"),
+
+                AcademicYear.id.label("academic_year_id"),
+                AcademicYear.name.label("academic_year_name"),
+
+                Department.id.label("department_id"),
+                Department.name.label("department_name"),
+
+                Faculty.id.label("faculty_id"),
+                Faculty.name.label("faculty_name"),
             )
-            stmt = self._add_standard_joins(stmt, company_id=company_id)
+            .select_from(Material)
+        )
+
+        stmt = self._add_standard_joins(stmt, company_id=company_id)
+
+        stmt = stmt.where(
+            Material.company_id == int(company_id),
+            Material.is_enabled.is_(True),
+            Course.is_enabled.is_(True),
+            CourseOffering.is_enabled.is_(True),
+        )
+
+        stmt = self._apply_scope(stmt, scope)
+
+        if filters.get("faculty_id"):
+            stmt = stmt.where(Faculty.id == int(filters["faculty_id"]))
+
+        if filters.get("department_id"):
+            stmt = stmt.where(CourseOffering.department_id == int(filters["department_id"]))
+
+        if filters.get("academic_year_id"):
+            stmt = stmt.where(Semester.academic_year_id == int(filters["academic_year_id"]))
+
+        if filters.get("semester_id"):
+            stmt = stmt.where(CourseOffering.semester_id == int(filters["semester_id"]))
+
+        if filters.get("course_id"):
+            stmt = stmt.where(Course.id == int(filters["course_id"]))
+
+        if filters.get("course_offering_id"):
+            stmt = stmt.where(CourseOffering.id == int(filters["course_offering_id"]))
+
+        if filters.get("chapter_id"):
+            stmt = stmt.where(CourseChapter.id == int(filters["chapter_id"]))
+
+        search = (filters.get("search") or "").strip()
+        if search:
+            like = f"%{search.lower()}%"
             stmt = stmt.where(
-                Material.company_id == int(company_id),
-                Material.is_enabled.is_(True),
-                Course.is_enabled.is_(True),
-                CourseOffering.is_enabled.is_(True),
+                func.lower(func.coalesce(Material.title, "")).like(like)
+                | func.lower(func.coalesce(Material.description, "")).like(like)
+                | func.lower(func.coalesce(Course.title, "")).like(like)
+                | func.lower(func.coalesce(Course.code, "")).like(like)
+                | func.lower(func.coalesce(CourseChapter.title, "")).like(like)
+                | func.lower(func.coalesce(Department.name, "")).like(like)
+                | func.lower(func.coalesce(Faculty.name, "")).like(like)
             )
-            stmt = self._apply_scope(stmt, scope)
 
-            # Apply filters for options
-            if filters.get("department_id"):
-                stmt = stmt.where(CourseOffering.department_id == int(filters["department_id"]))
-            if filters.get("faculty_id"):
-                stmt = stmt.where(Faculty.id == int(filters["faculty_id"]))
-            if filters.get("academic_year_id"):
-                stmt = stmt.where(Semester.academic_year_id == int(filters["academic_year_id"]))
-            if filters.get("semester_id"):
-                stmt = stmt.where(CourseOffering.semester_id == int(filters["semester_id"]))
-            if filters.get("course_id"):
-                stmt = stmt.where(Course.id == int(filters["course_id"]))
-            if filters.get("course_offering_id"):
-                stmt = stmt.where(CourseOffering.id == int(filters["course_offering_id"]))
-            if filters.get("chapter_id"):
-                stmt = stmt.where(CourseChapter.id == int(filters["chapter_id"]))
+        return stmt
 
-            search = (filters.get("search") or "").strip()
-            if search:
-                like = f"%{search.lower()}%"
-                stmt = stmt.where(
-                    func.lower(func.coalesce(Material.title, "")).like(like)
-                    | func.lower(func.coalesce(Material.description, "")).like(like)
-                    | func.lower(func.coalesce(Course.title, "")).like(like)
-                    | func.lower(func.coalesce(CourseChapter.title, "")).like(like)
-                )
-            return stmt
+    def get_material_filter_options(
+        self,
+        *,
+        company_id: int,
+        filters: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Get all material filter dropdown options.
 
-        def get_material_filter_options(
-                self,
-                *,
-                company_id: int,
-                filters: Dict[str, Any],
-        ) -> Dict[str, Any]:
-            """Get filter options (semesters, courses, chapters) based on current filters."""
-            scope = self._current_user_scope(company_id=company_id)
+        Returns:
+        - academic_years
+        - faculties
+        - departments
+        - semesters
+        - courses
+        - course_offerings
+        - chapters
+        """
+        filters = self._clean_filter_options_filters(filters)
+        scope = self._current_user_scope(company_id=company_id)
 
-            def _sub(**extra):
-                return self._filters_base_stmt(company_id=company_id, filters={**filters, **extra}).subquery()
+        def _sub(*, ignore: tuple[str, ...] = ()):
+            return self._filters_base_stmt(
+                company_id=company_id,
+                filters=filters,
+                ignore=ignore,
+            ).subquery()
 
-            # Semesters
-            s = _sub()
-            semester_rows = self.s.execute(
-                select(
-                    s.c.semester_id.label("id"),
-                    func.coalesce(s.c.semester_name, func.concat("Semester ", s.c.semester_number)).label("label"),
-                    func.count(func.distinct(s.c.material_id)).label("count"),
-                )
-                .where(s.c.semester_id.isnot(None))
-                .group_by(s.c.semester_id, s.c.semester_name, s.c.semester_number)
-                .order_by(s.c.semester_number.asc(), s.c.semester_id.asc())
-            ).all()
-            semesters = [{"id": int(r.id), "label": r.label, "count": int(r.count or 0)} for r in semester_rows]
+        def _selected_int(key: str) -> int | None:
+            value = filters.get(key)
+            return int(value) if value is not None else None
 
-            # Courses (only when semester selected)
-            courses = []
-            if filters.get("semester_id"):
-                c = _sub(semester_id=filters["semester_id"])
-                course_rows = self.s.execute(
-                    select(
-                        c.c.course_id.label("id"),
-                        c.c.course_title.label("label"),
-                        func.count(func.distinct(c.c.material_id)).label("count"),
-                    )
-                    .where(c.c.course_id.isnot(None))
-                    .group_by(c.c.course_id, c.c.course_title)
-                    .order_by(c.c.course_title.asc(), c.c.course_id.asc())
-                ).all()
-                courses = [{"id": int(r.id), "label": r.label, "count": int(r.count or 0)} for r in course_rows]
+        # Academic years
+        ay = _sub(ignore=("academic_year_id", "semester_id", "course_id", "course_offering_id", "chapter_id"))
+        academic_year_rows = self.s.execute(
+            select(
+                ay.c.academic_year_id.label("id"),
+                ay.c.academic_year_name.label("label"),
+                func.count(func.distinct(ay.c.material_id)).label("material_count"),
+            )
+            .where(ay.c.academic_year_id.isnot(None))
+            .group_by(ay.c.academic_year_id, ay.c.academic_year_name)
+            .order_by(ay.c.academic_year_name.desc(), ay.c.academic_year_id.desc())
+        ).all()
 
-            # Chapters (only when course selected)
-            chapters = []
-            if filters.get("course_id"):
-                ch = _sub(course_id=filters["course_id"])
-                chapter_rows = self.s.execute(
-                    select(
-                        ch.c.chapter_id.label("id"),
-                        ch.c.chapter_title.label("label"),
-                        func.count(func.distinct(ch.c.material_id)).label("count"),
-                        ch.c.chapter_number.label("sort_number"),
-                    )
-                    .where(ch.c.chapter_id.isnot(None))
-                    .group_by(ch.c.chapter_id, ch.c.chapter_title, ch.c.chapter_number)
-                    .order_by(ch.c.chapter_number.asc(), ch.c.chapter_id.asc())
-                ).all()
-                chapters = [{"id": int(r.id), "label": r.label, "count": int(r.count or 0)} for r in chapter_rows]
+        academic_years = [
+            {
+                "id": int(r.id),
+                "label": r.label,
+                "count": int(r.material_count or 0),
+            }
+            for r in academic_year_rows
+        ]
 
-            return {
-                "selected": {
-                    "academic_year_id": int(filters["academic_year_id"]) if filters.get("academic_year_id") else None,
-                    "semester_id": int(filters["semester_id"]) if filters.get("semester_id") else None,
-                    "course_id": int(filters["course_id"]) if filters.get("course_id") else None,
-                    "course_offering_id": int(filters["course_offering_id"]) if filters.get(
-                        "course_offering_id") else None,
-                    "chapter_id": int(filters["chapter_id"]) if filters.get("chapter_id") else None,
-                    "faculty_id": int(filters["faculty_id"]) if filters.get("faculty_id") else None,
-                },
-                "options": {
-                    "semesters": semesters,
-                    "courses": courses,
-                    "chapters": chapters,
-                },
-                "scope": {
-                    "profile_type": scope.get("profile_type"),
-                    "department_id": int(scope["department_id"]) if scope.get("department_id") else None,
-                    "faculty_id": int(scope["faculty_id"]) if scope.get("faculty_id") else None,
+        # Faculties
+        f = _sub(ignore=("faculty_id", "department_id", "semester_id", "course_id", "course_offering_id", "chapter_id"))
+        faculty_rows = self.s.execute(
+            select(
+                f.c.faculty_id.label("id"),
+                f.c.faculty_name.label("label"),
+                func.count(func.distinct(f.c.material_id)).label("material_count"),
+            )
+            .where(f.c.faculty_id.isnot(None))
+            .group_by(f.c.faculty_id, f.c.faculty_name)
+            .order_by(f.c.faculty_name.asc(), f.c.faculty_id.asc())
+        ).all()
+
+        faculties = [
+            {
+                "id": int(r.id),
+                "label": r.label,
+                "count": int(r.material_count or 0),
+            }
+            for r in faculty_rows
+        ]
+
+        # Departments
+        d = _sub(ignore=("department_id", "semester_id", "course_id", "course_offering_id", "chapter_id"))
+        department_rows = self.s.execute(
+            select(
+                d.c.department_id.label("id"),
+                d.c.department_name.label("label"),
+                d.c.faculty_id.label("faculty_id"),
+                d.c.faculty_name.label("faculty_name"),
+                func.count(func.distinct(d.c.material_id)).label("material_count"),
+            )
+            .where(d.c.department_id.isnot(None))
+            .group_by(d.c.department_id, d.c.department_name, d.c.faculty_id, d.c.faculty_name)
+            .order_by(d.c.department_name.asc(), d.c.department_id.asc())
+        ).all()
+
+        departments = [
+            {
+                "id": int(r.id),
+                "label": r.label,
+                "count": int(r.material_count or 0),
+                "meta": {
+                    "faculty_id": int(r.faculty_id) if r.faculty_id else None,
+                    "faculty_name": r.faculty_name,
                 },
             }
+            for r in department_rows
+        ]
+
+        # Semesters
+        s = _sub(ignore=("semester_id", "course_id", "course_offering_id", "chapter_id"))
+        semester_rows = self.s.execute(
+            select(
+                s.c.semester_id.label("id"),
+                func.coalesce(
+                    s.c.semester_name,
+                    func.concat("Semester ", s.c.semester_number),
+                ).label("label"),
+                s.c.semester_number.label("number"),
+                s.c.academic_year_id.label("academic_year_id"),
+                s.c.academic_year_name.label("academic_year_name"),
+                func.count(func.distinct(s.c.material_id)).label("material_count"),
+            )
+            .where(s.c.semester_id.isnot(None))
+            .group_by(
+                s.c.semester_id,
+                s.c.semester_name,
+                s.c.semester_number,
+                s.c.academic_year_id,
+                s.c.academic_year_name,
+            )
+            .order_by(s.c.semester_number.asc(), s.c.semester_id.asc())
+        ).all()
+
+        semesters = [
+            {
+                "id": int(r.id),
+                "label": r.label,
+                "count": int(r.material_count or 0),
+                "meta": {
+                    "number": int(r.number) if r.number is not None else None,
+                    "academic_year_id": int(r.academic_year_id) if r.academic_year_id else None,
+                    "academic_year_name": r.academic_year_name,
+                },
+            }
+            for r in semester_rows
+        ]
+
+        # Courses
+        c = _sub(ignore=("course_id", "course_offering_id", "chapter_id"))
+        course_rows = self.s.execute(
+            select(
+                c.c.course_id.label("id"),
+                c.c.course_title.label("label"),
+                c.c.course_code.label("code"),
+                func.count(func.distinct(c.c.material_id)).label("material_count"),
+            )
+            .where(c.c.course_id.isnot(None))
+            .group_by(c.c.course_id, c.c.course_title, c.c.course_code)
+            .order_by(c.c.course_title.asc(), c.c.course_id.asc())
+        ).all()
+
+        courses = [
+            {
+                "id": int(r.id),
+                "label": r.label,
+                "count": int(r.material_count or 0),
+                "meta": {
+                    "code": r.code,
+                },
+            }
+            for r in course_rows
+        ]
+
+        # Course offerings
+        co = _sub(ignore=("course_offering_id", "chapter_id"))
+        offering_rows = self.s.execute(
+            select(
+                co.c.course_offering_id.label("id"),
+                func.coalesce(
+                    co.c.course_offering_custom_title,
+                    co.c.course_title,
+                ).label("label"),
+                co.c.course_id.label("course_id"),
+                co.c.course_title.label("course_title"),
+                co.c.course_code.label("course_code"),
+                co.c.department_id.label("department_id"),
+                co.c.department_name.label("department_name"),
+                co.c.semester_id.label("semester_id"),
+                co.c.semester_name.label("semester_name"),
+                co.c.semester_number.label("semester_number"),
+                func.count(func.distinct(co.c.material_id)).label("material_count"),
+            )
+            .where(co.c.course_offering_id.isnot(None))
+            .group_by(
+                co.c.course_offering_id,
+                co.c.course_offering_custom_title,
+                co.c.course_id,
+                co.c.course_title,
+                co.c.course_code,
+                co.c.department_id,
+                co.c.department_name,
+                co.c.semester_id,
+                co.c.semester_name,
+                co.c.semester_number,
+            )
+            .order_by(
+                co.c.course_title.asc(),
+                co.c.department_name.asc(),
+                co.c.semester_number.asc(),
+                co.c.course_offering_id.asc(),
+            )
+        ).all()
+
+        course_offerings = []
+        for r in offering_rows:
+            semester_label = r.semester_name or (
+                f"Semester {int(r.semester_number)}"
+                if r.semester_number is not None
+                else None
+            )
+
+            course_offerings.append({
+                "id": int(r.id),
+                "label": r.label,
+                "count": int(r.material_count or 0),
+                "meta": {
+                    "course_id": int(r.course_id) if r.course_id else None,
+                    "course_title": r.course_title,
+                    "course_code": r.course_code,
+                    "department_id": int(r.department_id) if r.department_id else None,
+                    "department_name": r.department_name,
+                    "semester_id": int(r.semester_id) if r.semester_id else None,
+                    "semester_name": semester_label,
+                    "semester_number": int(r.semester_number) if r.semester_number is not None else None,
+                },
+            })
+
+        # Chapters
+        ch = _sub(ignore=("chapter_id",))
+        chapter_rows = self.s.execute(
+            select(
+                ch.c.chapter_id.label("id"),
+                ch.c.chapter_title.label("title"),
+                ch.c.chapter_number.label("number"),
+                ch.c.course_id.label("course_id"),
+                ch.c.course_title.label("course_title"),
+                ch.c.course_offering_id.label("course_offering_id"),
+                func.count(func.distinct(ch.c.material_id)).label("material_count"),
+            )
+            .where(ch.c.chapter_id.isnot(None))
+            .group_by(
+                ch.c.chapter_id,
+                ch.c.chapter_title,
+                ch.c.chapter_number,
+                ch.c.course_id,
+                ch.c.course_title,
+                ch.c.course_offering_id,
+            )
+            .order_by(ch.c.chapter_number.asc(), ch.c.chapter_id.asc())
+        ).all()
+
+        chapters = []
+        for r in chapter_rows:
+            label = (
+                f"Chapter {int(r.number)} — {r.title}"
+                if r.number is not None
+                else r.title
+            )
+
+            chapters.append({
+                "id": int(r.id),
+                "label": label,
+                "count": int(r.material_count or 0),
+                "meta": {
+                    "number": int(r.number) if r.number is not None else None,
+                    "title": r.title,
+                    "course_id": int(r.course_id) if r.course_id else None,
+                    "course_title": r.course_title,
+                    "course_offering_id": int(r.course_offering_id) if r.course_offering_id else None,
+                },
+            })
+
+        return {
+            "selected": {
+                "academic_year_id": _selected_int("academic_year_id"),
+                "faculty_id": _selected_int("faculty_id"),
+                "department_id": _selected_int("department_id"),
+                "semester_id": _selected_int("semester_id"),
+                "course_id": _selected_int("course_id"),
+                "course_offering_id": _selected_int("course_offering_id"),
+                "chapter_id": _selected_int("chapter_id"),
+                "search": filters.get("search"),
+            },
+            "options": {
+                "academic_years": academic_years,
+                "faculties": faculties,
+                "departments": departments,
+                "semesters": semesters,
+                "courses": courses,
+                "course_offerings": course_offerings,
+                "chapters": chapters,
+            },
+            "scope": {
+                "profile_type": scope.get("profile_type"),
+                "department_id": int(scope["department_id"]) if scope.get("department_id") else None,
+                "faculty_id": int(scope["faculty_id"]) if scope.get("faculty_id") else None,
+                "semester_id": int(scope["semester_id"]) if scope.get("semester_id") else None,
+            },
+        }
 
     # =============================================================================
     # CURSOR HELPERS (Keep in service)
