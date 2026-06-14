@@ -17,26 +17,42 @@ def seed_cli() -> None:
     pass
 
 
+def _seed_jamhuriya_stack() -> None:
+    """Seed the full demo stack in dependency order."""
+    click.echo("🌱 Seeding CORE...")
+    from cmcp.seed_data.core.seeder import seed_core
+    seed_core(db.session)
+
+    click.echo("🔐 Seeding RBAC...")
+    seed_rbac(db.session)
+
+    click.echo("🏫 Seeding JAMHURIYA UNIVERSITY demo...")
+    from cmcp.seed_data.university.seeder import seed_university
+    seed_university(db.session)
+
+
+def _run_jamhuriya_command(*, start_message: str, success_message: str) -> None:
+    try:
+        click.echo(start_message)
+        _seed_jamhuriya_stack()
+        db.session.commit()
+        click.secho(success_message, fg="green")
+
+    except Exception as e:
+        db.session.rollback()
+        logger.error("Jamhuriya demo seeding failed", exc_info=True)
+        click.secho(f"❌ Jamhuriya demo seeding failed: {e}", fg="red")
+        raise SystemExit(1)
+
+
 @seed_cli.command("all")
 @with_appcontext
 def seed_all() -> None:
-    """Run all seeders in the correct order."""
+    """Seed core, RBAC, and the full Jamhuriya University demo data."""
     try:
         click.echo("🚀 Starting full database seeding...")
 
-        # 1) Core (system owners etc.)
-        click.echo("🌱 Seeding CORE...")
-        from cmcp.seed_data.core.seeder import seed_core
-        seed_core(db.session)
-
-        # 2) RBAC
-        click.echo("🔐 Seeding RBAC...")
-        from  cmcp.seed_data.rbac.seeder import  seed_rbac
-        seed_rbac(db.session)
-        # 3 # People
-        click.echo("👥 Seeding PEOPLE...")
-        from cmcp.seed_data.people.seeder import seed_people
-        seed_people(db.session)
+        _seed_jamhuriya_stack()
 
         db.session.commit()
         click.secho("✅ All data seeded successfully!", fg="green")
@@ -54,16 +70,10 @@ def seed_rbac_only() -> None:
     """Seed RBAC (DocTypes, Actions, Permissions, Roles, RolePermissions)."""
     try:
 
-        # 2) RBAC
         click.echo("🔐 Seeding RBAC...")
         seed_rbac(db.session)
         db.session.commit()
         click.secho("✅ RBAC seeded successfully!", fg="green")
-        # 3) University/company mock
-        click.echo("🏫 Seeding UNIVERSITY...")
-        from cmcp.seed_data.university.seeder import seed_university
-        seed_university(db.session)
-
 
     except Exception as e:
         db.session.rollback()
@@ -95,25 +105,38 @@ def seed_core_only() -> None:
 @seed_cli.command("university")
 @with_appcontext
 def seed_university_only() -> None:
-    """Seed one university/company + super admin + academic mock data."""
-    try:
-        click.echo("🏫 Seeding university data...")
-        from cmcp.seed_data.university.seeder import seed_university
-        seed_university(db.session)
-        db.session.commit()
-        click.secho("✅ University seeded successfully!", fg="green")
+    """Seed the full Jamhuriya University demo stack."""
+    _run_jamhuriya_command(
+        start_message="🏫 Seeding Jamhuriya University demo data...",
+        success_message="✅ Jamhuriya University demo seeded successfully!",
+    )
 
-    except Exception as e:
-        db.session.rollback()
-        logger.error("University seeding failed", exc_info=True)
-        click.secho(f"❌ University seeding failed: {e}", fg="red")
-        raise SystemExit(1)
+
+@seed_cli.command("jamhuriya")
+@with_appcontext
+def seed_jamhuriya_only() -> None:
+    """Alias for seed university."""
+    _run_jamhuriya_command(
+        start_message="🏫 Seeding Jamhuriya University demo data...",
+        success_message="✅ Jamhuriya University demo seeded successfully!",
+    )
+
+
+@seed_cli.command("academic")
+@with_appcontext
+def seed_academic_demo_only() -> None:
+    """Alias for the academic demo inside the Jamhuriya University stack."""
+    _run_jamhuriya_command(
+        start_message="📚 Seeding Jamhuriya academic demo data...",
+        success_message="✅ Jamhuriya academic demo seeded successfully!",
+    )
+
 
 # education_people
 @seed_cli.command("education_people")
 @with_appcontext
 def seed_people_only() -> None:
-    """Seed classrooms + staff profiles + student profiles."""
+    """Legacy people-only seeder. Prefer `flask seed all` for the full demo."""
     try:
         click.echo("👥 Seeding PEOPLE...")
         from cmcp.seed_data.people.seeder import seed_people
@@ -127,5 +150,3 @@ def seed_people_only() -> None:
         logger.error("People seeding failed", exc_info=True)
         click.secho(f"❌ People seeding failed: {e}", fg="red")
         raise SystemExit(1)
-
-

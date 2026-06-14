@@ -6,6 +6,7 @@ import base64
 import json
 import logging
 import os
+from urllib.parse import unquote
 from sqlite3 import IntegrityError
 from typing import Any, Dict, Optional, Tuple, List, Set
 
@@ -871,17 +872,21 @@ class MaterialsService:
                 size_mb = round(len(raw) / (1024 * 1024), 4)
                 material.file_size_mb = size_mb
 
-            # TODO: Replace with your actual S3/MinIO upload logic
-            # from cmcp.core.storage import save_file_for, file_url_from_key
-            # new_key = save_file_for(
-            #     folder="materials",
-            #     item_id=material.id,
-            #     file=file_storage,
-            # )
-            # material.file_url = file_url_from_key(new_key, external_base=external_base)
+            old_key = None
+            marker = "/api/media/file/"
+            if material.file_url and marker in material.file_url:
+                old_key = unquote(material.file_url.split(marker, 1)[1])
 
-            # Placeholder URL
-            material.file_url = f"{external_base}/materials/{material.id}/{file_storage.filename}"
+            new_key = save_file_for(
+                folder=MediaFolder.MATERIALS,
+                item_id=material.id,
+                file=file_storage,
+                old_file_key=old_key,
+            )
+            if not new_key:
+                raise BusinessValidationError("File upload failed: missing file content.")
+
+            material.file_url = file_url_from_key(new_key, external_base=external_base)
             self.s.flush([material])
 
         except Exception as e:
