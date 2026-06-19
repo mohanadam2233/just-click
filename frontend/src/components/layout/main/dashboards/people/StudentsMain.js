@@ -3,10 +3,12 @@
 import Preloader from "@/components/shared/others/Preloader";
 
 import AcademicTable from "@/components/shared/dashboards/AcademicTable";
-import { useStudentsList } from "@/features/people/hooks";
-import { useDepartmentsDropdown } from "@/features/academic/hooks";
+import {
+  useBulkApproveStudents,
+  useBulkResendStudentApprovalEmails,
+  useStudentsList,
+} from "@/features/people/hooks";
 import { useRouter } from "next/navigation";
-import { useMemo } from "react";
 import useNotify from "@/hooks/useNotify";
 
 const studentsColumns = [
@@ -20,31 +22,9 @@ const StudentsMain = () => {
   const router = useRouter();
   const notify = useNotify();
 
-  const { data: deptsRes, isLoading: isLoadingDepts } = useDepartmentsDropdown({ limit: 20 });
-  const departmentsData = Array.isArray(deptsRes?.data) ? deptsRes.data : (deptsRes?.data?.data || []);
-  const departmentsOptions = departmentsData.map((d) => ({
-    label: d.name,
-    value: d.id, // we might filter by ID, depends on the API
-    meta: { code: d.code },
-  }));
-
-  const enrichedColumns = useMemo(() => {
-    return studentsColumns.map((col) => {
-      /* if (col.key === "department_name") {
-        return {
-          ...col,
-          filterDropdown: {
-            options: departmentsOptions,
-            isLoading: isLoadingDepts,
-            hasMore: false,
-          },
-        };
-      } */
-      return col;
-    });
-  }, [departmentsOptions, isLoadingDepts]);
-
   const { data, isLoading, isError } = useStudentsList({ limit: 20 });
+  const bulkApproveMutation = useBulkApproveStudents();
+  const bulkResendApprovalMutation = useBulkResendStudentApprovalEmails();
 
   if (isLoading) {
     return <Preloader />;
@@ -61,17 +41,68 @@ const StudentsMain = () => {
     student_id: item.profile?.student_id || "—",
     department_name: item.context?.department?.name || "—",
     status_label: item.flags?.is_enabled === true ? "Active" : "Inactive",
+    user_id: item.user?.id,
   }));
+
+  const getSelectedUserIds = (selectedIds) => {
+    return tableData
+      .filter((row) => selectedIds.includes(row.id))
+      .map((row) => row.user_id)
+      .filter(Boolean);
+  };
+
+  const handleBulkApprove = (selectedIds) => {
+    const userIds = getSelectedUserIds(selectedIds);
+
+    if (userIds.length === 0) {
+      notify.error("No student user IDs found for the selected rows");
+      return;
+    }
+
+    if (confirm(`Are you sure you want to approve ${userIds.length} student(s)?`)) {
+      bulkApproveMutation.mutate(
+        { userIds },
+        {
+          onSuccess: () => notify.success("Student(s) approved successfully"),
+          onError: (err) => notify.error(err?.message || "Failed to approve student(s)"),
+        },
+      );
+    }
+  };
+
+  const handleBulkResendApprovalEmail = (selectedIds) => {
+    const userIds = getSelectedUserIds(selectedIds);
+
+    if (userIds.length === 0) {
+      notify.error("No student user IDs found for the selected rows");
+      return;
+    }
+
+    if (confirm(`Are you sure you want to resend approval emails for ${userIds.length} student(s)?`)) {
+      bulkResendApprovalMutation.mutate(
+        { userIds, sendNow: true },
+        {
+          onSuccess: () => notify.success("Approval emails resent successfully"),
+          onError: (err) => notify.error(err?.message || "Failed to resend approval emails"),
+        },
+      );
+    }
+  };
+
+  const actions = [
+    { label: "Approve Students", action: "approve", onClick: handleBulkApprove },
+    { label: "Resend Approval Email", action: "resend", onClick: handleBulkResendApprovalEmail },
+  ];
 
   return (
     <AcademicTable
       title="Students"
-      columns={enrichedColumns}
+      columns={studentsColumns}
       data={tableData}
       addNewLabel={null}
       onAddNew={null}
       onRowClick={(row) => router.push(`/admin/dashboards/admin-people/students/${row.id}`)}
-      actions={[]} // we can add bulk actions later if needed
+      actions={actions}
     />
   );
 };

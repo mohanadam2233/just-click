@@ -3,7 +3,6 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { peopleApi } from "./api";
 import { peopleKeys } from "./keys";
-import { fetchJSON } from "@/lib/http";
 
 function createHooks(entityKeys, api, listApiName, detailApiName) {
   return {
@@ -83,11 +82,19 @@ export const {
 export const useApproveStudent = (options = {}) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id) => fetchJSON(`/education_people/students/${id}/approve`, { method: "POST" }),
-    onSuccess: (data, id, context) => {
+    mutationFn: (variables) => peopleApi.approveStudent(typeof variables === "object" ? variables.userId : variables),
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: peopleKeys.onboarding.lists() });
       queryClient.invalidateQueries({ queryKey: peopleKeys.students.lists() });
-      if (options.onSuccess) options.onSuccess(data, id, context);
+      const userId = typeof variables === "object" ? variables.userId : variables;
+      const profileId = typeof variables === "object" ? variables.profileId : null;
+      if (userId) {
+        queryClient.invalidateQueries({ queryKey: peopleKeys.onboarding.detail(userId) });
+      }
+      if (profileId) {
+        queryClient.invalidateQueries({ queryKey: peopleKeys.students.detail(profileId) });
+      }
+      if (options.onSuccess) options.onSuccess(data, variables, context);
     },
     ...options,
   });
@@ -96,11 +103,57 @@ export const useApproveStudent = (options = {}) => {
 export const useBulkApproveStudents = (options = {}) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (ids) => fetchJSON(`/education_people/students/bulk-approve`, { method: "POST", body: JSON.stringify({ user_ids: ids }) }),
-    onSuccess: (data, ids, context) => {
+    mutationFn: (variables) => {
+      const userIds = Array.isArray(variables) ? variables : variables?.userIds;
+      const sendNow = Array.isArray(variables) ? true : variables?.sendNow ?? true;
+      return peopleApi.bulkApproveStudents({ userIds, sendNow });
+    },
+    onSuccess: (data, variables, context) => {
       queryClient.invalidateQueries({ queryKey: peopleKeys.onboarding.lists() });
       queryClient.invalidateQueries({ queryKey: peopleKeys.students.lists() });
-      if (options.onSuccess) options.onSuccess(data, ids, context);
+      if (options.onSuccess) options.onSuccess(data, variables, context);
+    },
+    ...options,
+  });
+};
+
+export const useResendStudentApprovalEmail = (options = {}) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (variables) => {
+      const userId = typeof variables === "object" ? variables.userId : variables;
+      const sendNow = typeof variables === "object" ? variables.sendNow ?? true : true;
+      return peopleApi.resendStudentApprovalEmail({ userId, sendNow });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: peopleKeys.onboarding.lists() });
+      queryClient.invalidateQueries({ queryKey: peopleKeys.students.lists() });
+      const userId = typeof variables === "object" ? variables.userId : variables;
+      const profileId = typeof variables === "object" ? variables.profileId : null;
+      if (userId) {
+        queryClient.invalidateQueries({ queryKey: peopleKeys.onboarding.detail(userId) });
+      }
+      if (profileId) {
+        queryClient.invalidateQueries({ queryKey: peopleKeys.students.detail(profileId) });
+      }
+      if (options.onSuccess) options.onSuccess(data, variables, context);
+    },
+    ...options,
+  });
+};
+
+export const useBulkResendStudentApprovalEmails = (options = {}) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (variables) => {
+      const userIds = Array.isArray(variables) ? variables : variables?.userIds;
+      const sendNow = Array.isArray(variables) ? true : variables?.sendNow ?? true;
+      return peopleApi.bulkResendStudentApprovalEmails({ userIds, sendNow });
+    },
+    onSuccess: (data, variables, context) => {
+      queryClient.invalidateQueries({ queryKey: peopleKeys.onboarding.lists() });
+      queryClient.invalidateQueries({ queryKey: peopleKeys.students.lists() });
+      if (options.onSuccess) options.onSuccess(data, variables, context);
     },
     ...options,
   });
@@ -109,10 +162,10 @@ export const useBulkApproveStudents = (options = {}) => {
 export const useResendOutbox = (options = {}) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (outbox_id) => fetchJSON(`/education_people/email/outbox/${outbox_id}/resend`, { method: "POST" }),
-    onSuccess: (data, outbox_id, context) => {
+    mutationFn: peopleApi.resendOutbox,
+    onSuccess: (data, outboxId, context) => {
       queryClient.invalidateQueries({ queryKey: peopleKeys.onboarding.lists() });
-      if (options.onSuccess) options.onSuccess(data, outbox_id, context);
+      if (options.onSuccess) options.onSuccess(data, outboxId, context);
     },
     ...options,
   });

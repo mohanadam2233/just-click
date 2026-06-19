@@ -2,11 +2,15 @@
 
 import Preloader from "@/components/shared/others/Preloader";
 import FrappeForm from "@/components/shared/forms/FrappeForm";
-import { useStudentDetail, useUpdateStudent } from "@/features/people/hooks";
+import {
+  useApproveStudent,
+  useResendOutbox,
+  useStudentDetail,
+  useUpdateStudent,
+} from "@/features/people/hooks";
 import { useDepartmentsDropdown, useFacultiesDropdown, useSemestersDropdown } from "@/features/academic/hooks";
 import useNotify from "@/hooks/useNotify";
 import { useMemo, useState, useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 
 const TRACKED_FIELDS = [
   "department_id",
@@ -37,8 +41,21 @@ function getChangedFields(initialValues, currentValues) {
   return changed;
 }
 
+function getVerificationOutboxId(studentData) {
+  return (
+    studentData?.email_verification_outbox?.id ||
+    studentData?.verification_email_outbox?.id ||
+    studentData?.email_outbox?.id ||
+    studentData?.account?.email_verification_outbox_id ||
+    studentData?.account?.verification_outbox_id ||
+    studentData?.email_verification_outbox_id ||
+    studentData?.verification_outbox_id ||
+    studentData?.email_outbox_id ||
+    null
+  );
+}
+
 const StudentDetailMain = ({ id }) => {
-  const router = useRouter();
   const notify = useNotify();
 
   const [values, setValues] = useState(null);
@@ -59,6 +76,8 @@ const StudentDetailMain = ({ id }) => {
   const semesterOptions = useMemo(() => mapOptions(extractDropdownRows(semsRes)), [semsRes]);
 
   const updateMutation = useUpdateStudent();
+  const approveMutation = useApproveStudent();
+  const resendVerificationMutation = useResendOutbox();
 
   useEffect(() => {
     if (!studentData) return;
@@ -125,6 +144,37 @@ const StudentDetailMain = ({ id }) => {
     );
   };
 
+  const handleApprove = () => {
+    const userId = studentData?.user?.id;
+
+    if (!userId) {
+      notify.error("No student user ID found");
+      return;
+    }
+
+    approveMutation.mutate(
+      { userId, profileId: id },
+      {
+        onSuccess: () => notify.success("Student approved successfully"),
+        onError: (err) => notify.error(err?.message || "Failed to approve student"),
+      },
+    );
+  };
+
+  const handleResendVerificationEmail = () => {
+    const outboxId = getVerificationOutboxId(studentData);
+
+    if (!outboxId) {
+      notify.error("Verification email outbox ID is missing for this student");
+      return;
+    }
+
+    resendVerificationMutation.mutate(outboxId, {
+      onSuccess: () => notify.success("Verification email resent successfully"),
+      onError: (err) => notify.error(err?.message || "Failed to resend verification email"),
+    });
+  };
+
   const formFields = useMemo(() => [
     { name: "full_name", label: "Full Name", type: "text", layout: "half", readOnly: true },
     { name: "student_id", label: "Student ID", type: "text", layout: "half", readOnly: true },
@@ -167,6 +217,27 @@ const StudentDetailMain = ({ id }) => {
   }
 
   const formStatus = updateMutation.isPending ? "Saving..." : isDirty ? "Not Saved" : "Saved";
+  const headerActions = (
+    <>
+      <button
+        type="button"
+        onClick={handleResendVerificationEmail}
+        disabled={resendVerificationMutation.isPending}
+        className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-slate-800 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-700"
+      >
+        {resendVerificationMutation.isPending ? "Resending..." : "Resend Verification Email"}
+      </button>
+
+      <button
+        type="button"
+        onClick={handleApprove}
+        disabled={approveMutation.isPending}
+        className="px-3 py-1.5 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-slate-800 dark:border-slate-700 dark:text-gray-200 dark:hover:bg-slate-700"
+      >
+        {approveMutation.isPending ? "Approving..." : "Approve Student"}
+      </button>
+    </>
+  );
 
   return (
     <div className="max-w-7xl mx-auto w-full">
@@ -180,6 +251,7 @@ const StudentDetailMain = ({ id }) => {
         onSave={handleSave}
         isSaving={updateMutation.isPending}
         menuOptions={[]}
+        headerActions={headerActions}
       />
     </div>
   );

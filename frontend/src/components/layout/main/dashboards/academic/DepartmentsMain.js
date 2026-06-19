@@ -3,9 +3,8 @@
 import Preloader from "@/components/shared/others/Preloader";
 
 import AcademicTable from "@/components/shared/dashboards/AcademicTable";
-import { useDepartmentsList, useBulkDeleteDepartments, useFacultiesDropdown } from "@/features/academic/hooks";
+import { useDepartmentsList, useFacultiesDropdown } from "@/features/academic/hooks";
 import { useRouter } from "next/navigation";
-import useNotify from "@/hooks/useNotify";
 import { useMemo } from "react";
 
 const departmentsColumns = [
@@ -17,7 +16,6 @@ const departmentsColumns = [
 
 const DepartmentsMain = () => {
   const router = useRouter();
-  const notify = useNotify();
   const { data: facultiesRes, isLoading: isLoadingFaculties } = useFacultiesDropdown({ limit: 20 });
   const facultiesData = Array.isArray(facultiesRes?.data) ? facultiesRes.data : (facultiesRes?.data?.data || []);
   const facultiesOptions = facultiesData.map((f) => ({
@@ -43,23 +41,6 @@ const DepartmentsMain = () => {
   }, [facultiesOptions, isLoadingFaculties]);
 
   const { data, isLoading, isError } = useDepartmentsList({ mode: "scroll", limit: 20 });
-  const bulkDeleteMutation = useBulkDeleteDepartments();
-
-  const handleBulkDelete = (selectedIds) => {
-    if (confirm(`Are you sure you want to delete ${selectedIds.length} departments?`)) {
-      bulkDeleteMutation.mutate(
-        { ids: selectedIds },
-        {
-          onSuccess: () => notify.success("Departments deleted successfully"),
-          onError: (err) => notify.error(err?.message || "Failed to delete departments")
-        }
-      );
-    }
-  };
-
-  const actions = [
-    { label: "Delete", action: "delete", onClick: handleBulkDelete }
-  ];
 
   if (isLoading) {
     return <Preloader />;
@@ -81,10 +62,10 @@ const DepartmentsMain = () => {
       title="Departments"
       columns={enrichedColumns}
       data={departmentsData}
-      addNewLabel="Add Department"
-      onAddNew={() => router.push("/admin/dashboards/admin-academic/departments/create")}
+      addNewLabel={null}
+      onAddNew={null}
       onRowClick={(row) => router.push(`/admin/dashboards/admin-academic/departments/${row.id}`)}
-      actions={actions}
+      actions={[]}
     />
   );
 };
