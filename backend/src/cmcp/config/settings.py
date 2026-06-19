@@ -227,6 +227,18 @@ class Settings(BaseSettings):
             return [p.strip() for p in s.split(",") if p.strip()]
         return ["http://localhost:3000"]
 
+    # -------------------------
+    # Chatbot / RAG
+    # -------------------------
+    DEEPSEEK_API_KEY: str = ""
+    CHATBOT_LLM_BASE_URL: str = "https://api.deepseek.com"
+    CHATBOT_LLM_MODEL: str = "deepseek-chat"
+    CHATBOT_CHROMA_DIR: str = "instance/chroma_db"
+    CHATBOT_COLLECTION_NAME: str = "semester_subject_materials"
+    CHATBOT_TOP_K: int = 4
+    CHATBOT_RELEVANCE_THRESHOLD: float = 1.3
+    CHATBOT_MAX_CONTEXT_CHUNKS: int = 15
+
 
 settings = Settings()
 
