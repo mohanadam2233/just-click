@@ -1,4 +1,4 @@
-# app/apps/education_content/models.py
+# modules/materials/models.py
 from __future__ import annotations
 
 from typing import Optional
