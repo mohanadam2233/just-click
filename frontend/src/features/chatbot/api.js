@@ -21,6 +21,7 @@ export const chatbotApi = {
     method: "POST",
     body: JSON.stringify(payload),
   }),
+  getIndexStatus: (materialId) => fetchJSON(`/chatbot/index-status/${materialId}`, { method: "GET" }),
   getHistory: (sessionId) => fetchJSON(`/chatbot/sessions/${sessionId}/history`, { method: "GET" }),
   deleteSession: (sessionId) => fetchJSON(`/chatbot/sessions/${sessionId}`, { method: "DELETE" }),
   indexMaterial: ({ materialId, force = false }) => fetchJSON(`/chatbot/materials/${materialId}/index`, {
