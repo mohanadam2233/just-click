@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import os
+
+# Force CPU before torch/sentence-transformers import (avoids slow CUDA probe on old drivers).
+os.environ.setdefault("CUDA_VISIBLE_DEVICES", "")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 from functools import lru_cache
 from pathlib import Path
 
@@ -9,7 +14,7 @@ from cmcp.core.exceptions import BusinessValidationError
 
 
 def _backend_root() -> Path:
-    return Path(__file__).resolve().parents[4]
+    return Path(__file__).resolve().parents[5]
 
 
 def _cache_dir() -> Path:
@@ -51,7 +56,7 @@ def get_embedding_model():
     except Exception as exc:
         raise BusinessValidationError("sentence-transformers is not installed.") from exc
 
-    return SentenceTransformer(str(local))
+    return SentenceTransformer(str(local), device=settings.CHATBOT_EMBEDDING_DEVICE)
 
 
 def embed_texts(texts: list[str]) -> list[list[float]]:

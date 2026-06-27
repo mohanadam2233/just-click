@@ -18,6 +18,15 @@ RE_JUNK = re.compile(
     r"(ppt/slides/slide\d+\.xml|slideLayout\d+\.xml|slideMaster\d+\.xml|notesSlide\d+\.xml|<\?xml|xmlns:|<a:t>|<p:sp>|\.rels|fntdata|\.png)",
     re.IGNORECASE,
 )
+RE_PRINTABLE_ASCII = re.compile(rb"[\x20-\x7E\r\n\t]{4,}")
+RE_PRINTABLE_UNICODE = re.compile(rb"(?:[\x20-\x7E\r\n\t]\x00){4,}")
+RE_PPT_NOISE = re.compile(
+    r"^(Picture|Word\.Picture|Rectangle \d+|Title Placeholder|Text Placeholder|"
+    r"Date Placeholder|Footer Placeholder|Slide Number Placeholder|___PPT\d+|"
+    r"Century Schoolbook|Arial|Wingdings|Times New Roman|Calibri|Helvetica|SimHei|"
+    r"Courier New|Monotype Sorts|sohne|hne Mono|View)$",
+    re.IGNORECASE,
+)
 
 
 def compute_hash(data: bytes) -> str:
@@ -42,6 +51,66 @@ def _extension_from_name(filename: str) -> str:
     return clean.rsplit(".", 1)[-1].lower() if "." in clean else ""
 
 
+def _extract_pptx(file_bytes: bytes) -> str:
+    from pptx import Presentation
+
+    prs = Presentation(BytesIO(file_bytes))
+    slides = []
+    for slide_num, slide in enumerate(prs.slides, start=1):
+        lines = [f"--- Slide {slide_num} ---"]
+        for shape in slide.shapes:
+            if not getattr(shape, "has_text_frame", False):
+                continue
+            for para in shape.text_frame.paragraphs:
+                line = para.text.strip()
+                if line:
+                    lines.append(("- " if para.level > 0 else "") + line)
+        if len(lines) > 1:
+            slides.append("\n".join(lines))
+    return "\n\n".join(slides)
+
+
+def _extract_ppt_legacy(file_bytes: bytes) -> str:
+    """Extract text from legacy PowerPoint 97-2003 (.ppt) OLE files."""
+    try:
+        import olefile
+    except ImportError as exc:
+        raise BusinessValidationError(
+            "Legacy .ppt extraction requires olefile. Run: pip install olefile"
+        ) from exc
+
+    ole = olefile.OleFileIO(BytesIO(file_bytes))
+    try:
+        if not ole.exists("PowerPoint Document"):
+            raise BusinessValidationError("Legacy .ppt file is missing PowerPoint Document stream.")
+
+        data = ole.openstream("PowerPoint Document").read()
+    finally:
+        ole.close()
+
+    chunks: list[str] = []
+    for match in RE_PRINTABLE_ASCII.finditer(data):
+        text = match.group(0).decode("ascii", errors="ignore").strip()
+        if len(text) >= 4 and not RE_PPT_NOISE.match(text):
+            chunks.append(text)
+
+    for match in RE_PRINTABLE_UNICODE.finditer(data):
+        text = match.group(0).decode("utf-16-le", errors="ignore").strip()
+        if len(text) >= 4 and not RE_PPT_NOISE.match(text):
+            chunks.append(text)
+
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for chunk in chunks:
+        normalized = " ".join(chunk.split())
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+
+    return "\n".join(deduped)
+
+
 def _extract_text(file_bytes: bytes, filename: str) -> str:
     ext = _extension_from_name(filename)
 
@@ -51,23 +120,11 @@ def _extract_text(file_bytes: bytes, filename: str) -> str:
         reader = PdfReader(BytesIO(file_bytes))
         return "\n".join((page.extract_text() or "") for page in reader.pages)
 
-    if ext in {"ppt", "pptx"}:
-        from pptx import Presentation
+    if ext == "pptx":
+        return _extract_pptx(file_bytes)
 
-        prs = Presentation(BytesIO(file_bytes))
-        slides = []
-        for slide_num, slide in enumerate(prs.slides, start=1):
-            lines = [f"--- Slide {slide_num} ---"]
-            for shape in slide.shapes:
-                if not getattr(shape, "has_text_frame", False):
-                    continue
-                for para in shape.text_frame.paragraphs:
-                    line = para.text.strip()
-                    if line:
-                        lines.append(("- " if para.level > 0 else "") + line)
-            if len(lines) > 1:
-                slides.append("\n".join(lines))
-        return "\n\n".join(slides)
+    if ext == "ppt":
+        return _extract_ppt_legacy(file_bytes)
 
     if ext == "docx":
         from docx import Document

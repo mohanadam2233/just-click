@@ -11,7 +11,9 @@ RE_QUIZ = re.compile(
     re.IGNORECASE,
 )
 RE_SUMMARY = re.compile(
-    r"\b(summar(?:y|ize|ise|ized?)|overview|recap|brief|chapter[\s_]summary)\b",
+    r"\b(summar(?:y|ize|ise|ized?)|overview|recap|brief|chapter[\s_]summary|"
+    r"main points?|key points?|important points?|what (?:do|should) i (?:need to )?know|"
+    r"core (?:ideas?|concepts?)|highlights?)\b",
     re.IGNORECASE,
 )
 

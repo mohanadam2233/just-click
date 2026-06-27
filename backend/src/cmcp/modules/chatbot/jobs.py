@@ -8,6 +8,25 @@ from cmcp.modules.materials.models import Material, MaterialTypeEnum
 
 INDEXABLE_TYPES = {MaterialTypeEnum.PDF, MaterialTypeEnum.SLIDES, MaterialTypeEnum.DOC}
 
+FORCE_INDEX_TRIGGERS = frozenset({"manual_reindex", "bulk_reindex"})
+
+NON_RETRYABLE_ERROR_MARKERS = (
+    "no readable text could be extracted",
+    "no useful text chunks",
+    "cannot read this material file",
+    "legacy .ppt file is missing",
+    "material has no file attached",
+    "material not found",
+    "file is not a zip file",
+)
+
+
+def is_retryable_index_error(exc: Exception) -> bool:
+    message = str(exc).strip().lower()
+    if not message:
+        return True
+    return not any(marker in message for marker in NON_RETRYABLE_ERROR_MARKERS)
+
 
 def is_indexable_material(material: Material) -> bool:
     if not material.is_enabled:
@@ -25,6 +44,14 @@ def schedule_index_job(
     requested_by_user_id: Optional[int] = None,
     file_hash: Optional[str] = None,
 ) -> ChatbotIndexJob:
+    existing = ChatbotIndexJob.query.filter(
+        ChatbotIndexJob.company_id == int(company_id),
+        ChatbotIndexJob.material_id == int(material_id),
+        ChatbotIndexJob.status.in_(["pending", "processing"]),
+    ).first()
+    if existing:
+        return existing
+
     job = ChatbotIndexJob(
         company_id=int(company_id),
         material_id=int(material_id),

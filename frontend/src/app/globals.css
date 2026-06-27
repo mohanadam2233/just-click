@@ -595,3 +595,15 @@ h6 {
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+/* Hide global page scroll-to-top while material AI chat is open */
+body.chat-panel-open .scroll-up,
+body.chat-panel-open .theme-controller {
+  display: none !important;
+  pointer-events: none;
+}
+
+/* Fullscreen chat workspace sits above all page UI */
+body.chat-panel-fullscreen {
+  overflow: hidden !important;
+}

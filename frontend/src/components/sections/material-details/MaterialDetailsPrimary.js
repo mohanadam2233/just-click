@@ -684,12 +684,6 @@ const MaterialDetailsPrimary = ({ id }) => {
           </div>
         </div>
       </main>
-
-      <MaterialAiAssistant
-        materialId={numericId}
-        rawMaterial={rawMaterial}
-        variant="floating"
-      />
     </div>
   );
 };

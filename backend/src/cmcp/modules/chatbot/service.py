@@ -10,7 +10,7 @@ from sqlalchemy import select
 from cmcp.config.database import db
 from cmcp.core.exceptions import BusinessValidationError, NotFoundError
 from cmcp.modules.academic.models import Course, CourseOffering, Semester
-from cmcp.modules.chatbot.jobs import is_indexable_material, schedule_index_job, schedule_index_for_material
+from cmcp.modules.chatbot.jobs import FORCE_INDEX_TRIGGERS, is_retryable_index_error
 from cmcp.modules.chatbot.models import ChatbotIndexJob, ChatbotMaterialIndex, ChatMessage, ChatSession
 from cmcp.modules.chatbot.rag import (
     answer_material_question,
@@ -232,17 +232,21 @@ class ChatbotService:
         status = self._index_status_for_material(company_id=company_id, material_id=material_id)
         queued = False
 
-        if status["index_status"] in ("pending", "failed", "stale") and is_indexable_material(material):
+        index_row = ChatbotMaterialIndex.query.filter_by(
+            company_id=int(company_id),
+            material_id=int(material_id),
+        ).first()
+
+        if not index_row and is_indexable_material(material):
             active_job = ChatbotIndexJob.query.filter(
                 ChatbotIndexJob.company_id == int(company_id),
                 ChatbotIndexJob.material_id == int(material_id),
                 ChatbotIndexJob.status.in_(["pending", "processing"]),
             ).first()
             if not active_job:
-                schedule_index_for_material(material, trigger_type="system_reindex")
+                schedule_index_for_material(material, trigger_type="index_missing")
                 queued = True
-                if status["index_status"] == "pending":
-                    status["index_status"] = "indexing"
+                status["index_status"] = "indexing"
 
         return status, queued
 
@@ -342,7 +346,7 @@ class ChatbotService:
             schedule_index_job(
                 company_id=int(company_id),
                 material_id=int(row.material_id),
-                trigger_type="system_reindex",
+                trigger_type="bulk_reindex",
                 requested_by_user_id=self._user_id(),
             )
             count += 1
@@ -358,7 +362,7 @@ class ChatbotService:
             schedule_index_job(
                 company_id=int(company_id),
                 material_id=int(row.material_id),
-                trigger_type="system_reindex",
+                trigger_type="bulk_reindex",
                 requested_by_user_id=self._user_id(),
             )
             count += 1
@@ -387,23 +391,41 @@ class ChatbotService:
         db.session.flush()
         return job
 
-    def process_index_job(self, job: ChatbotIndexJob) -> None:
+    def run_index_job(self, job_id: int) -> None:
+        job = db.session.get(ChatbotIndexJob, int(job_id))
+        if not job or job.status != "processing":
+            return
+
         material = db.session.get(Material, int(job.material_id))
         if not material:
             job.status = "failed"
             job.error_message = "Material not found."
             job.finished_at = datetime.now(timezone.utc)
+            db.session.commit()
             return
 
+        force = job.trigger_type in FORCE_INDEX_TRIGGERS
         try:
-            index_material(material, force=True)
+            index_material(material, force=force)
             job.status = "completed"
             job.error_message = None
-            job.finished_at = datetime.now(timezone.utc)
         except Exception as exc:
             from cmcp.config.settings import settings
 
-            max_attempts = int(settings.CHATBOT_INDEX_WORKER_MAX_ATTEMPTS)
-            job.status = "failed" if int(job.attempt_count) >= max_attempts else "pending"
+            max_attempts = settings.CHATBOT_INDEX_WORKER_MAX_ATTEMPTS
+            if not is_retryable_index_error(exc) or int(job.attempt_count) >= max_attempts:
+                job.status = "failed"
+            else:
+                job.status = "pending"
+                job.finished_at = None
             job.error_message = str(exc)
-            job.finished_at = datetime.now(timezone.utc)
+            if job.status != "pending":
+                job.finished_at = datetime.now(timezone.utc)
+                db.session.commit()
+                return
+        job.finished_at = datetime.now(timezone.utc)
+        db.session.commit()
+
+    def process_index_job(self, job: ChatbotIndexJob) -> None:
+        """Deprecated: use claim_next_index_job + run_index_job from the worker."""
+        self.run_index_job(int(job.id))

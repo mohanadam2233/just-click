@@ -26,13 +26,27 @@ class ChatbotMaterialIndex(BaseModel, TenantMixin):
     subject_name: Mapped[str] = mapped_column(db.String(200), nullable=False, index=True)
     source_name: Mapped[str] = mapped_column(db.String(255), nullable=False)
 
-    course_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True, index=True)
-    course_offering_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True, index=True)
-    chapter_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True, index=True)
-    semester_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True, index=True)
-    department_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True, index=True)
-    faculty_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True, index=True)
-    academic_year_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True, index=True)
+    course_id: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger, db.ForeignKey("edu_courses.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    course_offering_id: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger, db.ForeignKey("edu_course_offerings.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    chapter_id: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger, db.ForeignKey("edu_course_chapters.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    semester_id: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger, db.ForeignKey("edu_semesters.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    department_id: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger, db.ForeignKey("edu_departments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    faculty_id: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger, db.ForeignKey("edu_faculties.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    academic_year_id: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger, db.ForeignKey("edu_academic_years.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     embedding_provider: Mapped[Optional[str]] = mapped_column(db.String(80), nullable=True)
     embedding_model: Mapped[Optional[str]] = mapped_column(db.String(120), nullable=True)
@@ -69,14 +83,30 @@ class ChatSession(BaseModel, TenantMixin):
     subject_name: Mapped[str] = mapped_column(db.String(200), nullable=False, index=True)
     title: Mapped[Optional[str]] = mapped_column(db.String(255), nullable=True)
 
-    material_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True, index=True)
-    course_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True, index=True)
-    course_offering_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True, index=True)
-    chapter_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True, index=True)
-    semester_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True, index=True)
-    department_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True, index=True)
-    faculty_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True, index=True)
-    academic_year_id: Mapped[Optional[int]] = mapped_column(db.BigInteger, nullable=True, index=True)
+    material_id: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger, db.ForeignKey("edu_materials.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    course_id: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger, db.ForeignKey("edu_courses.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    course_offering_id: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger, db.ForeignKey("edu_course_offerings.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    chapter_id: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger, db.ForeignKey("edu_course_chapters.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    semester_id: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger, db.ForeignKey("edu_semesters.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    department_id: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger, db.ForeignKey("edu_departments.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    faculty_id: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger, db.ForeignKey("edu_faculties.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    academic_year_id: Mapped[Optional[int]] = mapped_column(
+        db.BigInteger, db.ForeignKey("edu_academic_years.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     scope: Mapped[str] = mapped_column(db.String(30), default="material", nullable=False)
     context_json: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)

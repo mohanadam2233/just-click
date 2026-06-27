@@ -6,7 +6,7 @@ from cmcp.modules.chatbot.rag.embeddings import embed_query, embed_texts, embedd
 from cmcp.modules.chatbot.rag.extractor import compute_hash, material_filename, read_material_file
 from cmcp.modules.chatbot.rag.indexer import index_material, normalize_label, semester_label
 from cmcp.modules.chatbot.rag.modes import detect_mode
-from cmcp.modules.chatbot.rag.retriever import get_relevant_chunks, material_where_filter
+from cmcp.modules.chatbot.rag.retriever import get_material_context_chunks, get_relevant_chunks, material_where_filter
 from cmcp.modules.chatbot.rag.vector_store import delete_material_chunks
 
 __all__ = [
@@ -20,6 +20,7 @@ __all__ = [
     "embed_texts",
     "embedding_model_ready",
     "get_embedding_model",
+    "get_material_context_chunks",
     "get_relevant_chunks",
     "index_material",
     "material_filename",

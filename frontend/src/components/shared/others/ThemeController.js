@@ -7,7 +7,7 @@ const ThemeController = () => {
     theme();
   }, []);
   return (
-    <div className="fixed top-[100px] 3xl:top-[300px] transition-all duration-300 right-[-50px] hover:right-0 z-xl">
+    <div className="theme-controller fixed top-[100px] 3xl:top-[300px] transition-all duration-300 right-[-50px] hover:right-0 z-xl">
       <button className="theme-controller w-90px h-10 bg-primaryColor dark:bg-whiteColor-dark rounded-l-lg2 text-whiteColor px-10px flex items-center dark:shadow-theme-controller">
         {/* dark  */}
         <svg

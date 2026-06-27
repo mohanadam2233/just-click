@@ -5,7 +5,7 @@ from typing import Any
 
 from cmcp.config.settings import settings
 from cmcp.modules.chatbot.rag.embeddings import embed_query
-from cmcp.modules.chatbot.rag.vector_store import query_chunks
+from cmcp.modules.chatbot.rag.vector_store import get_material_chunks, query_chunks
 
 
 def material_where_filter(company_id: int, material_id: int) -> dict[str, Any]:
@@ -41,3 +41,25 @@ def get_relevant_chunks(
             "distance": distance,
         })
     return results
+
+
+def get_material_context_chunks(
+    *,
+    company_id: int,
+    material_id: int,
+    limit: int | None = None,
+) -> list[dict[str, Any]]:
+    max_chunks = limit or settings.CHATBOT_MAX_CONTEXT_CHUNKS
+    docs, metas = get_material_chunks(
+        company_id=company_id,
+        material_id=material_id,
+        chunk_indices=list(range(max_chunks)),
+    )
+    paired = sorted(
+        zip(docs, metas),
+        key=lambda item: int((item[1] or {}).get("chunk_index", 0)),
+    )
+    return [
+        {"text": doc, "metadata": meta}
+        for doc, meta in paired[:max_chunks]
+    ]

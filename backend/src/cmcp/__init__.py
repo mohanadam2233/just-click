@@ -142,4 +142,11 @@ def create_app() -> Flask:
     # ------------------------------------------------------------------
     require_login_globally(app)
 
+    try:
+        from cmcp.modules.chatbot.rag.warmup import schedule_chatbot_rag_warmup
+
+        schedule_chatbot_rag_warmup(app)
+    except Exception:
+        app.logger.exception("Chatbot RAG warmup scheduling failed")
+
     return app

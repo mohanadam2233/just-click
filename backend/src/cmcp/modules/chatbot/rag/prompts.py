@@ -23,7 +23,7 @@ Question: {question}
 Rules:
 - Use Markdown.
 - Keep paragraphs short.
-- Cite sources inline like [Source: filename.pdf].
+- Cite the chapter or topic name inline when helpful.
 - If the answer is not in the context, say the material does not cover it."""
     return system, user
 
