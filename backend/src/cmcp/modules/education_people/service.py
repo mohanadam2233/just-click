@@ -37,6 +37,7 @@ from cmcp.modules.education_people.validation import (
     ERR_PENDING_APPROVAL,
     ERR_STUDENT_ID_EXISTS,
     ERR_VERIFY_EXPIRED,
+    ERR_SEMESTER_NOT_FOUND,
     normalize_email,
 )
 from cmcp.modules.materials.service import _encode_cursor, _decode_cursor
@@ -71,7 +72,9 @@ class EducationPeopleService:
     # CLASSROOM
     # =========================================================
     def create_classroom(self, *, company_id: int, data: Dict[str, Any]):
-        name = require_text(data.get("name"), field_label="Classroom name")
+        from cmcp.common.validation.text import validate_readable_name
+
+        name = validate_readable_name(data.get("name"), field_label="Classroom name")
 
         if self.repo.classroom_name_exists(company_id=company_id, name=name):
             return False, ERR_CLASSROOM_EXISTS, None
@@ -90,7 +93,9 @@ class EducationPeopleService:
 
         patch: Dict[str, Any] = {}
         if "name" in data and data["name"] is not None:
-            name = require_text(data.get("name"), field_label="Classroom name")
+            from cmcp.common.validation.text import validate_readable_name
+
+            name = validate_readable_name(data.get("name"), field_label="Classroom name")
             if self.repo.classroom_name_exists(company_id=company_id, name=name, exclude_id=obj.id):
                 return False, ERR_CLASSROOM_EXISTS, None
             patch["name"] = name
@@ -154,22 +159,40 @@ class EducationPeopleService:
         # STEP 1-3: Register student -> enqueue verify email
         # =========================================================
 
+    def _send_verification_email_best_effort(self, row) -> None:
+        try:
+            self.email_svc.send_outbox_row_now(row)
+        except Exception:
+            log.warning(
+                "Verification email immediate send failed; outbox worker will retry. outbox_id=%s",
+                getattr(row, "id", None),
+                exc_info=True,
+            )
+
     def register_student(self, *, company_id: int, data: Dict[str, Any]) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
-        student_id = require_text(data.get("student_id"), field_label="Student ID")
+        from cmcp.common.validation.text import validate_readable_name, validate_student_id
+
+        student_id = validate_student_id(data.get("student_id"))
         email = normalize_email(data.get("email"))
-        full_name = require_text(data.get("full_name"), field_label="Full Name")
+        full_name = validate_readable_name(data.get("full_name"), field_label="Full name")
 
         faculty_id = int(data.get("faculty_id") or 0)
         department_id = int(data.get("department_id") or 0)
+        semester_id = int(data.get("semester_id") or 0)
 
         classroom_id = data.get("classroom_id")
         classroom_id = int(classroom_id) if classroom_id else None
+
+        if not semester_id:
+            return False, "Current semester is required.", None
 
         # validations
         if not self.repo.faculty_exists(company_id=company_id, faculty_id=faculty_id):
             return False, ERR_FACULTY_NOT_FOUND, None
         if not self.repo.department_exists(company_id=company_id, department_id=department_id, faculty_id=faculty_id):
             return False, ERR_DEPARTMENT_NOT_FOUND, None
+        if not self.repo.semester_exists(company_id=company_id, semester_id=semester_id):
+            return False, ERR_SEMESTER_NOT_FOUND, None
         if classroom_id and not self.repo.classroom_exists(company_id=company_id, classroom_id=classroom_id):
             return False, ERR_CLASSROOM_NOT_FOUND, None
 
@@ -184,11 +207,8 @@ class EducationPeopleService:
         ttl = int(os.getenv("EMAIL_VERIFY_TOKEN_TTL_MINUTES", "30"))
         base_url = (os.getenv("APP_BASE_URL", "").rstrip("/")) or "http://localhost:5000"
 
-        debug_payload = None
-
         try:
-            # ✅ works even if Flask already began a transaction
-            with self.s.begin_nested():  # SAVEPOINT
+            with self.s.begin_nested():
                 user = User(
                     username=student_id,
                     password_hash="!DISABLED!",
@@ -209,7 +229,7 @@ class EducationPeopleService:
                     faculty_id=faculty_id,
                     department_id=department_id,
                     classroom_id=classroom_id,
-                    semester_id=None,
+                    semester_id=semester_id,
                     is_enabled=True,
                 )
                 self.s.add(prof)
@@ -231,33 +251,20 @@ class EducationPeopleService:
 
                 verify_link = f"{base_url}/verify-email?username={student_id}&token={tok.token}"
 
-                debug_payload = {
-                    "to_email": user.email,
-                    "subject": "Verify Your Jamhuriya University Account",
-                    "template": "verify_email",
-                    "payload": {
+                self.email_svc.enqueue(
+                    to_email=user.email,
+                    subject="Verify Your Jamhuriya University Account",
+                    template="verify_email",
+                    payload={
                         "full_name": prof.full_name,
                         "student_id": student_id,
                         "verify_link": verify_link,
                         "expires_minutes": ttl,
                     },
-                    "ref_type": "User",
-                    "ref_id": user.id,
-                }
-
-                row = self.email_svc.enqueue(
-                    to_email=debug_payload["to_email"],
-                    subject=debug_payload["subject"],
-                    template=debug_payload["template"],
-                    payload=debug_payload["payload"],
-                    ref_type=debug_payload["ref_type"],
-                    ref_id=debug_payload["ref_id"],
+                    ref_type="User",
+                    ref_id=user.id,
                 )
 
-                # ✅ if SMTP fails -> exception -> SAVEPOINT rollback -> user/profile not saved
-                self.email_svc.send_outbox_row_now(row)
-
-            # NOTE: do NOT commit here. Route will commit (see next section).
             return True, "Registration submitted. Please check your email to verify your address.", {
                 "student_id": student_id,
                 "email": email,
@@ -266,32 +273,11 @@ class EducationPeopleService:
 
         except Exception as e:
             log.exception("register_student failed. student_id=%s email=%s", student_id, email)
-
-            # Ensure request handler will rollback outer transaction
             try:
                 self.s.rollback()
             except Exception:
                 pass
-
-            # Optional: store a FAILED outbox row (separate transaction) so you can see last_error
-            try:
-                if debug_payload:
-                    fail_row = self.email_svc.enqueue(
-                        to_email=debug_payload["to_email"],
-                        subject=debug_payload["subject"],
-                        template=debug_payload["template"],
-                        payload=debug_payload["payload"],
-                        ref_type=debug_payload["ref_type"],
-                        ref_id=debug_payload["ref_id"],
-                        status=EmailOutboxStatus.FAILED,
-                        last_error=str(e),
-                    )
-                    self.s.commit()
-                    log.warning("Stored FAILED outbox id=%s last_error=%s", fail_row.id, str(e)[:200])
-            except Exception:
-                log.exception("Could not store FAILED outbox debug row")
-
-            return False, f"Registration failed: could not send verification email. ({str(e)})", None
+            return False, "Registration could not be completed. Please try again.", None
 
 
         # =========================================================

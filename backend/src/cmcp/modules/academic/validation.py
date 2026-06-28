@@ -52,6 +52,24 @@ def require_text(value: str | None, *, field_label: str) -> str:
     return v
 
 
+def require_name_text(value: str | None, *, field_label: str, max_len: int = 200) -> str:
+    from cmcp.common.validation.text import validate_readable_name
+
+    return validate_readable_name(value, field_label=field_label, max_len=max_len)
+
+
+def require_label_text(value: str | None, *, field_label: str, max_len: int = 200) -> str:
+    """Labels that may start with digits, e.g. academic years."""
+    from cmcp.common.validation.text import validate_readable_name
+
+    return validate_readable_name(
+        value,
+        field_label=field_label,
+        max_len=max_len,
+        allow_leading_digit=True,
+    )
+
+
 def normalize_code(value: str | None) -> str | None:
     v = (value or "").strip()
     return v or None

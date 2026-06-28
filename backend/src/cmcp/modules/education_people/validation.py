@@ -1,5 +1,5 @@
 from __future__ import annotations
-import re
+
 from cmcp.core.exceptions import BusinessValidationError, NotFoundError
 
 
@@ -24,9 +24,14 @@ ERR_STUDENT_USER_EXISTS = "This user already has a student profile."
 ERR_STAFF_USER_EXISTS = "This user already has a staff profile."
 ERR_STAFF_ID_EXISTS = "Staff ID already exists."
 
-ERR_STUDENT_ID_EXISTS = "This Student ID is already registered. Please login or use 'Forgot Password'."
-ERR_EMAIL_EXISTS = "This email is already registered. Please use a different email or login."
+ERR_STUDENT_ID_EXISTS = (
+    "Student ID is already taken. If you believe this ID belongs to you, contact your department admin."
+)
+ERR_EMAIL_EXISTS = (
+    "This email is already registered. Use a different email or sign in if you already have an account."
+)
 ERR_INVALID_EMAIL = "Please enter a valid email address."
+ERR_SEMESTER_NOT_FOUND = "Semester not found."
 ERR_VERIFY_EXPIRED = "Verification link expired. Please request a new verification email."
 ERR_ADMIN_REJECTED = "Your registration was rejected. Please contact admin@jamhuriya.edu for more information."
 ERR_PENDING_APPROVAL = "Your account is pending admin approval. You will receive an email when approved."
@@ -40,9 +45,6 @@ ERR_EMAIL_REQUIRED = "Email is required for staff creation."
 # ----------------------------
 # Required helpers
 # ----------------------------
-EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
-
-
 def ensure_found(obj, *, message: str):
     if not obj:
         raise NotFoundError(message)
@@ -55,7 +57,9 @@ def require_text(value: str | None, *, field_label: str) -> str:
 
 
 def normalize_email(v: str | None) -> str:
-    s = (v or "").strip().lower()
-    if not s or not EMAIL_RE.match(s):
-        raise BusinessValidationError(ERR_INVALID_EMAIL)
-    return s
+    from cmcp.common.validation.text import normalize_email as _normalize_email
+
+    try:
+        return _normalize_email(v)
+    except BusinessValidationError:
+        raise BusinessValidationError(ERR_INVALID_EMAIL) from None

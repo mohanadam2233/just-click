@@ -29,6 +29,11 @@ log = logging.getLogger(__name__)
 
 
 def create_app() -> Flask:
+    import os
+
+    os.environ.setdefault("ANONYMIZED_TELEMETRY", "False")
+    os.environ.setdefault("CHROMA_TELEMETRY", "FALSE")
+
     app = Flask(__name__)
     # --- ADD THESE TWO LINES ---
 
@@ -145,7 +150,8 @@ def create_app() -> Flask:
     try:
         from cmcp.modules.chatbot.rag.warmup import schedule_chatbot_rag_warmup
 
-        schedule_chatbot_rag_warmup(app)
+        if not os.getenv("CMCP_SKIP_CHATBOT_WARMUP"):
+            schedule_chatbot_rag_warmup(app)
     except Exception:
         app.logger.exception("Chatbot RAG warmup scheduling failed")
 

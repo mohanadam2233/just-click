@@ -20,8 +20,9 @@ from cmcp.core.tenant_resolver import resolve_company_id_for_public
 from cmcp.modules.auth.deps import get_current_user
 from cmcp.modules.auth.models import UserStatusEnum, User, UserAffiliation
 from cmcp.security.rbac_guards import require_company_and_permission, require_permission
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from typing import List
+from cmcp.common.validation.pydantic_errors import clean_pydantic_error
 from cmcp.modules.education_people.schemas import (
     BulkDeleteIn,
     ClassroomCreate, ClassroomUpdate, StudentRegisterIn, BulkApproveIn,
@@ -83,11 +84,12 @@ def _commit_ok(ok: bool):
 
 def _handle_error(e: Exception):
     db.session.rollback()
-    # your validation layer now throws these (like academic)
     if isinstance(e, NotFoundError):
         return api_error(str(e), status_code=404)
     if isinstance(e, BusinessValidationError):
         return api_error(str(e), status_code=400)
+    if isinstance(e, ValidationError):
+        return api_error(clean_pydantic_error(e), status_code=400)
     return api_error(str(e), status_code=400)
 
 class ResendApprovalEmailIn(BaseModel):

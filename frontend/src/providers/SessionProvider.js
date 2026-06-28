@@ -1,16 +1,31 @@
 "use client";
 
 import React from "react";
+import { usePathname } from "next/navigation";
 import { useMe } from "@/features/auth/hooks";
 
 const SessionCtx = React.createContext(null);
+
+const PUBLIC_AUTH_PREFIXES = [
+  "/login",
+  "/signup",
+  "/verify-email",
+  "/forgot-password",
+  "/reset-password",
+];
 
 export function useSession() {
   return React.useContext(SessionCtx);
 }
 
 export default function SessionProvider({ children }) {
-  const q = useMe();
+  const pathname = usePathname();
+  const isPublicAuthRoute = PUBLIC_AUTH_PREFIXES.some((prefix) => pathname?.startsWith(prefix));
+
+  const q = useMe({
+    enabled: !isPublicAuthRoute,
+    retry: false,
+  });
   const user = q.data?.data?.user || null;
 
   const value = React.useMemo(() => {

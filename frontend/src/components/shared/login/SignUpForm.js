@@ -6,10 +6,10 @@ import { useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import { FiInfo, FiMail, FiUser } from "react-icons/fi";
 import { HiOutlineIdentification } from "react-icons/hi";
-import { MdOutlineMeetingRoom } from "react-icons/md";
 
 import AsyncDropdown from "@/components/shared/inputs/AsyncDropdown";
 import { useRegisterStudent } from "@/features/signup/hooks";
+import { getApiErrorMessage, isValidEmail } from "@/lib/apiErrors";
 import { useDropdown } from "@/hooks/dropdown/useDropdown";
 
 const SignUpForm = () => {
@@ -23,13 +23,14 @@ const SignUpForm = () => {
     full_name: "",
     student_email: "",
     department_id: "",
-    classroom_id: "",
-    room_number: "",
+    semester_id: "",
     accept_terms: false,
   });
+  const [formError, setFormError] = useState("");
 
   const onChange = (e) => {
     const { name, value, type, checked } = e.target;
+    setFormError("");
     setForm((prev) => ({
       ...prev,
       [name]: type === "checkbox" ? checked : value,
@@ -38,22 +39,22 @@ const SignUpForm = () => {
 
   const facultyDD = useDropdown({
     cacheKey: "public-faculties",
-    endpoint: "/academic/public/faculties/dropdown", // ✅ FIXED
+    endpoint: "/academic/public/faculties/dropdown",
     enabled: true,
     limit: 20,
   });
 
   const deptDD = useDropdown({
     cacheKey: `departments-faculty-${selectedFaculty || "none"}`,
-    endpoint: "/academic/public/departments/by-faculty/dropdown", // ✅ FIXED
+    endpoint: "/academic/public/departments/by-faculty/dropdown",
     enabled: !!selectedFaculty,
     limit: 10,
     params: { faculty_id: selectedFaculty || "" },
   });
 
-  const classroomDD = useDropdown({
-    cacheKey: "classrooms",
-    endpoint: "/academic/classrooms/dropdown", // ✅ FIXED (if this exists)
+  const semesterDD = useDropdown({
+    cacheKey: "public-semesters",
+    endpoint: "/academic/public/semesters/dropdown",
     enabled: true,
     limit: 20,
   });
@@ -68,13 +69,14 @@ const SignUpForm = () => {
     [deptDD.options],
   );
 
-  const classroomOptions = useMemo(
-    () => (Array.isArray(classroomDD.options) ? classroomDD.options : []),
-    [classroomDD.options],
+  const semesterOptions = useMemo(
+    () => (Array.isArray(semesterDD.options) ? semesterDD.options : []),
+    [semesterDD.options],
   );
 
   const handleFacultyPick = (val) => {
     const facultyId = String(val || "");
+    setFormError("");
     setSelectedFaculty(facultyId);
     setForm((prev) => ({
       ...prev,
@@ -86,7 +88,6 @@ const SignUpForm = () => {
   const trimmedStudentId = form.student_id.trim();
   const trimmedFullName = form.full_name.trim();
   const trimmedEmail = form.student_email.trim();
-  const trimmedRoomNumber = form.room_number.trim();
 
   const isFormValid =
     !!trimmedStudentId &&
@@ -94,6 +95,7 @@ const SignUpForm = () => {
     !!trimmedEmail &&
     !!selectedFaculty &&
     !!form.department_id &&
+    !!form.semester_id &&
     !!form.accept_terms;
 
   const isSubmitting = registerMut.isPending;
@@ -101,24 +103,37 @@ const SignUpForm = () => {
 
   const onSubmit = async (e) => {
     e.preventDefault();
+    setFormError("");
 
-    if (isSubmitting) {
-      console.log("Already submitting, ignoring click");
-      return;
-    }
+    if (isSubmitting) return;
+
+    const showError = (msg) => {
+      setFormError(msg);
+      toast.error(msg);
+    };
 
     if (!form.accept_terms) {
-      toast.error("Please accept terms.");
+      showError("Please accept terms.");
       return;
     }
 
     if (!trimmedStudentId || !trimmedFullName || !trimmedEmail) {
-      toast.error("Please fill Student ID, Full name, and Email.");
+      showError("Please fill Student ID, Full name, and Email.");
+      return;
+    }
+
+    if (!isValidEmail(trimmedEmail)) {
+      showError("Please enter a valid email address.");
       return;
     }
 
     if (!selectedFaculty || !form.department_id) {
-      toast.error("Please select Faculty and Department.");
+      showError("Please select Faculty and Department.");
+      return;
+    }
+
+    if (!form.semester_id) {
+      showError("Please select your current semester.");
       return;
     }
 
@@ -129,15 +144,10 @@ const SignUpForm = () => {
         full_name: trimmedFullName,
         faculty_id: Number(selectedFaculty),
         department_id: Number(form.department_id),
-        classroom_id: form.classroom_id ? Number(form.classroom_id) : undefined,
-        room_number: trimmedRoomNumber || undefined,
+        semester_id: Number(form.semester_id),
       };
 
-      console.log("Submitting payload:", payload);
-
       const res = await registerMut.mutateAsync(payload);
-
-      console.log("Registration response:", res);
 
       const msg =
         res?.message ||
@@ -153,20 +163,9 @@ const SignUpForm = () => {
 
       router.replace(`/signup/success?${qs.toString()}`);
     } catch (err) {
-      console.error("Registration error details:", err);
-
-      // Better error message handling
-      let errorMessage = "Registration failed";
-      if (err?.message) {
-        errorMessage = err.message;
-      } else if (err?.response?.data?.message) {
-        errorMessage = err.response.data.message;
-      } else if (err?.response?.data?.errors) {
-        const errors = err.response.data.errors;
-        errorMessage = Object.values(errors).flat().join(", ");
-      }
-
-      toast.error(errorMessage);
+      const msg = getApiErrorMessage(err, "Registration failed.");
+      setFormError(msg);
+      toast.error(msg);
     }
   };
 
@@ -216,6 +215,15 @@ const SignUpForm = () => {
           your account.
         </p>
       </div>
+
+      {formError ? (
+        <div
+          role="alert"
+          className="mb-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300"
+        >
+          {formError}
+        </div>
+      ) : null}
 
       <form onSubmit={onSubmit} className="space-y-5">
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
@@ -322,44 +330,29 @@ const SignUpForm = () => {
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className={labelCls}>Classroom (optional)</label>
+        <div>
+          <label className={labelCls}>
+            Current semester <span className="text-red-400">*</span>
+          </label>
 
-            <AsyncDropdown
-              value={form.classroom_id}
-              onChange={(val) =>
-                setForm((prev) => ({
-                  ...prev,
-                  classroom_id: String(val || ""),
-                }))
-              }
-              options={classroomOptions}
-              isLoading={classroomDD.isLoading}
-              hasMore={classroomDD.hasMore}
-              onLoadMore={classroomDD.loadMore}
-              onSearch={classroomDD.setSearch}
-              placeholder="Select classroom"
-              inputClassName={selectCls}
-              disabled={isSubmitting}
-            />
-          </div>
-
-          <div>
-            <label className={labelCls}>Room number (optional)</label>
-            <div className={inputWrap}>
-              <MdOutlineMeetingRoom className={iconCls} />
-              <input
-                name="room_number"
-                value={form.room_number}
-                onChange={onChange}
-                type="text"
-                placeholder="1"
-                className={inputCls}
-                disabled={isSubmitting}
-              />
-            </div>
-          </div>
+          <AsyncDropdown
+            value={form.semester_id}
+            onChange={(val) => {
+              setFormError("");
+              setForm((prev) => ({
+                ...prev,
+                semester_id: String(val || ""),
+              }));
+            }}
+            options={semesterOptions}
+            isLoading={semesterDD.isLoading}
+            hasMore={semesterDD.hasMore}
+            onLoadMore={semesterDD.loadMore}
+            onSearch={semesterDD.setSearch}
+            placeholder="Select semester"
+            inputClassName={selectCls}
+            disabled={isSubmitting}
+          />
         </div>
 
         <div className="flex items-start gap-3 pt-1">

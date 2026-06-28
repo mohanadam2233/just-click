@@ -8,27 +8,27 @@ const faqs = [
   {
     question: "Is it really free for students?",
     answer:
-      "Yes. Students can create an account and access approved materials provided by the department.",
+      "Yes. Students can create an account and access approved materials published by their department admin.",
   },
   {
     question: "Do I need internet all the time?",
     answer:
-      "No. You can download materials once and access them offline — great for unstable connectivity.",
+      "Yes — you need internet to browse the portal and use JustClick AI. If you download a file, you can open that saved copy offline later.",
   },
   {
-    question: "Can lecturers control who sees what?",
+    question: "How does JustClick AI work?",
     answer:
-      "Yes. Role-based access ensures students see only their semester/course materials, and lecturers control what is published.",
+      "Open any material and use the AI assistant to summarize content, generate quiz questions, or ask about what you are reading. Answers are based on that material's uploaded files.",
   },
   {
-    question: "How does the AI assistant work?",
+    question: "Who uploads the materials?",
     answer:
-      "It helps explain concepts, answer study questions, and guide revision. The quality improves as more course materials are available in the portal.",
+      "Department admins upload and organize official materials for their faculty and department. Students access what is published for their semester.",
   },
   {
-    question: "How do announcements work with WhatsApp?",
+    question: "How do I get access after registering?",
     answer:
-      "When new material is uploaded, the system generates a ready-to-copy message with a direct link to share in class groups.",
+      "After you verify your email, a department admin reviews and approves your account. Once approved, you can sign in and browse materials.",
   },
 ];
 
@@ -103,7 +103,7 @@ const Faq = () => {
               </h3>
               <p className="text-white/90 text-lg mb-8 max-w-2xl mx-auto">
                 Stop searching and start learning — everything is organized in
-                one place.
+                one place with AI on every material.
               </p>
 
               <div className="flex flex-col sm:flex-row gap-4 justify-center">

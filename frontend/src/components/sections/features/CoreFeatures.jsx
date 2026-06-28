@@ -9,20 +9,23 @@ const features = [
   },
   {
     icon: "🤖",
-    title: "AI Study Assistant",
-    description: "Ask questions and get clear explanations when you get stuck.",
+    title: "JustClick AI Assistant",
+    description:
+      "Summarize a chapter, generate quiz questions, or ask about any uploaded material.",
     tone: "purple",
   },
   {
-    icon: "📝",
-    title: "Revision Mode",
-    description: "Past exams + solutions grouped for finals preparation.",
+    icon: "✅",
+    title: "Verified Uploads",
+    description:
+      "Department admins publish official materials — one trusted source for students.",
     tone: "green",
   },
   {
-    icon: "🔔",
-    title: "Smart Announcements",
-    description: "Generate a ready message + WhatsApp link for class groups.",
+    icon: "⬇️",
+    title: "Easy Downloads",
+    description:
+      "Download PDFs and files you need. Keep them on your device for later review.",
     tone: "orange",
   },
 ];
@@ -46,7 +49,8 @@ const CoreFeatures = () => {
             Everything you need, <span className="text-secondaryColor">nothing you don&apos;t</span>.
           </h3>
           <p className="mt-4 text-paragraphColor dark:text-gray-300 max-w-2xl mx-auto">
-            Clean, fast, and focused—designed for real coursework and real deadlines.
+            Clean, fast, and focused — centralized materials for your department
+            with AI help when you need it.
           </p>
         </div>
 

@@ -6,6 +6,8 @@ from flask import Blueprint, request, session, make_response, current_app, g
 from werkzeug.exceptions import HTTPException
 from pydantic import ValidationError
 
+from cmcp.common.validation.pydantic_errors import clean_pydantic_error
+
 from cmcp.common.api_response import api_error, api_success
 from cmcp.common.decorators import rate_limit
 from cmcp.core.auth import public
@@ -65,7 +67,7 @@ def login():
     try:
         req = LoginRequest(**payload)
     except ValidationError as e:
-        return api_error(f"Invalid request: {e}", status_code=400)
+        return api_error(clean_pydantic_error(e), status_code=400)
 
     ok, msg, profile = auth_svc.login(username=req.username, password=req.password, company_id=req.company_id)
     if not ok:
@@ -224,7 +226,7 @@ def update_my_profile_page():
         return resp
 
     except ValidationError as e:
-        return api_error(f"Invalid request: {e}", status_code=400)
+        return api_error(clean_pydantic_error(e), status_code=400)
     except HTTPException as e:
         return api_error(e.description or str(e), status_code=e.code or 400)
     except Exception as e:

@@ -42,10 +42,9 @@ MissingAction = str
 
 
 def _require_text(value: Any, *, field_label: str) -> str:
-    value = (str(value) if value is not None else "").strip()
-    if not value:
-        raise BusinessValidationError(f"{field_label} is required.")
-    return value
+    from cmcp.common.validation.text import validate_readable_name
+
+    return validate_readable_name(value, field_label=field_label)
 
 
 def _normalize_code(value: Any) -> Optional[str]:

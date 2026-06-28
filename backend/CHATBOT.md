@@ -301,6 +301,18 @@ cd backend && source .venv/bin/activate
 python scripts/chatbot_index_worker.py
 ```
 
+
+
+
+# 1. Ensure email worker is running (separate terminal)
+cd backend && source .venv/bin/activate
+python scripts/email_worker.py   # or your existing worker entrypoint
+
+# 3. Test registration manually:
+#    - duplicate student ID → see toast error
+#    - valid registration → completes in seconds
+#    - wrong login → "Invalid username or password."
+
 **Terminal 3 — Frontend:**
 
 ```bash

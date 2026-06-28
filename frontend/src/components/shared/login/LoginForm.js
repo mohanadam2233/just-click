@@ -1,6 +1,7 @@
 "use client";
 
 import { useLogin } from "@/features/auth/hooks";
+import { getApiErrorMessage } from "@/lib/apiErrors";
 import { useSession } from "@/providers/SessionProvider";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -18,6 +19,7 @@ const LoginForm = () => {
     remember: false,
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [formError, setFormError] = useState("");
 
   useEffect(() => {
     if (user) router.replace("/materials");
@@ -25,15 +27,19 @@ const LoginForm = () => {
 
   const onChange = (e) => {
     const { name, value, type, checked } = e.target;
+    setFormError("");
     setForm((p) => ({ ...p, [name]: type === "checkbox" ? checked : value }));
   };
 
   const onSubmit = async (e) => {
     e.preventDefault();
+    setFormError("");
 
     // simple guard
     if (!form.username.trim() || !form.password.trim()) {
-      toast.error("Please enter username and password.");
+      const msg = "Please enter username and password.";
+      setFormError(msg);
+      toast.error(msg);
       return;
     }
 
@@ -46,7 +52,9 @@ const LoginForm = () => {
       toast.success("Login successful.");
       router.replace("/materials");
     } catch (e2) {
-      toast.error(e2?.message || "Login failed");
+      const msg = getApiErrorMessage(e2, "Invalid username or password.");
+      setFormError(msg);
+      toast.error(msg);
     }
   };
 
@@ -84,6 +92,15 @@ const LoginForm = () => {
           </Link>
         </p>
       </div>
+
+      {formError ? (
+        <div
+          role="alert"
+          className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/30 dark:text-red-300"
+        >
+          {formError}
+        </div>
+      ) : null}
 
       <form onSubmit={onSubmit} className="space-y-3.5">
         <div>

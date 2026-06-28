@@ -25,12 +25,9 @@ from .constants import (
 )
 
 def require_title(v: Optional[str]) -> str:
-    s = (v or "").strip()
-    if not s:
-        raise BusinessValidationError(ERR_MATERIAL_TITLE_REQUIRED)
-    if len(s) > 200:
-        raise BusinessValidationError(ERR_MATERIAL_TITLE_TOO_LONG)
-    return s
+    from cmcp.common.validation.text import validate_readable_name
+
+    return validate_readable_name(v, field_label="Material title", max_len=200)
 
 def require_material_type(v: Any) -> str:
     s = (str(v or "")).strip()

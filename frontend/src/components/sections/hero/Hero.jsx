@@ -31,12 +31,13 @@ const Hero = () => {
 
               <HeadingXl>
                 All your course materials — with{" "}
-                <span className="text-secondaryColor">AI help</span>.
+                <span className="text-secondaryColor">JustClick AI</span>.
               </HeadingXl>
 
               <p className="text-size-15 md:text-lg text-blackColor dark:text-blackColor-dark font-medium mb-10 leading-7 max-w-xl">
-                Slides, past exams, and announcements organized by semester and
-                course. No more WhatsApp digging — study faster, anytime.
+                Slides, notes, and department resources organized by semester
+                and course. Ask AI to summarize, quiz you, or explain any
+                uploaded material — no more digging through chat groups.
               </p>
 
               <div className="flex flex-wrap gap-4">
@@ -46,17 +47,13 @@ const Hero = () => {
                 <ButtonPrimary color="secondary" path="/login">
                   Log in
                 </ButtonPrimary>
-
-                {/* Optional: a 3rd CTA only if you really want it */}
-                {/* <ButtonPrimary color="secondary" path="#features">See features</ButtonPrimary> */}
               </div>
 
-              {/* Trust indicators (no fake numbers) */}
               <div className="mt-8 flex flex-wrap gap-6">
                 {[
-                  { icon: "📱", text: "Mobile-friendly" },
-                  { icon: "⬇️", text: "Offline downloads" },
-                  { icon: "✅", text: "Verified uploads" },
+                  { icon: "📚", text: "Department materials" },
+                  { icon: "🤖", text: "AI study assistant" },
+                  { icon: "✅", text: "Admin-verified uploads" },
                 ].map((item, i) => (
                   <div
                     key={i}

@@ -4,13 +4,13 @@ const ProblemFix = () => {
   const pain = [
     "Materials buried in chat history",
     "Different versions, no single source",
-    "Past exams hard to find when finals come",
+    "Hard to find the right file when exams approach",
   ];
 
   const gain = [
-    "One verified repository",
+    "One verified repository for your department",
     "Organized by semester → course → chapter",
-    "Searchable, offline-ready, AI-assisted learning",
+    "Searchable materials with AI-assisted learning",
   ];
 
   return (
@@ -66,11 +66,11 @@ const ProblemFix = () => {
           </div>
         </div>
 
-        {/* Bridge statement */}
         <div className="mt-50px text-center">
           <p className="text-lg md:text-xl text-paragraphColor dark:text-contentColor-dark max-w-3xl mx-auto leading-relaxed">
-            <span className="font-bold text-blackColor dark:text-white">CMCP</span>{" "}
-            turns scattered files into a structured learning system—built for your IT department workflow.
+            <span className="font-bold text-blackColor dark:text-white">JustClick</span>{" "}
+            turns scattered files into a structured learning hub — built for your
+            department, with AI help on every material.
           </p>
         </div>
       </div>
