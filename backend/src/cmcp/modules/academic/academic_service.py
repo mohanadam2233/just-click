@@ -18,6 +18,8 @@ from cmcp.modules.academic.models import (
 from cmcp.modules.academic.validation import (
     cannot_delete_linked,
     require_text,
+    require_name_text,
+    require_label_text,
     normalize_code,
     ERR_FACULTY_NOT_FOUND,
     ERR_DEPARTMENT_NOT_FOUND,
@@ -155,7 +157,7 @@ class AcademicService:
     # FACULTY
     # =========================================================
     def create_faculty(self, *, company_id: int, data: Dict[str, Any]):
-        name = require_text(data.get("name"), field_label="Faculty name")
+        name = require_name_text(data.get("name"), field_label="Faculty name")
         code = normalize_code(data.get("code"))
 
         if self.repo.faculty_name_exists(company_id=company_id, name=name):
@@ -172,7 +174,7 @@ class AcademicService:
 
         patch: Dict[str, Any] = {}
         if "name" in data and data["name"] is not None:
-            name = require_text(data.get("name"), field_label="Faculty name")
+            name = require_name_text(data.get("name"), field_label="Faculty name")
             if self.repo.faculty_name_exists(company_id=company_id, name=name, exclude_id=obj.id):
                 return False, ERR_FACULTY_EXISTS, None
             patch["name"] = name
@@ -243,7 +245,7 @@ class AcademicService:
         if not self.repo.faculties.get(faculty_id, company_id=company_id):
             return False, ERR_FACULTY_NOT_FOUND, None
 
-        name = require_text(data.get("name"), field_label="Department name")
+        name = require_name_text(data.get("name"), field_label="Department name")
         code = normalize_code(data.get("code"))
 
         if self.repo.department_name_exists(company_id=company_id, faculty_id=faculty_id, name=name):
@@ -270,7 +272,7 @@ class AcademicService:
             patch["faculty_id"] = new_faculty_id
 
         if "name" in data and data["name"] is not None:
-            name = require_text(data.get("name"), field_label="Department name")
+            name = require_name_text(data.get("name"), field_label="Department name")
             check_faculty_id = int(patch.get("faculty_id") or obj.faculty_id)
             if self.repo.department_name_exists(company_id=company_id, faculty_id=check_faculty_id, name=name, exclude_id=obj.id):
                 return False, ERR_DEPARTMENT_EXISTS_IN_FACULTY, None
@@ -338,7 +340,7 @@ class AcademicService:
     # ACADEMIC YEAR
     # =========================================================
     def create_academic_year(self, *, company_id: int, data: Dict[str, Any]):
-        name = require_text(data.get("name"), field_label="Academic year name")
+        name = require_label_text(data.get("name"), field_label="Academic year name")
         if self.repo.academic_year_name_exists(company_id=company_id, name=name):
             return False, ERR_ACADEMIC_YEAR_EXISTS, None
         return self.year_svc.create(company_id=company_id, data={"name": name, "is_enabled": True})
@@ -349,7 +351,7 @@ class AcademicService:
             return False, ERR_ACADEMIC_YEAR_NOT_FOUND, None
         patch: Dict[str, Any] = {}
         if "name" in data and data["name"] is not None:
-            name = require_text(data.get("name"), field_label="Academic year name")
+            name = require_label_text(data.get("name"), field_label="Academic year name")
             if self.repo.academic_year_name_exists(company_id=company_id, name=name, exclude_id=obj.id):
                 return False, ERR_ACADEMIC_YEAR_EXISTS, None
             patch["name"] = name
@@ -800,7 +802,7 @@ class AcademicService:
             return self.create_course_with_offerings(company_id=company_id, data=data, offerings=offerings)
 
         try:
-            title = require_text(data.get("title"), field_label="Course title")
+            title = require_name_text(data.get("title"), field_label="Course title")
             code = normalize_code(data.get("code"))
             description = _safe_desc(data.get("description"))
 
@@ -836,7 +838,7 @@ class AcademicService:
         offerings: List[Dict[str, Any]],
     ):
         try:
-            title = require_text(data.get("title"), field_label="Course title")
+            title = require_name_text(data.get("title"), field_label="Course title")
             code = normalize_code(data.get("code"))
             description = _safe_desc(data.get("description"))
 
@@ -894,7 +896,7 @@ class AcademicService:
         patch: Dict[str, Any] = {}
 
         if "title" in data and data["title"] is not None:
-            title = require_text(data.get("title"), field_label="Course title")
+            title = require_name_text(data.get("title"), field_label="Course title")
             if self.repo.course_title_exists(company_id=company_id, title=title, exclude_id=obj.id):
                 return False, ERR_COURSE_EXISTS_TITLE, None
             patch["title"] = title
@@ -1122,7 +1124,7 @@ class AcademicService:
             number = int(raw.get("number") or 0)
             if number < 1:
                 return False, "Chapter number must be at least 1", []
-            title = require_text(raw.get("title"), field_label="Chapter title")
+            title = require_name_text(raw.get("title"), field_label="Chapter title")
             title_key = title.lower()
             if number in seen_numbers:
                 return False, ERR_CHAPTER_EXISTS_NUMBER, []
@@ -1170,12 +1172,19 @@ class AcademicService:
         if not ok:
             return False, msg, None
 
+        from cmcp.common.validation.text import validate_optional_readable_name
+
+        custom_title = validate_optional_readable_name(
+            data.get("custom_title"),
+            field_label="Course offering title",
+        )
+
         offering = CourseOffering(
             company_id=int(company_id),
             course_id=course_id,
             department_id=department_id,
             semester_id=semester_id,
-            custom_title=(data.get("custom_title") or "").strip() or None,
+            custom_title=custom_title,
             credit_hours=credit_hours,
             is_enabled=bool(data.get("is_enabled", True)),
         )
@@ -1662,7 +1671,7 @@ class AcademicService:
             if number < 1:
                 return False, "Chapter number must be at least 1", None
 
-            title = require_text(data.get("title"), field_label="Chapter title")
+            title = require_name_text(data.get("title"), field_label="Chapter title")
             description = _safe_desc(data.get("description"))
 
             if self.repo.chapter_title_exists(company_id=company_id, course_offering_id=course_offering_id, title=title):
@@ -1713,7 +1722,7 @@ class AcademicService:
             patch["number"] = number
 
         if "title" in data and data["title"] is not None:
-            title = require_text(data.get("title"), field_label="Chapter title")
+            title = require_name_text(data.get("title"), field_label="Chapter title")
             check_offering = int(patch.get("course_offering_id") or obj.course_offering_id)
             if self.repo.chapter_title_exists(company_id=company_id, course_offering_id=check_offering, title=title, exclude_id=obj.id):
                 return False, ERR_CHAPTER_EXISTS_TITLE, None
@@ -2485,6 +2494,25 @@ class AcademicService:
             }
             for f in faculties
         ]
+
+    def dropdown_semesters_public(
+        self,
+        *,
+        company_id: int,
+        search: str | None,
+        limit: int,
+        offset: int,
+        filters: dict | None,
+    ):
+        return self.dropdown_semesters(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            active_only=True,
+            filters=filters,
+        )
+
     def dropdown_courses(
         self,
         *,

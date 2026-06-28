@@ -233,11 +233,53 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str = ""
     CHATBOT_LLM_BASE_URL: str = "https://api.deepseek.com"
     CHATBOT_LLM_MODEL: str = "deepseek-chat"
+
+    ANONYMIZED_TELEMETRY: bool = False
+
+    CHATBOT_VECTOR_DB: str = "chroma"
     CHATBOT_CHROMA_DIR: str = "instance/chroma_db"
-    CHATBOT_COLLECTION_NAME: str = "semester_subject_materials"
-    CHATBOT_TOP_K: int = 4
+    CHATBOT_COLLECTION_NAME: str = "cmcp_material_chunks_v3"
+
+    CHATBOT_EMBEDDING_PROVIDER: str = "local_sentence_transformers"
+    CHATBOT_EMBEDDING_MODEL: str = "BAAI/bge-small-en-v1.5"
+    CHATBOT_EMBEDDING_CACHE_DIR: str = "instance/embedding_models"
+    CHATBOT_EMBEDDING_DEVICE: str = "cpu"
+    CHATBOT_ALLOW_RUNTIME_MODEL_DOWNLOAD: bool = False
+    CHATBOT_WARMUP_EMBEDDING: bool = True
+
+    CHATBOT_TOP_K: int = 5
     CHATBOT_RELEVANCE_THRESHOLD: float = 1.3
-    CHATBOT_MAX_CONTEXT_CHUNKS: int = 15
+    CHATBOT_MAX_CONTEXT_CHUNKS: int = 8
+    CHATBOT_DEFAULT_SCOPE: str = "material"
+
+    CHATBOT_CHUNK_SIZE: int = 400
+    CHATBOT_CHUNK_OVERLAP: int = 80
+
+    CHATBOT_INDEX_WORKER_POLL_SECONDS: int = 10
+    CHATBOT_INDEX_WORKER_MAX_ATTEMPTS: int = 3
+
+    CHATBOT_LLM_TIMEOUT_SECONDS: float = 90.0
+    CHATBOT_LLM_MAX_TOKENS_CHAT: int = 800
+    CHATBOT_LLM_MAX_TOKENS_SUMMARY: int = 1200
+    CHATBOT_LLM_MAX_TOKENS_QUIZ: int = 2500
+    CHATBOT_LLM_MAX_TOKENS_QNA: int = 2500
+
+    @field_validator(
+        "ANONYMIZED_TELEMETRY",
+        "CHATBOT_ALLOW_RUNTIME_MODEL_DOWNLOAD",
+        "REDIS_ENABLED",
+        "SESSION_COOKIE_HTTPONLY",
+        "SESSION_COOKIE_SECURE",
+        "CROSS_SITE_COOKIES",
+        mode="before",
+    )
+    @classmethod
+    def _parse_bool(cls, v):
+        if isinstance(v, bool):
+            return v
+        if isinstance(v, str):
+            return v.strip().lower() in {"1", "true", "yes", "on"}
+        return bool(v)
 
 
 settings = Settings()

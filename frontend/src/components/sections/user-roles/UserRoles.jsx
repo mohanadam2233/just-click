@@ -11,10 +11,11 @@ const UserRoles = () => {
           </span>
           <h3 className="text-3xl md:text-4xl font-bold text-blackColor dark:text-white leading-tight">
             Built for <span className="text-secondaryColor">students</span> and{" "}
-            <span className="text-secondaryColor">lecturers</span>.
+            <span className="text-secondaryColor">department admins</span>.
           </h3>
           <p className="mt-4 text-paragraphColor dark:text-gray-300 max-w-2xl mx-auto">
-            Students get clarity. Lecturers save time. Everyone stays aligned.
+            Students get organized materials and AI help. Admins upload and
+            manage resources for their university department.
           </p>
         </div>
 
@@ -33,11 +34,11 @@ const UserRoles = () => {
 
             <div className="space-y-4">
               {[
-                "Materials organized for your semester",
-                "Favorites for fast revision",
-                "Progress tracker per course",
-                "Offline downloads",
-                "AI help when you’re stuck",
+                "Materials organized for your semester and department",
+                "Search and filter by course or chapter",
+                "Save favorites for quick access",
+                "Download files you need",
+                "Ask JustClick AI about any material",
               ].map((text, i) => (
                 <div key={i} className="flex items-start gap-3">
                   <span className="text-secondaryColor">✓</span>
@@ -48,7 +49,7 @@ const UserRoles = () => {
 
             <div className="mt-8">
               <Link
-                href="/register"
+                href="/signup"
                 className="inline-flex items-center gap-2 text-primaryColor dark:text-primaryColor font-semibold hover:gap-3 transition-all"
               >
                 Create student account <span>→</span>
@@ -56,24 +57,25 @@ const UserRoles = () => {
             </div>
           </div>
 
-          {/* Lecturers */}
+          {/* Admins */}
           <div
             className="group bg-lightGrey10 dark:bg-lightGrey10-dark p-30px rounded-2xl hover:shadow-experience dark:hover:shadow-gray-800/50 transition-all duration-300 border border-black/5 dark:border-white/10"
             data-aos="fade-left"
           >
             <div className="flex items-center gap-4 mb-6">
               <div className="w-16 h-16 rounded-xl bg-purple-100 dark:bg-purple-900/20 flex items-center justify-center text-3xl group-hover:scale-110 transition-transform">
-                👨‍🏫
+                🛡️
               </div>
-              <h4 className="text-2xl font-bold text-blackColor dark:text-white">For Lecturers</h4>
+              <h4 className="text-2xl font-bold text-blackColor dark:text-white">For Admins</h4>
             </div>
 
             <div className="space-y-4">
               {[
-                "Upload once (PDF, PPT, DOC, video)",
-                "WhatsApp-ready announcements",
-                "Forum reduces repeated questions",
-                "Engagement insights",
+                "Upload materials (PDF, PPT, DOC, video, links)",
+                "Organize by semester, course, and chapter",
+                "Manage faculty and department structure",
+                "Review and approve student registrations",
+                "Keep one official source for your department",
               ].map((text, i) => (
                 <div key={i} className="flex items-start gap-3">
                   <span className="text-secondaryColor">✓</span>
@@ -84,10 +86,10 @@ const UserRoles = () => {
 
             <div className="mt-8">
               <Link
-                href="/lecturer-info"
+                href="/login"
                 className="inline-flex items-center gap-2 text-primaryColor dark:text-primaryColor font-semibold hover:gap-3 transition-all"
               >
-                Learn more <span>→</span>
+                Admin sign in <span>→</span>
               </Link>
             </div>
           </div>

@@ -31,7 +31,7 @@ class AuthService:
     ) -> Tuple[bool, str, Optional[Dict[str, Any]]]:
         user = self.repo.get_user_by_username(username)
         if not user or not verify_password(password, user.password_hash):
-            return False, "Username or password is incorrect.", None
+            return False, "Invalid username or password.", None
 
         if not user.is_enabled:
             return False, "Your account is disabled.", None

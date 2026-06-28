@@ -14,6 +14,7 @@ import "./globals.css";
 
 import CartContextProvider from "@/contexts/CartContext";
 import WishlistContextProvider from "@/contexts/WshlistContext";
+import AppToaster from "@/components/shared/AppToaster";
 import ReactQueryProvider from "@/providers/ReactQueryProvider";
 import SessionProvider from "@/providers/SessionProvider";
 
@@ -71,6 +72,7 @@ export default function RootLayout({ children }) {
             <CartContextProvider>
               <WishlistContextProvider>
                 <AppEffects />
+                <AppToaster />
                 <PreloaderPrimary />
                 {children}
                 <div>

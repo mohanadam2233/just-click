@@ -423,6 +423,9 @@ class MaterialsService:
 
                 self.s.flush()
 
+                from cmcp.modules.chatbot.jobs import schedule_index_for_material
+                schedule_index_for_material(material, trigger_type="material_created")
+
                 return True, "Material created successfully.", {
                     "material": self._material_summary_out(material)
                 }
@@ -577,6 +580,10 @@ class MaterialsService:
                     self._upload_material_file(material, file_storage, external_base)
 
                 self.s.flush()
+
+                from cmcp.modules.chatbot.jobs import schedule_index_for_material
+                if file_storage or "file_url" in patch:
+                    schedule_index_for_material(material, trigger_type="material_updated")
 
                 return True, "Material updated successfully.", {
                     "material": self._material_summary_out(material)

@@ -46,11 +46,19 @@ def list_subjects(company_id: int):
 def create_session(company_id: int):
     try:
         payload = request.get_json(silent=True) or {}
-        out = svc.create_session(
-            company_id=company_id,
-            semester=payload.get("semester") or "",
-            subject=payload.get("subject") or "",
-        )
+        material_id = payload.get("material_id")
+        if material_id:
+            out = svc.create_material_session(
+                company_id=company_id,
+                material_id=int(material_id),
+                scope=payload.get("scope") or "material",
+            )
+        else:
+            out = svc.create_session(
+                company_id=company_id,
+                semester=payload.get("semester") or "",
+                subject=payload.get("subject") or "",
+            )
         db.session.commit()
         return api_success(message="Session created.", data=out, status_code=201)
     except Exception as exc:
@@ -66,11 +74,21 @@ def ask(company_id: int):
             company_id=company_id,
             session_id=payload.get("session_id") or "",
             question=payload.get("question") or "",
-            semester=payload.get("semester") or "",
-            subject=payload.get("subject") or "",
         )
         db.session.commit()
         return api_success(message="OK", data=out)
+    except Exception as exc:
+        return _handle_error(exc)
+
+
+@bp.get("/index-status/<int:material_id>")
+@require_company_and_permission(doctype="Material", action="READ")
+def index_status(company_id: int, material_id: int):
+    try:
+        data, queued = svc.get_index_status(company_id=company_id, material_id=material_id)
+        if queued:
+            db.session.commit()
+        return api_success(data=data)
     except Exception as exc:
         return _handle_error(exc)
 
@@ -100,29 +118,60 @@ def delete_session(company_id: int, session_id: str):
 def index_single_material(company_id: int, material_id: int):
     try:
         payload = request.get_json(silent=True) or {}
-        out = svc.index_material(
+        out = svc.enqueue_reindex_material(
             company_id=company_id,
             material_id=material_id,
-            force=bool(payload.get("force", False)),
+            trigger_type="manual_reindex",
         )
         db.session.commit()
-        return api_success(message="Material indexed.", data=out)
+        return api_success(message="Index job queued.", data=out)
     except Exception as exc:
         return _handle_error(exc)
 
 
-@bp.post("/index-subject")
+@bp.post("/admin/reindex/<int:material_id>")
 @require_company_and_permission(doctype="Material", action="UPDATE")
-def index_subject(company_id: int):
+def admin_reindex_material(company_id: int, material_id: int):
     try:
-        payload = request.get_json(silent=True) or {}
-        out = svc.index_subject(
+        out = svc.enqueue_reindex_material(
             company_id=company_id,
-            semester=payload.get("semester") or "",
-            subject=payload.get("subject") or "",
-            force=bool(payload.get("force", False)),
+            material_id=material_id,
+            trigger_type="manual_reindex",
         )
         db.session.commit()
-        return api_success(message="Subject indexed.", data=out)
+        return api_success(message="Reindex job queued.", data=out)
+    except Exception as exc:
+        return _handle_error(exc)
+
+
+@bp.post("/admin/index-missing")
+@require_company_and_permission(doctype="Material", action="UPDATE")
+def admin_index_missing(company_id: int):
+    try:
+        out = svc.enqueue_index_missing(company_id=company_id)
+        db.session.commit()
+        return api_success(message="Missing index jobs queued.", data=out)
+    except Exception as exc:
+        return _handle_error(exc)
+
+
+@bp.post("/admin/reindex-failed")
+@require_company_and_permission(doctype="Material", action="UPDATE")
+def admin_reindex_failed(company_id: int):
+    try:
+        out = svc.enqueue_reindex_failed(company_id=company_id)
+        db.session.commit()
+        return api_success(message="Failed reindex jobs queued.", data=out)
+    except Exception as exc:
+        return _handle_error(exc)
+
+
+@bp.post("/admin/reindex-stale")
+@require_company_and_permission(doctype="Material", action="UPDATE")
+def admin_reindex_stale(company_id: int):
+    try:
+        out = svc.enqueue_reindex_stale(company_id=company_id)
+        db.session.commit()
+        return api_success(message="Stale reindex jobs queued.", data=out)
     except Exception as exc:
         return _handle_error(exc)

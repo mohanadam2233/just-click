@@ -1,6 +1,7 @@
 "use client";
 
 import Swal from "sweetalert2";
+import { getApiErrorMessage } from "@/lib/apiErrors";
 
 const toastBase = Swal.mixin({
   toast: true,
@@ -35,8 +36,13 @@ export default function useNotify() {
 
     success: (title = "Saved", options = {}) => show("success", title, options),
 
-    error: (title = "Something went wrong", options = {}) =>
-      show("error", title, options),
+    error: (title = "Something went wrong", options = {}) => {
+      const message =
+        typeof title === "object" && title !== null
+          ? getApiErrorMessage(title)
+          : String(title || "Something went wrong");
+      return show("error", message, options);
+    },
 
     info: (title = "Info", options = {}) => show("info", title, options),
 

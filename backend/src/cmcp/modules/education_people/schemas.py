@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import List, Optional
 from typing import Any, Dict
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
 
 class BulkDeleteIn(BaseModel):
     ids: List[int]
@@ -32,12 +32,13 @@ class _BaseIn(BaseModel):
 
 class StudentRegisterIn(_BaseIn):
     student_id: str = Field(..., min_length=3, max_length=60)
-    email: str
+    email: EmailStr
     full_name: str = Field(..., min_length=2, max_length=200)
-    faculty_id: int
-    department_id: int
-    classroom_id: Optional[int] = None
-    room_number: Optional[str] = None  # if you want to store separately (optional)
+    faculty_id: int = Field(..., ge=1)
+    department_id: int = Field(..., ge=1)
+    semester_id: int = Field(..., ge=1)
+    classroom_id: Optional[int] = Field(None, ge=1)
+    room_number: Optional[str] = Field(None, max_length=50)
 
 
 class BulkApproveIn(BaseModel):

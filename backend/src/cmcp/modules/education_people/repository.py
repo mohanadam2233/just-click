@@ -83,6 +83,19 @@ class EducationPeopleRepo:
             )
         )
 
+    def semester_exists(self, *, company_id: int, semester_id: int) -> bool:
+        from cmcp.modules.academic.models import Semester
+
+        return bool(
+            self.s.scalar(
+                select(exists().where(
+                    Semester.company_id == int(company_id),
+                    Semester.id == int(semester_id),
+                    Semester.is_enabled.is_(True),
+                ))
+            )
+        )
+
     def classroom_exists(self, *, company_id: int, classroom_id: int) -> bool:
         return bool(
             self.s.scalar(

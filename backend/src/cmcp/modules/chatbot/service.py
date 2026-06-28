@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from flask import g
@@ -9,18 +10,103 @@ from sqlalchemy import select
 from cmcp.config.database import db
 from cmcp.core.exceptions import BusinessValidationError, NotFoundError
 from cmcp.modules.academic.models import Course, CourseOffering, Semester
-from cmcp.modules.chatbot.models import ChatMessage, ChatSession
-from cmcp.modules.chatbot.rag import answer_question, index_material, normalize_label, semester_label
+from cmcp.modules.chatbot.jobs import FORCE_INDEX_TRIGGERS, is_retryable_index_error
+from cmcp.modules.chatbot.models import ChatbotIndexJob, ChatbotMaterialIndex, ChatMessage, ChatSession
+from cmcp.modules.chatbot.rag import (
+    answer_material_question,
+    index_material,
+    material_where_filter,
+    normalize_label,
+    semester_label,
+)
 from cmcp.modules.materials.models import Material
+from cmcp.modules.materials.repository import MaterialsRepo
 
 
 class ChatbotService:
+    def __init__(self):
+        self.materials_repo = MaterialsRepo()
+
     def _user_id(self) -> int:
         user = getattr(g, "current_user", None) or {}
         user_id = user.get("user_id") or user.get("id")
         if not user_id:
             raise BusinessValidationError("Authenticated user is missing.")
         return int(user_id)
+
+    def _validate_material_access(self, *, company_id: int, material_id: int) -> Material:
+        row = self.materials_repo.get_material_detail(
+            company_id=company_id,
+            material_id=material_id,
+        )
+        if not row:
+            reason = self.materials_repo.get_student_material_access_message(
+                company_id=company_id,
+                material_id=material_id,
+            )
+            raise NotFoundError(reason or "Material not found.")
+
+        material = db.session.get(Material, int(material_id))
+        if not material or int(material.company_id) != int(company_id):
+            raise NotFoundError("Material not found.")
+        return material
+
+    def _resolve_material_context(self, material: Material) -> dict[str, Any]:
+        offering: Optional[CourseOffering] = material.course_offering
+        course: Optional[Course] = offering.course if offering else None
+        chapter = material.chapter
+        semester: Optional[Semester] = offering.semester if offering else None
+        department = offering.department if offering else None
+        faculty = department.faculty if department else None
+        academic_year = semester.academic_year if semester else None
+
+        sem_label = semester_label(semester)
+        course_title = course.title if course else material.title
+
+        return {
+            "material_id": int(material.id),
+            "material_title": material.title,
+            "course_id": int(course.id) if course else None,
+            "course_offering_id": int(offering.id) if offering else None,
+            "chapter_id": int(chapter.id) if chapter else None,
+            "semester_id": int(semester.id) if semester else None,
+            "department_id": int(department.id) if department else None,
+            "faculty_id": int(faculty.id) if faculty else None,
+            "academic_year_id": int(academic_year.id) if academic_year else None,
+            "semester_label": sem_label,
+            "subject_name": course_title,
+            "course_title": course_title,
+            "course_code": course.code if course else "",
+            "chapter_label": f"Chapter {chapter.number}: {chapter.title}" if chapter else "",
+            "display": {
+                "material_title": material.title,
+                "course_title": course_title,
+                "course_code": course.code if course else "",
+                "chapter_label": f"Chapter {chapter.number}: {chapter.title}" if chapter else "",
+                "semester_label": sem_label,
+            },
+        }
+
+    def _index_status_for_material(self, *, company_id: int, material_id: int) -> dict[str, Any]:
+        row = ChatbotMaterialIndex.query.filter_by(
+            company_id=int(company_id),
+            material_id=int(material_id),
+        ).first()
+        if not row:
+            return {
+                "material_id": int(material_id),
+                "index_status": "pending",
+                "indexed_at": None,
+                "chunk_count": 0,
+                "last_error": None,
+            }
+        return {
+            "material_id": int(material_id),
+            "index_status": row.index_status,
+            "indexed_at": row.indexed_at.isoformat() if row.indexed_at else None,
+            "chunk_count": int(row.chunk_count or 0),
+            "last_error": row.last_error,
+        }
 
     def list_semesters(self, *, company_id: int) -> list[str]:
         stmt = (
@@ -59,6 +145,49 @@ class ChatbotService:
                 subjects.append(title)
         return sorted(set(subjects), key=str.lower)
 
+    def create_material_session(
+        self,
+        *,
+        company_id: int,
+        material_id: int,
+        scope: str = "material",
+    ) -> dict[str, Any]:
+        material = self._validate_material_access(company_id=company_id, material_id=material_id)
+        ctx = self._resolve_material_context(material)
+        scope = (scope or "material").strip().lower() or "material"
+
+        session_id = uuid.uuid4().hex
+        vector_filter = material_where_filter(int(company_id), int(material_id))
+
+        session = ChatSession(
+            id=session_id,
+            company_id=int(company_id),
+            user_id=self._user_id(),
+            semester_label=ctx["semester_label"],
+            subject_name=ctx["subject_name"],
+            title=ctx["material_title"],
+            material_id=int(material_id),
+            course_id=ctx["course_id"],
+            course_offering_id=ctx["course_offering_id"],
+            chapter_id=ctx["chapter_id"],
+            semester_id=ctx["semester_id"],
+            department_id=ctx["department_id"],
+            faculty_id=ctx["faculty_id"],
+            academic_year_id=ctx["academic_year_id"],
+            scope=scope,
+            context_json=ctx["display"],
+            vector_filter_json=vector_filter,
+        )
+        db.session.add(session)
+        db.session.flush()
+
+        index_status = self._index_status_for_material(company_id=company_id, material_id=material_id)
+        return {
+            "session_id": session_id,
+            "context": ctx["display"],
+            "index_status": index_status["index_status"],
+        }
+
     def create_session(self, *, company_id: int, semester: str, subject: str) -> dict[str, Any]:
         semester = (semester or "").strip()
         subject = (subject or "").strip()
@@ -73,6 +202,7 @@ class ChatbotService:
             semester_label=semester,
             subject_name=subject,
             title=f"{subject} - {semester}",
+            scope="subject",
         )
         db.session.add(session)
         db.session.flush()
@@ -97,50 +227,51 @@ class ChatbotService:
         db.session.flush()
         return {"session_id": session_id}
 
-    def _subject_materials(self, *, company_id: int, semester: str, subject: str) -> list[Material]:
-        norm_semester = normalize_label(semester)
-        stmt = (
-            select(Material)
-            .join(CourseOffering, CourseOffering.id == Material.course_offering_id)
-            .join(Course, Course.id == CourseOffering.course_id)
-            .outerjoin(Semester, Semester.id == CourseOffering.semester_id)
-            .where(
-                Material.company_id == int(company_id),
-                Material.is_enabled.is_(True),
-                Material.file_url.is_not(None),
-                Course.title == subject,
-            )
-            .order_by(Material.id.asc())
-        )
-        return [
-            material
-            for material in db.session.scalars(stmt).all()
-            if normalize_label(semester_label(material.course_offering.semester if material.course_offering else None)) == norm_semester
-        ]
+    def get_index_status(self, *, company_id: int, material_id: int) -> tuple[dict[str, Any], bool]:
+        material = self._validate_material_access(company_id=company_id, material_id=material_id)
+        status = self._index_status_for_material(company_id=company_id, material_id=material_id)
+        queued = False
 
-    def ensure_subject_indexed(self, *, company_id: int, semester: str, subject: str) -> dict[str, Any]:
-        materials = self._subject_materials(company_id=company_id, semester=semester, subject=subject)
-        indexed = []
-        skipped = []
-        failed = []
-        for material in materials:
-            try:
-                result = index_material(material, force=False)
-                if result["status"] == "indexed":
-                    indexed.append(result)
-                else:
-                    skipped.append(result)
-            except Exception as exc:
-                failed.append({"material_id": int(material.id), "message": str(exc)})
-        return {"indexed": indexed, "skipped": skipped, "failed": failed}
+        index_row = ChatbotMaterialIndex.query.filter_by(
+            company_id=int(company_id),
+            material_id=int(material_id),
+        ).first()
 
-    def ask(self, *, company_id: int, session_id: str, question: str, semester: str, subject: str) -> dict[str, Any]:
+        if not index_row and is_indexable_material(material):
+            active_job = ChatbotIndexJob.query.filter(
+                ChatbotIndexJob.company_id == int(company_id),
+                ChatbotIndexJob.material_id == int(material_id),
+                ChatbotIndexJob.status.in_(["pending", "processing"]),
+            ).first()
+            if not active_job:
+                schedule_index_for_material(material, trigger_type="index_missing")
+                queued = True
+                status["index_status"] = "indexing"
+
+        return status, queued
+
+    def ask(self, *, company_id: int, session_id: str, question: str) -> dict[str, Any]:
         session = self._get_session(company_id=company_id, session_id=session_id)
         question = (question or "").strip()
-        semester = (semester or "").strip()
-        subject = (subject or "").strip()
-        if not question or not semester or not subject:
-            raise BusinessValidationError("Question, semester, and subject are required.")
+        if not question:
+            raise BusinessValidationError("Question is required.")
+
+        if not session.material_id:
+            raise BusinessValidationError("This session is not linked to a material.")
+
+        material_id = int(session.material_id)
+        self._validate_material_access(company_id=company_id, material_id=material_id)
+
+        index_row = ChatbotMaterialIndex.query.filter_by(
+            company_id=int(company_id),
+            material_id=material_id,
+        ).first()
+        if not index_row or index_row.index_status != "indexed":
+            return {
+                "answer": "AI is still preparing this material. Please try again shortly.",
+                "sources": [],
+                "mode_used": "auto",
+            }
 
         db.session.add(ChatMessage(
             company_id=int(company_id),
@@ -150,8 +281,14 @@ class ChatbotService:
         ))
         db.session.flush()
 
-        self.ensure_subject_indexed(company_id=company_id, semester=semester, subject=subject)
-        result = answer_question(int(company_id), session.id, semester, subject, question)
+        material_title = (session.context_json or {}).get("material_title") or session.title or "this material"
+        result = answer_material_question(
+            company_id=int(company_id),
+            material_id=material_id,
+            session_id=session.id,
+            question=question,
+            material_title=material_title,
+        )
 
         db.session.add(ChatMessage(
             company_id=int(company_id),
@@ -162,15 +299,133 @@ class ChatbotService:
         db.session.flush()
         return result
 
+    def enqueue_reindex_material(
+        self,
+        *,
+        company_id: int,
+        material_id: int,
+        trigger_type: str = "manual_reindex",
+    ) -> dict[str, Any]:
+        material = db.session.get(Material, int(material_id))
+        if not material or int(material.company_id) != int(company_id):
+            raise NotFoundError("Material not found.")
+        job = schedule_index_for_material(
+            material,
+            trigger_type=trigger_type,
+            requested_by_user_id=self._user_id(),
+        )
+        if not job:
+            raise BusinessValidationError("This material cannot be indexed.")
+        return {"job_id": int(job.id), "material_id": int(material_id), "status": job.status}
+
+    def enqueue_index_missing(self, *, company_id: int) -> dict[str, Any]:
+        indexed_ids = {
+            row.material_id
+            for row in ChatbotMaterialIndex.query.filter_by(company_id=int(company_id)).all()
+        }
+        materials = Material.query.filter(
+            Material.company_id == int(company_id),
+            Material.is_enabled.is_(True),
+            Material.file_url.is_not(None),
+        ).all()
+        count = 0
+        for material in materials:
+            if int(material.id) in indexed_ids:
+                continue
+            if schedule_index_for_material(material, trigger_type="system_reindex"):
+                count += 1
+        return {"queued": count}
+
+    def enqueue_reindex_failed(self, *, company_id: int) -> dict[str, Any]:
+        rows = ChatbotMaterialIndex.query.filter_by(
+            company_id=int(company_id),
+            index_status="failed",
+        ).all()
+        count = 0
+        for row in rows:
+            schedule_index_job(
+                company_id=int(company_id),
+                material_id=int(row.material_id),
+                trigger_type="bulk_reindex",
+                requested_by_user_id=self._user_id(),
+            )
+            count += 1
+        return {"queued": count}
+
+    def enqueue_reindex_stale(self, *, company_id: int) -> dict[str, Any]:
+        rows = ChatbotMaterialIndex.query.filter(
+            ChatbotMaterialIndex.company_id == int(company_id),
+            ChatbotMaterialIndex.index_status.in_(["stale", "pending"]),
+        ).all()
+        count = 0
+        for row in rows:
+            schedule_index_job(
+                company_id=int(company_id),
+                material_id=int(row.material_id),
+                trigger_type="bulk_reindex",
+                requested_by_user_id=self._user_id(),
+            )
+            count += 1
+        return {"queued": count}
+
     def index_material(self, *, company_id: int, material_id: int, force: bool = False) -> dict[str, Any]:
         material = db.session.get(Material, int(material_id))
         if not material or int(material.company_id) != int(company_id):
             raise NotFoundError("Material not found.")
         return index_material(material, force=force)
 
-    def index_subject(self, *, company_id: int, semester: str, subject: str, force: bool = False) -> dict[str, Any]:
-        materials = self._subject_materials(company_id=company_id, semester=semester, subject=subject)
-        results = []
-        for material in materials:
-            results.append(index_material(material, force=force))
-        return {"results": results}
+    def claim_next_index_job(self) -> Optional[ChatbotIndexJob]:
+        stmt = (
+            select(ChatbotIndexJob)
+            .where(ChatbotIndexJob.status == "pending")
+            .order_by(ChatbotIndexJob.created_at.asc())
+            .limit(1)
+            .with_for_update(skip_locked=True)
+        )
+        job = db.session.scalars(stmt).first()
+        if not job:
+            return None
+        job.status = "processing"
+        job.attempt_count = int(job.attempt_count or 0) + 1
+        job.started_at = datetime.now(timezone.utc)
+        db.session.flush()
+        return job
+
+    def run_index_job(self, job_id: int) -> None:
+        job = db.session.get(ChatbotIndexJob, int(job_id))
+        if not job or job.status != "processing":
+            return
+
+        material = db.session.get(Material, int(job.material_id))
+        if not material:
+            job.status = "failed"
+            job.error_message = "Material not found."
+            job.finished_at = datetime.now(timezone.utc)
+            db.session.commit()
+            return
+
+        force = job.trigger_type in FORCE_INDEX_TRIGGERS
+        try:
+            index_material(material, force=force)
+            job.status = "completed"
+            job.error_message = None
+        except Exception as exc:
+            from cmcp.config.settings import settings
+
+            max_attempts = settings.CHATBOT_INDEX_WORKER_MAX_ATTEMPTS
+            if not is_retryable_index_error(exc) or int(job.attempt_count) >= max_attempts:
+                job.status = "failed"
+            else:
+                job.status = "pending"
+                job.finished_at = None
+            job.error_message = str(exc)
+            if job.status != "pending":
+                job.finished_at = datetime.now(timezone.utc)
+                db.session.commit()
+                return
+        job.finished_at = datetime.now(timezone.utc)
+        db.session.commit()
+
+    def process_index_job(self, job: ChatbotIndexJob) -> None:
+        """Deprecated: use claim_next_index_job + run_index_job from the worker."""
+        self.run_index_job(int(job.id))

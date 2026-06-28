@@ -1113,6 +1113,7 @@ class MaterialsRepo:
         company_id: int,
         filters: Dict[str, Any] | None,
         ignore: tuple[str, ...] = (),
+        scope: Dict[str, Any] | None = None,
     ):
         """
         Lightweight base query for material filter dropdown options.
@@ -1130,7 +1131,8 @@ class MaterialsRepo:
         for key in ignore:
             filters.pop(key, None)
 
-        scope = self._current_user_scope(company_id=company_id)
+        if scope is None:
+            scope = self._current_user_scope(company_id=company_id)
 
         stmt = (
             select(
@@ -1236,6 +1238,7 @@ class MaterialsRepo:
                 company_id=company_id,
                 filters=filters,
                 ignore=ignore,
+                scope=scope,
             ).subquery()
 
         def _selected_int(key: str) -> int | None:

@@ -5,19 +5,22 @@ const steps = [
     number: "01",
     icon: "🆔",
     title: "Create your account",
-    description: "Sign in with your University ID to access verified department resources.",
+    description:
+      "Register with your student ID, verify your email, and wait for admin approval.",
   },
   {
     number: "02",
     icon: "📚",
-    title: "Choose your semester",
-    description: "Your dashboard filters materials automatically by semester and courses.",
+    title: "Browse your materials",
+    description:
+      "Open your department portal — materials are filtered by semester and course.",
   },
   {
     number: "03",
-    icon: "🎓",
-    title: "Study smarter",
-    description: "Download, revise past exams, track progress, and ask the AI when you get stuck.",
+    icon: "🤖",
+    title: "Study with JustClick AI",
+    description:
+      "Read, download, and ask AI to summarize, quiz you, or explain concepts from uploaded files.",
   },
 ];
 
@@ -30,7 +33,7 @@ const HowItWorks = () => {
             How It Works
           </span>
           <h3 className="text-3xl md:text-4xl font-bold text-blackColor dark:text-white leading-tight">
-            From first login to <span className="text-secondaryColor">finals-ready</span>.
+            From signup to <span className="text-secondaryColor">smarter studying</span>.
           </h3>
         </div>
 

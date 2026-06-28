@@ -9,6 +9,10 @@ function unwrapList(response) {
   return Array.isArray(data) ? data : [];
 }
 
+function unwrapData(response) {
+  return response?.data ?? response ?? null;
+}
+
 export const useChatbotSemesters = (options = {}) =>
   useQuery({
     queryKey: chatbotKeys.semesters(),
@@ -21,6 +25,19 @@ export const useChatbotSubjects = (semester, options = {}) =>
     queryKey: chatbotKeys.subjects(semester),
     queryFn: async () => unwrapList(await chatbotApi.getSubjects(semester)),
     enabled: !!semester,
+    ...options,
+  });
+
+export const useChatbotIndexStatus = (materialId, options = {}) =>
+  useQuery({
+    queryKey: chatbotKeys.indexStatus(materialId),
+    queryFn: async () => unwrapData(await chatbotApi.getIndexStatus(materialId)),
+    enabled: !!materialId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.index_status;
+      if (status === "pending" || status === "indexing") return 10000;
+      return false;
+    },
     ...options,
   });
 

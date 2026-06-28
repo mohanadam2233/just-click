@@ -13,6 +13,7 @@ import { mapMaterialToCardModel } from "@/features/materials/utils";
 import { getFileIcon, getSemesterBg } from "@/utils/fileIcons";
 import Link from "next/link";
 import { useEffect, useRef } from "react";
+import MaterialAiAssistant from "@/components/chatbot/MaterialAiAssistant";
 
 const formatFileSize = (sizeMb) => {
   if (sizeMb === null || sizeMb === undefined || Number.isNaN(Number(sizeMb))) {
@@ -545,6 +546,8 @@ const MaterialDetailsPrimary = ({ id }) => {
                 </h3>
 
                 <div className="space-y-4 relative z-10">
+                  <MaterialAiAssistant materialId={numericId} rawMaterial={rawMaterial} />
+
                   <button
                     type="button"
                     onClick={handleOpenPreview}

@@ -1090,6 +1090,30 @@ def public_departments_by_faculty_dropdown():
         return api_success(message="OK", data=data, status_code=200)
     except Exception as e:
         return api_error(str(e), status_code=400)
+
+
+@bp.get("/public/semesters/dropdown")
+@public
+@rate_limit(key_prefix="public_semesters_dropdown", limit=60, window=60)
+def public_semesters_dropdown():
+    try:
+        company_id = resolve_company_id_for_public()
+        search, limit, offset, _, filters = dropdown_args(
+            parse_filters_func=_parse_filters,
+            parse_bool_func=_as_bool,
+        )
+        data = svc.dropdown_semesters_public(
+            company_id=company_id,
+            search=search,
+            limit=limit,
+            offset=offset,
+            filters=filters,
+        )
+        return api_success(message="OK", data=data, status_code=200)
+    except Exception as e:
+        return api_error(str(e), status_code=400)
+
+
 @bp.get("/public/faculties/with-departments/dropdown")
 @public
 @rate_limit(key_prefix="public_faculties_with_departments_dropdown", limit=60, window=60)
